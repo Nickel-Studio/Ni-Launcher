@@ -12,7 +12,7 @@
 
 Minecraft Java 版启动器 · Windows / macOS / Linux
 
-[![版本](https://img.shields.io/badge/Nickel-1.0.0-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.0)
+[![版本](https://img.shields.io/badge/Nickel-1.0.1-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.1)
 [![CI](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml)
 [![代码许可](https://img.shields.io/badge/Code-AGPL--3.0-343a40)](LICENSE)
 [![美术许可](https://img.shields.io/badge/Art-CC--BY--SA--4.0-343a40)](LICENSE-ASSETS)
@@ -71,6 +71,10 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 - **整合包分享**：导出标准 `.mrpack`，或带启动器、外观及实例设置的便携 ZIP。
 - **启动排障**：查看退出原因，打开游戏日志；按版本选择 Java 和内存管理方式。
 - **细节工具**：「更多」里的使用指南、前沿计划、今日人品、内存优化和游戏日志清理。
+
+## 1.0.1 修复
+
+恢复实例与加载器使用的草方块、铁砧、红石等既有功能图标及默认 Mod 图，保留原分配映射；Nickel 品牌 Logo 和应用图标保持不变。
 
 ## 开始使用
 

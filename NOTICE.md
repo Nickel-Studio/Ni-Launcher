@@ -12,8 +12,6 @@ Nickel 由 ItzArona、ItzPlana 与项目贡献者共同维护。
 | --------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
 | Nickel 品牌图形、横幅与字标 | `src/assets/logo.png`、`src/assets/brand/` 下的 PNG             | ItzArona、ItzPlana / Nickel Studio                         |
 | 应用图标与网站图标          | `src-tauri/icons/`、`public/logo-32.png`、`public/logo-256.png` | ItzArona、ItzPlana / Nickel Studio；由 Nickel 品牌图形导出 |
-| 实例图标与发布通道徽记      | `src/assets/blocks/` 下的 PNG                                   | ItzArona、ItzPlana / Nickel Studio                         |
-| Mod 默认图形                | `src/assets/mod-placeholder.png`                                | ItzArona、ItzPlana / Nickel Studio                         |
 
 复制或改编上述美术时，请标明作者、[项目地址](https://github.com/Nickel-Studio/Ni-Launcher)、CC-BY-SA-4.0 和修改情况，并以相同许可分享改编作品。
 
@@ -52,6 +50,7 @@ React、React DOM、scheduler、Tauri 与其他锁定依赖保留各自的版权
 
 ## 游戏纹理与外部标识
 
+- `src/assets/blocks/` 的实例、加载器与发布状态图标，以及 `src/assets/mod-placeholder.png`，保留既有功能资源和分配映射。游戏纹理与对应项目标识的权利属于各自权利人；品牌更名不替换这些功能图标，也不将其重新授予 Nickel 原创美术许可。
 - `src/assets/skins/` 的 Steve / Alex 头像裁自 Minecraft 默认皮肤，相关纹理归 Mojang / Microsoft；见 [Minecraft Usage Guidelines](https://www.minecraft.net/en-us/usage-guidelines)。
 - `src/assets/credits/` 的 GitHub 头像属于对应用户或组织；LinuxDO 标识取自其官方公布的图形。来源列表见 [鸣谢图标](src/assets/credits/README.md)。
 

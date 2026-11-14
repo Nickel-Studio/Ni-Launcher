@@ -12,7 +12,7 @@ body:
     attributes:
       label: Nickel 版本
       description: 在「更多 → 关于」查看版本号。
-      placeholder: "1.0.0"
+      placeholder: "1.0.1"
     validations:
       required: true
   - type: dropdown
