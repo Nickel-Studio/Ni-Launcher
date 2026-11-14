@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Nickel UI Foundation 回归</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: auto;
+        min-height: 100%;
+      }
+
+      body {
+        overflow: auto;
+        background: var(--bg);
+      }
+
+      .fixture {
+        width: min(1180px, calc(100% - 32px));
+        margin: 16px auto 48px;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+      }
+
+      .fixture-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        flex-wrap: wrap;
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow-1), var(--shadow-inset-top);
+      }
+
+      .fixture-head h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: var(--fs-xl);
+      }
+
+      .fixture-head p {
+        margin-top: var(--space-1);
+        color: var(--text-dim);
+        font-size: var(--fs-sm);
+      }
+
+      .fixture-controls {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+      }
+
+      .fixture-controls button,
+      .fixture-open {
+        border: 0;
+        padding: 7px var(--space-3);
+        border-radius: var(--radius-pill);
+        background: var(--fill-3);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .fixture-controls button:focus-visible,
+      .fixture-open:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--accent-ring);
+      }
+
+      .fixture-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--space-4);
+      }
+
+      .fixture-panel {
+        min-width: 0;
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow-1), var(--shadow-inset-top);
+      }
+
+      .fixture-panel--wide {
+        grid-column: 1 / -1;
+      }
+
+      .fixture-label {
+        margin-bottom: var(--space-3);
+        color: var(--text-faint);
+        font-size: var(--fs-xs);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .fixture-pager-host {
+        height: 340px;
+        overflow: hidden;
+        border-radius: var(--radius-md);
+        background: var(--fill-1);
+      }
+
+      .fixture-pager-page {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+
+      .fixture-pager-row {
+        display: flex;
+        align-items: center;
+        min-height: 38px;
+        padding: 0 var(--space-3);
+        border-radius: var(--radius-sm);
+        background: var(--fill-2);
+        color: var(--text-dim);
+      }
+
+      .fixture-seg-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      .fixture-notice-stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+
+      .fixture-overlay-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: var(--space-3);
+      }
+
+      .fixture-overlay-select {
+        width: min(260px, 100%);
+      }
+
+      .fixture-vanilla-scroll {
+        height: 540px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: var(--space-2);
+      }
+
+      .fixture-home-host {
+        width: min(760px, 100%);
+      }
+
+      .fixture-home-host .home {
+        min-height: 620px;
+        padding: 0;
+      }
+
+      .fixture-home-host .home__blank {
+        display: none;
+      }
+
+      #ui-regression-result {
+        margin: 0;
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        color: var(--text);
+        white-space: pre-wrap;
+        font: var(--fs-xs) / var(--lh-normal) var(--font-mono);
+      }
+
+      #ui-regression-result[data-status="pass"] {
+        color: var(--accent);
+      }
+
+      #ui-regression-result[data-status="fail"] {
+        color: var(--danger);
+      }
+
+      @media (max-width: 760px) {
+        .fixture-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+    <script>
+      (() => {
+        const settings = {
+          themeMode: "dark",
+          accent: "mono",
+          backgroundImage: null,
+          backgroundBlur: 0,
+          backgroundOpacity: 0.5,
+          privacyMode: false,
+          downloadSource: "official",
+          versionListSource: "official_auto",
+          fileDownloadSource: "official_auto",
+          communityApiSource: "official_auto",
+          modrinthApiMirror: "https://mod.mcimirror.top/modrinth/v2/",
+          curseforgeApiMirror: "https://mod.mcimirror.top/curseforge/v1/",
+          communityFileMirror: "https://mod.mcimirror.top/",
+          maxDownloadThreads: 10,
+          downloadLimitBps: 0,
+          verifyMicrosoftSsl: true,
+          offlineUsername: "FixturePlayer",
+          accountType: "microsoft",
+          littleskinServer: "https://littleskin.cn",
+          memoryMb: 4096,
+        };
+        const account = {
+          id: "microsoft:fixture-player",
+          type: "microsoft",
+          name: "FixturePlayer",
+          email: "fixture@example.com",
+        };
+        const instance = {
+          root: "C:/NoWheRE-fixture/.minecraft",
+          versionId: "1.21.4",
+          displayName: "1.21.4",
+          loader: "vanilla",
+          icon: "grass",
+        };
+        localStorage.setItem("nowhere.settings", JSON.stringify(settings));
+        localStorage.setItem("nowhere.accounts", JSON.stringify([account]));
+        localStorage.setItem("nowhere.accounts.active", account.id);
+        localStorage.setItem("nowhere.instance.launch", JSON.stringify(instance));
+        localStorage.setItem("nowhere.home.autoAccountType", "1");
+        document.documentElement.dataset.theme = "dark";
+        document.documentElement.dataset.accent = "mono";
+        document.documentElement.dataset.regression = "running";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

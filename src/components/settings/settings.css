@@ -1,0 +1,908 @@
+﻿/* ============================================================================
+   设置页样式 · settings
+   全部颜色/圆角/动效取自 design tokens（src/styles/tokens.css），无业务硬编码色。
+   设计语言：Graphite Console —— 填充式圆角、无描边；
+   层次靠「填充亮度差 + 柔和阴影」，颜色主题（accent）仅用于选中态/主操作/焦点环。
+   术语：明暗模式（themeMode）≠ 主题；本项目的「主题」＝颜色主题（accent）。
+   分组卡片复用 UI 基元 Card（.nw-card），此处仅补充布局与少量自定义部件。
+   ========================================================================== */
+
+.st-root {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+  min-width: 0;
+}
+
+/* 明暗模式 / 颜色主题切换时的平滑色彩过渡。
+   用 :where() 保持极低优先级，不覆盖各部件自定义的 transition。 */
+:where(.st-root, .st-root *) {
+  transition-property: background-color, border-color, color, box-shadow, fill,
+    stroke;
+  transition-duration: var(--t);
+  transition-timing-function: var(--ease);
+}
+
+/* ---------- 左侧锚点导航（半透明填充块 · 胶囊选中 · 无描边） ---------- */
+.st-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--glass-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+.st-nav__title {
+  padding: 0 var(--space-2);
+}
+
+.st-nav__list {
+  position: relative;
+  --nav-item-h: 42px;
+  --nav-gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nav-gap);
+}
+
+/* 高亮胶囊：随激活项平滑滑动的颜色主题填充块（无描边）。 */
+.st-nav__pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--nav-item-h);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  transform: translateY(
+    calc(var(--nav-index, 0) * (var(--nav-item-h) + var(--nav-gap)))
+  );
+  transition: transform var(--t-slow) var(--ease-out),
+    background-color var(--t) var(--ease);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.st-nav__item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: var(--nav-item-h);
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+
+.st-nav__item:hover {
+  color: var(--text);
+  background: var(--fill-2);
+}
+
+/* 选中态：颜色主题半透明填充胶囊（无描边、无光晕）。 */
+.st-nav__item.is-active {
+  color: var(--accent);
+  background: transparent;
+}
+
+.st-nav__icon {
+  display: inline-flex;
+  color: var(--text-faint);
+  transition: color var(--t) var(--ease);
+}
+
+.st-nav__item:hover .st-nav__icon {
+  color: var(--text-dim);
+}
+
+.st-nav__item.is-active .st-nav__icon {
+  color: var(--accent);
+}
+
+/* ---------- 右侧内容区 ---------- */
+.st-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* ---------- 分组（基于 .nw-card，仅补充布局/入场动画） ---------- */
+.st-group {
+  scroll-margin-top: var(--space-4);
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+}
+
+.st-group:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.st-group:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.st-group:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+.st-group__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.st-group__heading {
+  margin: 0;
+}
+.st-group__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  line-height: var(--lh-snug);
+  text-align: left;
+  cursor: pointer;
+}
+.st-group__toggle svg {
+  flex: none;
+  width: var(--space-4);
+  height: var(--space-4);
+  transition: transform var(--t-disclosure) var(--ease);
+}
+.st-group__toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.st-group__body--collapsible {
+  padding-top: var(--space-4);
+}
+.st-group__description {
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.st-group--collapsible .nw-collapse[data-open="true"] {
+  overflow: visible;
+}
+
+/* ---------- 设置项行（行间极淡分隔，靠填充差而非线框） ---------- */
+.st-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 15px 0;
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+.st-group__body > .st-row:first-child {
+  padding-top: 0;
+  box-shadow: none;
+}
+
+.st-group__body > .st-row:last-child {
+  padding-bottom: 0;
+}
+
+.st-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.st-row__text {
+  min-width: 0;
+}
+
+.st-row__label {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.st-row--fill {
+  display: grid;
+  grid-template-columns: var(--setting-label-width) minmax(0, 1fr);
+  gap: var(--space-5);
+}
+.st-row--fill .st-row__control,
+.st-row--fill .nw-slider-row,
+.st-row--fill .nw-select {
+  width: 100%;
+  min-width: 0;
+}
+.st-row--fill .nw-slider-row__val {
+  min-width: var(--setting-value-width);
+}
+@media (max-width: 640px) {
+  .st-row--fill {
+    grid-template-columns: var(--setting-label-width-small) minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+}
+
+.st-row__desc {
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.st-row__desc strong {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.st-row__control {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.st-row--stacked .st-row__control {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* ---------- 文本输入（填充式、无描边；focus 用 box-shadow 环） ---------- */
+.st-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 13px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  color: var(--text);
+  background: var(--fill-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+
+.st-input::placeholder {
+  color: var(--text-faint);
+}
+
+.st-input:hover {
+  background: var(--fill-3);
+}
+
+.st-input:focus {
+  background: var(--fill-3);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.st-game {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.st-game__dimensions,
+.st-game__java,
+.st-game__feedback {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+.st-game__java {
+  flex-wrap: wrap;
+}
+.st-game__java .nw-select {
+  flex: 1;
+}
+
+.st-game__dimensions .st-input {
+  min-width: 0;
+}
+.st-game__textarea {
+  height: auto;
+  padding: var(--space-3);
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: var(--lh-normal);
+}
+.st-game__feedback {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.st-game__feedback p {
+  flex: 1;
+}
+.st-game__status {
+  min-height: var(--space-5);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+/* 展开的下拉菜单需要跨过相邻分组的入场动画层。 */
+.st-game .st-group:has(.nw-select__trigger[data-open="true"]) {
+  z-index: var(--z-content);
+}
+.st-game .st-row {
+  padding-block: var(--space-2);
+  box-shadow: none;
+}
+.st-game .st-group .nw-select__trigger {
+  min-height: calc(var(--space-7) + var(--space-1));
+  padding-block: var(--space-1);
+}
+.st-game .st-row:last-child {
+  padding-bottom: 0;
+}
+.st-game .st-row__control {
+  min-width: 0;
+}
+.st-game__toggles {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+.st-game__toggles .nw-field {
+  width: 100%;
+}
+.st-game__toggles .nw-field__label strong {
+  font-weight: 500;
+}
+.st-game__skin-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.st-game__skin-option {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--space-8);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--fill-1);
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+  cursor: pointer;
+  /* 单选卡片的选中反馈只改填充与文字色，不改尺寸，不引发布局跳动。 */
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.st-game__skin-option:has(input:checked) {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.st-game__skin-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.st-game__input-actions,
+.st-game__skin-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+.st-game__input-actions .st-input,
+.st-game__skin-source .st-input {
+  flex: 1;
+  min-width: 0;
+}
+.st-game__choice-note {
+  margin: var(--space-3) 0 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+.st-game-memory {
+  /* 内存分配切换使用 800ms 宽度动画；缓动复用全局 token。 */
+  --st-memory-bar-duration: 800ms;
+  padding-top: var(--space-4);
+}
+.st-game-memory__bar {
+  display: flex;
+  width: 100%;
+  height: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+}
+.st-game-memory__segment {
+  flex: none;
+  height: 100%;
+  transition: width var(--st-memory-bar-duration) var(--ease-out),
+    border-radius var(--st-memory-bar-duration) var(--ease-out);
+}
+.st-game-memory__used {
+  background: var(--text-faint);
+}
+.st-game-memory__allocated {
+  background: var(--accent);
+  /* 尾部圆角：左端直角与已使用段相接，右端胶囊收尾；
+     空闲段为 0 时与容器裁切结果一致，视觉连续。 */
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+}
+.st-game-memory__empty {
+  background: var(--fill-3);
+}
+.st-game-memory__values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+.st-game-memory__values dt {
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.st-game-memory__values dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+.st-game-memory__error {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+@media (max-width: 960px) {
+  .st-game__skin-option {
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-game-memory__segment {
+    transition: none;
+  }
+}
+.st-save-error {
+  color: var(--danger);
+  font-size: var(--fs-md);
+  padding: var(--space-3);
+}
+.st-group .nw-select__value {
+  white-space: normal;
+}
+.st-group .nw-select__trigger {
+  height: auto;
+  min-height: var(--space-8);
+  padding-block: var(--space-2);
+}
+
+/* ---------- 颜色主题色板（填充胶囊 · 选中用 box-shadow 环） ---------- */
+.st-accents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.st-swatch {
+  --swatch: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 14px 7px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease),
+    background var(--t) var(--ease), color var(--t) var(--ease),
+    box-shadow var(--t) var(--ease);
+}
+
+.st-swatch:hover {
+  transform: translateY(-1px);
+  color: var(--text);
+  background: var(--fill-3);
+}
+
+.st-swatch__dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: var(--shadow-1);
+}
+
+.st-swatch.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--swatch) 18%, transparent);
+  box-shadow: 0 0 0 2px var(--swatch);
+}
+
+/* mono（黑与白）的圆点：用「文字色 / 背景色」两个令牌做对角黑白分割，
+   不引入任何硬编码色值；它随明暗模式自动翻转。 */
+.st-swatch--mono .st-swatch__dot {
+  background: linear-gradient(135deg, var(--text) 0 50%, var(--bg) 50% 100%);
+}
+
+/* 选中环改用主题的 --accent：若沿用内联的 --swatch（暗色取值），
+   在亮色模式下会变成浅色环而看不见。 */
+.st-swatch--mono.is-active {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* ---------- 背景图片选择（填充缩略图 · 无描边） ---------- */
+.st-bg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.st-bg__thumb {
+  position: relative;
+  flex: none;
+  width: 184px;
+  height: 104px;
+  border: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--fill-2);
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow-inset-top), var(--shadow-1);
+}
+
+.st-bg__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.st-bg__thumb[data-empty="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+      45deg,
+      var(--surface-3) 25%,
+      transparent 25%
+    ),
+    linear-gradient(-45deg, var(--surface-3) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--surface-3) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--surface-3) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.st-bg__thumb-empty {
+  position: relative;
+  z-index: 1;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.st-bg__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 128px;
+}
+
+.st-error {
+  margin: 0;
+  padding-top: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+/* ---------- 实时预览（填充块 · 无描边 · 柔和阴影） ---------- */
+.st-preview-wrap {
+  padding-top: var(--space-4);
+  margin-top: var(--space-1);
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+.st-preview-wrap__hint {
+  margin-bottom: var(--space-3);
+}
+
+.st-preview {
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+}
+
+.st-preview__bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px var(--space-4);
+  background: var(--surface-3);
+}
+
+.st-preview__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface-4);
+}
+
+.st-preview__dot:first-child {
+  background: var(--accent);
+}
+
+.st-preview__bar-title {
+  margin-left: 6px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.st-preview__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-5);
+}
+
+.st-preview__eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tr-wider);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.st-preview__h {
+  margin: 6px 0 3px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.st-preview__p {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.st-preview__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: var(--space-3);
+}
+
+.st-preview__chip {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.st-preview__chip--accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.st-preview__col--right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.st-preview__btnrow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.st-preview__btn {
+  padding: 8px 15px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.st-preview__btn--accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 6px 16px -8px var(--accent-ring);
+}
+
+.st-preview__btn--ghost {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+.st-preview__progress {
+  width: 156px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-4);
+  overflow: hidden;
+}
+
+.st-preview__progress-fill {
+  display: block;
+  width: 62%;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.st-preview__toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.st-preview__toggle-knob {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-fg);
+}
+
+/* ---------- 关于（填充信息块 · 无描边） ---------- */
+.st-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.st-about__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.st-about__logo {
+  flex: none;
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  /* 不再叠加容器底色/阴影：logo 自带面板与描边，避免出现「双重边框」 */
+}
+
+.st-about__name {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.st-about__ver {
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.st-about__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+
+.st-about__item {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--fill-1);
+}
+
+.st-about__k {
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.st-about__v {
+  margin-top: 5px;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.st-about__note {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 880px) {
+  .st-root {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .st-nav {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .st-nav__list {
+    flex-direction: row;
+  }
+
+  /* 横向排布时胶囊定位失效，回退为逐项填充高亮。 */
+  .st-nav__pill {
+    display: none;
+  }
+
+  .st-nav__item.is-active {
+    background: var(--accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-group {
+    animation: none;
+  }
+
+  :where(.st-root, .st-root *) {
+    transition: none;
+  }
+
+  .st-nav__pill,
+  .st-nav__item,
+  .st-swatch,
+  .st-input,
+  .st-group__toggle svg,
+  .st-game__skin-option {
+    transition: none;
+  }
+}

@@ -1,0 +1,364 @@
+/* ============================================================================
+   社区资源 · 单页头 + 单工具栏 + CurseForge 未配置指引
+   全部颜色、圆角、字号、动效取自 design tokens（src/styles/tokens.css）。
+   工具栏子项的选择器统一带 .cv-toolbar 前缀：community.css 在 modrinth.css
+   之前导入，前缀提高优先级以覆盖 .mr-search / .nw-select 的默认宽度。
+   ========================================================================== */
+
+/* ------------------------------------------------------------- 页头 + 工具栏 */
+.cv-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cv-page__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+/* 一行工具栏：搜索框 flex 撑满，其余下拉固定宽；窄窗 flex-wrap 换行。 */
+.cv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* 搜索框：复用 .mr-search 外观，宽度改为 flex 撑满剩余空间。
+   position: relative + focus-within 提层：焦点环 box-shadow 画在
+   相邻下拉之上（否则会被右侧后续 DOM 兄弟盖住）。 */
+.cv-toolbar .cv-toolbar__search {
+  position: relative;
+  flex: 1 1 240px;
+  width: auto;
+  min-width: 200px;
+}
+
+.cv-toolbar .cv-toolbar__search:focus-within {
+  z-index: 1;
+}
+
+/* MC 版本下拉：固定宽度（加载器常驻后不再需要收窄让位）。 */
+.cv-combo.cv-toolbar__version {
+  flex: 0 1 200px;
+  min-width: 128px;
+}
+
+/* 来源下拉（Q1 裁定：下拉替代胶囊 tab；R4 裁定：新增「全部」）。 */
+.cv-toolbar .cv-toolbar__source {
+  flex: 0 0 150px;
+  width: auto;
+}
+
+/* 「共 N 个结果」：结果列表上方的独立计数行（工具栏里不再显示总数）。 */
+.cv-count {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+/* 紧凑图标分页，页码保持固定宽度，避免翻页跳动。 */
+.cv-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: 2px;
+  padding: 6px 12px;
+  margin: var(--space-2) 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-1);
+}
+.cv-pager .nw-iconbtn {
+  color: var(--text-dim);
+}
+.cv-pager .nw-iconbtn:disabled {
+  opacity: 0.25;
+}
+.cv-pager__page {
+  min-width: 28px;
+  padding: 0 4px;
+  text-align: center;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* ------------------------------------------------- 加载器下拉（常驻） --- */
+/* 渐进式浮现（width/opacity 过渡 + overflow:hidden）已废弃——
+   overflow:hidden 会把 nw-select 绝对定位的菜单裁掉，浮现动画也是
+   「缩进抽搐」的来源；现在常驻工具栏，仅做值联动。 */
+.cv-loader {
+  flex: 0 0 auto;
+  width: 150px;
+}
+
+.cv-loader .nw-select {
+  width: 100%;
+}
+
+/* --------------------------------------------------- MC 版本可输入下拉 --- */
+/* 视觉对齐 .nw-select：填充式圆角、无 1px 描边，accent 只用于焦点环与选中。 */
+.cv-combo {
+  position: relative;
+  min-width: 0;
+}
+
+.cv-combo__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 13px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+
+.cv-combo__field:hover {
+  background: var(--fill-3);
+}
+
+.cv-combo__field[data-open="true"] {
+  background: var(--fill-3);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.cv-combo__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  box-shadow: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+/* WebView 对文本输入的 UA 焦点描边：与 .mr-search 同样处理，只留外层焦点环。 */
+.cv-combo__input:focus,
+.cv-combo__input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.cv-combo__input::placeholder {
+  color: var(--text-faint);
+  transition: color var(--t) var(--ease);
+}
+
+.cv-combo__field[data-open="true"] .cv-combo__input::placeholder {
+  color: var(--text-dim);
+}
+
+.cv-combo__input:disabled {
+  cursor: not-allowed;
+}
+
+.cv-combo__chevron {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  pointer-events: none;
+  position: relative;
+  top: var(--icon-optical-shift);
+  transition: transform var(--t) var(--ease);
+}
+
+.cv-combo__field[data-open="true"] .cv-combo__chevron {
+  transform: rotate(180deg);
+}
+
+.cv-combo__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-overlay);
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-3);
+  animation: nw-pop var(--t) var(--ease-out) both;
+}
+
+.cv-combo__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.cv-combo__option:hover,
+.cv-combo__option[data-active="true"] {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.cv-combo__option[data-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.cv-combo__option:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+/* 版本号次要信息：sans 小字号 + faint 色（点阵字纪律：--font-mono 只允许 .nw-mono）。 */
+.cv-combo__option-version {
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-combo__option-check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.cv-combo__empty {
+  padding: 10px 11px;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------ 引擎结果区（包装层） --- */
+/* 引擎页自身不再有 mr-page 间距：由本层补足列表与状态区之间的呼吸。 */
+.cv-engine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 加载态：引擎区撑满页头以下的剩余高度，让卡片在结果区内垂直居中。 */
+.mr-page.mr-page--loading {
+  min-height: 100%;
+  padding-bottom: 0;
+}
+
+/* 与 .van-page--loading 同一高度算法：AnimatedSwap 的图层是 auto 高度，
+   百分比 min-height 在它身上无法解析；这里用视口推算锁到外壳内容区高度，
+   否则社区页的卡片会停在内容顶部、下方留出一大片空白。 */
+.nw-pager--fill .mr-page.mr-page--loading {
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+}
+
+.mr-page--loading .cv-engine {
+  flex: 1 1 auto;
+}
+
+.mr-page--loading .cv-engine > .nw-loading {
+  flex: 1 1 auto;
+}
+
+/* 加载态的翻页锚点是空 div，但仍会多占一个 flex gap，把结果区整体推低。
+   此时没有列表可回顶，隐藏它即可让卡片与原版页落在同一内容区中心。 */
+.mr-page--loading > div[aria-hidden="true"] {
+  display: none;
+}
+
+/* ------------------------------------------- CurseForge 未配置的真实指引 --- */
+.cf-setup {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+
+.cf-setup svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+
+.cf-setup__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cf-setup__steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cf-setup__path {
+  font-family: var(--font-mono, monospace);
+  color: var(--text);
+  word-break: break-all;
+}
+
+@media (max-width: 720px) {
+  .cv-toolbar .cv-toolbar__search {
+    flex-basis: 100%;
+  }
+
+  .cv-combo.cv-toolbar__version,
+  .cv-loader,
+  .cv-toolbar .cv-toolbar__source {
+    flex: 1 1 140px;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+/* ------------------------------------------------- 无障碍：减少动效 --- */
+@media (prefers-reduced-motion: reduce) {
+  .cf-setup,
+  .cv-combo__menu {
+    animation: none;
+  }
+
+  .cv-combo__field,
+  .cv-combo__chevron,
+  .cv-combo__input::placeholder,
+  .cv-combo__option,
+  .cv-combo.cv-toolbar__version {
+    transition: none;
+  }
+}

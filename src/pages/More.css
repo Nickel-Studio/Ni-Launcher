@@ -1,0 +1,455 @@
+/* 页面滚动与切换由 PagerLayout 管理，页内卡片只负责布局。 */
+
+.mo-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-bottom: var(--space-4);
+}
+
+/* ---------- 章节卡片（复用 UI 基元 Card，仅补入场动画） ---------- */
+.mo-card {
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+}
+
+.mo-card .nw-card__head {
+  align-items: center;
+}
+
+.mo-card__action.nw-btn {
+  flex: 0 0 auto;
+}
+
+.mo-card:nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.mo-card:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.mo-card:nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.mo-card:nth-child(5) {
+  animation-delay: 200ms;
+}
+
+/* ---------- 指南条目（术语 + 做法，行间用极淡分隔而非线框） ---------- */
+.mo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mo-item {
+  display: grid;
+  grid-template-columns: minmax(96px, 132px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: baseline;
+  padding: 13px 0;
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+.mo-item:first-child {
+  padding-top: 0;
+  box-shadow: none;
+}
+
+.mo-item:last-child {
+  padding-bottom: 0;
+}
+
+.mo-item__term {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mo-item__text {
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+.mo-item__text code {
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--fill-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+/* ---------- 前沿计划 ---------- */
+.mo-frontier__notice {
+  background: var(--fill-1);
+}
+
+.mo-frontier__notice-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+.mo-frontier__notice-body p {
+  margin: 0;
+  min-width: 0;
+}
+
+.mo-frontier__notice-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.mo-frontier__notice-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.mo-frontier__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.mo-frontier__row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mo-frontier__row-label strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mo-frontier__row-label span {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-faint);
+}
+
+/* ---------- 星月图书馆（前沿计划 · 杂物间） ---------- */
+.mo-starlight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.mo-starlight__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mo-starlight__actions .nw-btn {
+  min-width: 140px;
+}
+
+/* ---------- 今日人品结果 ---------- */
+.mo-jrrp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-4);
+  text-align: center;
+}
+
+.mo-jrrp__value {
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.mo-jrrp__comment {
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+/* ---------- 清理游戏垃圾确认 ---------- */
+.mo-junk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mo-junk__text {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--text);
+}
+
+.mo-junk__hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+.mo-starlight__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+/* 自建密码输入框：不依赖浏览器默认边框与字体。 */
+.mo-starlight__input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  outline: none;
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+
+.mo-starlight__input::placeholder {
+  color: var(--text-faint);
+}
+
+.mo-starlight__input:hover {
+  background: var(--fill-3);
+}
+
+.mo-starlight__input:focus,
+.mo-starlight__input:focus-visible {
+  background: var(--fill-3);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.mo-about {
+  gap: var(--space-6);
+}
+
+.mo-about__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.mo-about__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.mo-about__logo {
+  flex: none;
+  display: block;
+  width: calc(var(--space-7) * 2);
+  height: calc(var(--space-7) * 2);
+  object-fit: contain;
+}
+
+.mo-about__identity {
+  min-width: 0;
+}
+
+.mo-about__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+.mo-about__description {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+}
+
+.mo-about__ver {
+  margin-left: auto;
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--fill-1);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  white-space: nowrap;
+}
+
+.mo-about__meta,
+.mo-about__licenses,
+.mo-about__licenses > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.mo-about__meta {
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.mo-about__licenses {
+  margin: 0;
+  gap: var(--space-2) var(--space-4);
+}
+
+.mo-about__licenses dt {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.mo-about__licenses dd {
+  margin: 0;
+}
+
+.mo-about__licenses .nw-btn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.mo-about__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mo-about__section-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+}
+
+.mo-about__credits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.mo-credit {
+  display: grid;
+  grid-template-columns: var(--space-8) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--fill-1);
+}
+
+.mo-credit__avatar {
+  display: block;
+  grid-row: span 2;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+
+.mo-credit__name {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: var(--lh-snug);
+  overflow-wrap: anywhere;
+}
+
+.mo-credit__link.nw-btn {
+  grid-column: 2;
+  justify-self: start;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.mo-credit--text {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  padding: var(--space-4);
+}
+
+.mo-error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 720px) {
+  .mo-item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .mo-card .nw-card__head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .mo-card__action.nw-btn {
+    margin-left: 0;
+  }
+
+  .mo-frontier__row {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .mo-about__brand {
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  .mo-about__ver {
+    align-self: center;
+  }
+
+  .mo-about__credits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mo-card {
+    animation: none;
+  }
+}

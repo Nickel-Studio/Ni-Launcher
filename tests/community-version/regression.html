@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Nickel 社区真实版本回归</title>
+    <style>
+      html, body, #root { min-height: 100%; height: auto; }
+      body { overflow: auto; background: var(--bg); }
+      #root { padding: var(--space-4); }
+      #community-version-result { white-space: pre-wrap; padding: var(--space-4); font: var(--fs-sm) / var(--lh-normal) var(--font-mono); }
+      #community-version-result[data-status="fail"] { color: var(--danger); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="community-version-result" data-status="running" aria-live="polite">正在运行回归…</pre>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

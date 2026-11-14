@@ -1,0 +1,349 @@
+/* ============================================================================
+   Nickel · Design Tokens
+   Aesthetic: "Graphite" — near-black graphite surfaces, depth expressed through
+   FILL luminance + soft layered shadows (never 1px outlines), a single signal
+   accent reserved for selection / primary action / focus / tiny dots.
+   Dark is the primary target; light is a fully-realised neutral sibling.
+
+   NOTE: 明暗模式（themeMode: system | light | dark）≠ 主题；
+   颜色主题（color theme / accent，如 mono / emerald）才是本项目的「主题」。
+   ========================================================================== */
+
+:root {
+  /* ---- Type families ---------------------------------------------------- */
+  /* 为什么去掉 Bahnschrift / DIN Condensed：这类窄体压缩字在大字号标题上会把
+     笔画压成等宽的「点阵 / 条码」观感，字号越大越明显，中文字形还会被强行拉宽。
+     这里统一改用系统自带的可变字体栈：Display 供标题、Text 供正文、Mono 只留给
+     数字与路径（等宽对齐便于比对），三者在同一台机器上风格自洽。 */
+  --font-display: "Segoe UI Variable Display", "Segoe UI Semibold",
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC",
+    system-ui, sans-serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", system-ui,
+    -apple-system, sans-serif;
+  /* 等宽字体只用于数字与路径。末尾补齐中文 sans 回退：否则中文会落到系统
+     默认 monospace（Windows 常见为 SimSun / NSimSun），呈现为点阵字。 */
+  --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, "SFMono-Regular",
+    "Noto Sans Mono", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    "Noto Sans SC", monospace;
+  --font-body: var(--font-sans);
+
+  /* ---- Type scale ------------------------------------------------------- */
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 19px;
+  --fs-2xl: 24px;
+  --fs-3xl: 31px;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.4;
+  --lh-normal: 1.62;
+
+  --tr-wide: 0.14em;
+  --tr-wider: 0.26em;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  /* short aliases */
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-xl: var(--radius-xl);
+  --r-pill: var(--radius-pill);
+
+  /* ---- Spacing ---------------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 44px;
+  /* short aliases */
+  --sp-1: var(--space-1);
+  --sp-2: var(--space-2);
+  --sp-3: var(--space-3);
+  --sp-4: var(--space-4);
+  --sp-5: var(--space-5);
+  --sp-6: var(--space-6);
+  --sp-7: var(--space-7);
+  --sp-8: var(--space-8);
+
+  /* ---- Optical alignment ------------------------------------------------ */
+  /* 「图标 + 单行中文」同排时的光学下移：中文（微软雅黑 / 苹方）字形墨迹中心
+     恒定比行盒几何中心低约 0.5px，严格几何居中的图标会显得略微偏上。
+     所有横向并排的图标统一用该令牌补偿；纵向图标块按自身行高单独校准。 */
+  --icon-optical-shift: 0.5px;
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --t-fast: 110ms;
+  --t: 180ms;
+  --t-slow: 320ms;
+  --t-accent: 420ms;
+  --t-disclosure: 380ms;
+  --t-mining: 1800ms;
+  --setting-label-width: 128px;
+  --setting-label-width-small: 96px;
+  --setting-value-width: 80px;
+  --loading-art-width: 160px;
+  --loading-art-inline-width: 112px;
+  --loading-card-width: 260px;
+  --loading-min-height: 200px;
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
+
+  /* ---- Shell layout ----------------------------------------------------- */
+  --shell-radius: 14px;
+  --titlebar-h: 52px;
+
+  /* ---- Gutter / breathing room ------------------------------------------ */
+  /* Safe edge margin so content surfaces (cards/panels) never touch the edge. */
+  --gutter: 20px;
+  --gutter-sm: 12px;
+  --gutter-lg: 28px;
+
+  --z-bg: 0;
+  --z-content: 1;
+  --z-chrome: 3;
+  --z-overlay: 60;
+  /* 左下角消息条：要浮在页面内容与弹窗之上，但不能盖住 Tooltip / 启动闪屏。 */
+  --z-toast: 80;
+  /* 自绘 Tooltip 要浮在弹窗（--z-overlay）之上，但不能盖住启动闪屏。 */
+  --z-tooltip: 120;
+  --z-splash: 900;
+}
+
+/* ============================================================================
+   明暗模式 :: 暗色（默认）
+   （明暗模式 = themeMode: system | light | dark，与「颜色主题」是两件事。）
+   Layered graphite: each surface step is a brighter fill, not a brighter line.
+   ========================================================================== */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0e1011;
+  --bg-2: #141617;
+  --surface: #1a1d1e;
+  --surface-2: #222627;
+  --surface-3: #2b2f31;
+  --surface-4: #353a3c;
+
+  --border: rgba(255, 255, 255, 0.055);
+  --border-strong: rgba(255, 255, 255, 0.11);
+  --hairline: rgba(255, 255, 255, 0.06);
+
+  /* fill ladder — the primary way depth is expressed (replaces outlines) */
+  --fill-1: rgba(255, 255, 255, 0.04);
+  --fill-2: rgba(255, 255, 255, 0.07);
+  --fill-3: rgba(255, 255, 255, 0.1);
+  --fill-4: rgba(255, 255, 255, 0.14);
+  --fill-hover: rgba(255, 255, 255, 0.1);
+  --ring: rgba(255, 255, 255, 0.18);
+
+  --text: #f2f4f5;
+  --text-dim: #a8b0b3;
+  --text-faint: #7d868a;
+
+  --danger: #ff6b73;
+  --success: #3ecf8e;
+  --warning: #e8b04a;
+
+  --overlay: rgba(6, 8, 9, 0.66);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.42);
+  --shadow-2: 0 12px 28px -14px rgba(0, 0, 0, 0.72);
+  --shadow-3: 0 30px 64px -22px rgba(0, 0, 0, 0.8);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+
+  --card-bg: #1a1d1e;
+  --chrome-bg: rgba(14, 16, 17, 0.78);
+
+  --glass-card: rgba(26, 29, 30, 0.66);
+  --glass-chrome: rgba(12, 13, 14, 0.55);
+
+  --sparkle: rgba(255, 255, 255, 0.85);
+  --target-close: #e81123;
+}
+
+/* ============================================================================
+   明暗模式 :: 亮色
+   Neutral white/grey, zero hue pollution, same fill-driven language.
+   ========================================================================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eceef0;
+  --bg-2: #f5f6f7;
+  --surface: #ffffff;
+  --surface-2: #f4f5f7;
+  --surface-3: #eaebee;
+  --surface-4: #dfe1e5;
+
+  --border: rgba(16, 20, 24, 0.07);
+  --border-strong: rgba(16, 20, 24, 0.12);
+  --hairline: rgba(16, 20, 24, 0.06);
+
+  --fill-1: rgba(16, 20, 24, 0.035);
+  --fill-2: rgba(16, 20, 24, 0.06);
+  --fill-3: rgba(16, 20, 24, 0.09);
+  --fill-4: rgba(16, 20, 24, 0.13);
+  --fill-hover: rgba(16, 20, 24, 0.09);
+  --ring: rgba(16, 20, 24, 0.16);
+
+  --text: #14171a;
+  --text-dim: #4d555c;
+  --text-faint: #6f7780;
+
+  --danger: #d8343f;
+  --success: #12a06b;
+  --warning: #b87b16;
+
+  --overlay: rgba(24, 28, 32, 0.42);
+
+  --shadow-1: 0 1px 2px rgba(16, 20, 24, 0.08);
+  --shadow-2: 0 12px 28px -14px rgba(16, 20, 24, 0.22);
+  --shadow-3: 0 30px 64px -24px rgba(16, 20, 24, 0.28);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --card-bg: #ffffff;
+  --chrome-bg: rgba(252, 253, 254, 0.82);
+
+  --glass-card: rgba(255, 255, 255, 0.7);
+  --glass-chrome: rgba(255, 255, 255, 0.62);
+
+  --sparkle: rgba(20, 23, 26, 0.65);
+  --target-close: #e81123;
+}
+
+/* ============================================================================
+   颜色主题（color theme / accent）— 本项目说的「主题」就是它，不是明暗模式。
+   一组克制的信号色，只用于选中 / 主操作 / 焦点环 / 小圆点。
+   已冻结契约：类型名仍是 Accent，取值集合只是新增 mono（黑与白）并置顶默认。
+   ========================================================================== */
+/* mono（黑与白）：高对比无彩色 —— 用最亮 / 最暗的中性色充当信号色，
+   让选中态、主操作与焦点环彻底去饱和。允许极淡的 0/1 二进制纹样做装饰层
+   （见 global.css），但不得保留光晕、不给标题上色、不做泛色背景。 */
+:root[data-accent="mono"],
+:root[data-theme="dark"][data-accent="mono"] {
+  --accent: #f2f4f5;
+  --accent-strong: #d8dcdd;
+  --accent-fg: #0e1011;
+  --accent-soft: rgba(255, 255, 255, 0.1);
+  --accent-ring: rgba(255, 255, 255, 0.32);
+}
+/* 亮色模式下整体翻转：信号色变成近黑、前景字变成近白。 */
+:root[data-theme="light"][data-accent="mono"] {
+  --accent: #14171a;
+  --accent-strong: #2b2f31;
+  --accent-fg: #f5f6f7;
+  --accent-soft: rgba(16, 20, 24, 0.1);
+  --accent-ring: rgba(16, 20, 24, 0.3);
+}
+:root,
+:root[data-accent="emerald"] {
+  --accent: #3ecf8e;
+  --accent-strong: #2bb87b;
+  --accent-fg: #05170f;
+  --accent-soft: rgba(62, 207, 142, 0.14);
+  --accent-ring: rgba(62, 207, 142, 0.4);
+}
+:root[data-accent="blue"] {
+  --accent: #5a97e8;
+  --accent-strong: #3f7fd0;
+  --accent-fg: #04101f;
+  --accent-soft: rgba(90, 151, 232, 0.15);
+  --accent-ring: rgba(90, 151, 232, 0.38);
+}
+:root[data-accent="violet"] {
+  --accent: #9b8cf0;
+  --accent-strong: #7c68e0;
+  --accent-fg: #120a2a;
+  --accent-soft: rgba(155, 140, 240, 0.15);
+  --accent-ring: rgba(155, 140, 240, 0.38);
+}
+:root[data-accent="amber"] {
+  --accent: #e0aa4c;
+  --accent-strong: #c08f2f;
+  --accent-fg: #1d1403;
+  --accent-soft: rgba(224, 170, 76, 0.15);
+  --accent-ring: rgba(224, 170, 76, 0.4);
+}
+:root[data-accent="rose"] {
+  --accent: #ea6f8b;
+  --accent-strong: #d35070;
+  --accent-fg: #2a0712;
+  --accent-soft: rgba(234, 111, 139, 0.15);
+  --accent-ring: rgba(234, 111, 139, 0.38);
+}
+
+/* 注册为颜色值，使渐变、SVG 与阴影中的颜色主题也能逐帧插值。 */
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-strong {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-fg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-ring {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+/* ---- Semantic aliases + teammate-facing aliases -------------------------- */
+:root {
+  /* text / accent aliases */
+  --text-muted: var(--text-dim);
+  --text-subtle: var(--text-faint);
+  --accent-contrast: var(--accent-fg);
+  --accent-hover: var(--accent-strong);
+
+  /* radius / shadow / duration aliases */
+  --radius-full: var(--radius-pill);
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+  --dur-fast: var(--t-fast);
+  --dur: var(--t);
+  --dur-slow: var(--t-slow);
+
+  /* status tints */
+  --info: #5a97e8;
+  --info-soft: rgba(90, 151, 232, 0.14);
+}
+:root,
+:root[data-theme="dark"] {
+  --success-soft: rgba(62, 207, 142, 0.14);
+  --warning-soft: rgba(232, 176, 74, 0.15);
+  --danger-soft: rgba(255, 107, 115, 0.15);
+}
+:root[data-theme="light"] {
+  --success-soft: rgba(18, 160, 107, 0.12);
+  --warning-soft: rgba(184, 123, 22, 0.13);
+  --danger-soft: rgba(216, 52, 63, 0.11);
+}

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>实例操作与指南回归</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        overflow: auto;
+        background: var(--bg);
+      }
+      #root {
+        min-height: 100%;
+      }
+      .fixture-wrap {
+        width: min(1180px, calc(100% - 32px));
+        margin: 16px auto;
+      }
+      .fixture-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: center;
+        margin-bottom: var(--space-4);
+        padding: var(--space-3);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .fixture-head button {
+        border: 0;
+        border-radius: var(--radius-pill);
+        padding: 6px var(--space-3);
+        background: var(--fill-3);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .fixture-head button:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--accent-ring);
+      }
+      #regression-result {
+        margin-top: var(--space-4);
+        padding: var(--space-3);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        color: var(--text);
+        white-space: pre-wrap;
+        font: var(--fs-xs) / var(--lh-normal) var(--font-mono);
+      }
+      #regression-result[data-status="pass"] {
+        color: var(--accent);
+      }
+      #regression-result[data-status="fail"] {
+        color: var(--danger);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="regression-result" data-status="running" aria-live="polite">正在运行回归…</pre>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

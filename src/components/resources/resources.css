@@ -1,0 +1,417 @@
+﻿/* ============================================================================
+   资源中心 · 分类导航 / 资源卡片 / 状态块
+   全部颜色、圆角、字号、动效取自 design tokens（src/styles/tokens.css）。
+   设计语言（与设置页一致）：填充式圆角、无描边；层次靠「填充亮度差 + 柔和阴影」；
+   强调色仅用于选中态 / 主操作 / 焦点环 / 小圆点。
+   ========================================================================== */
+
+/* ---------------------------------------------- 左侧分类导航（填充胶囊） --- */
+.rs-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--glass-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+.rs-nav__title {
+  padding: 0 var(--space-2);
+}
+
+.rs-nav__list {
+  position: relative;
+  --rs-nav-item-h: 42px;
+  --rs-nav-gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rs-nav-gap);
+}
+
+/* 高亮胶囊：随选中项平滑滑动的强调色半透明填充块（无描边）。 */
+.rs-nav__pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--rs-nav-item-h);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  transform: translateY(
+    calc(var(--nav-index, 0) * (var(--rs-nav-item-h) + var(--rs-nav-gap)))
+  );
+  transition: transform var(--t-slow) var(--ease-out),
+    background-color var(--t) var(--ease);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.rs-nav__item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: var(--rs-nav-item-h);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+
+.rs-nav__item:hover {
+  color: var(--text);
+  background: var(--fill-2);
+}
+
+.rs-nav__item.is-active {
+  color: var(--accent);
+  background: transparent;
+}
+
+.rs-nav__icon {
+  display: inline-flex;
+  color: var(--text-faint);
+  transition: color var(--t) var(--ease);
+}
+
+.rs-nav__icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.rs-nav__item:hover .rs-nav__icon {
+  color: var(--text-dim);
+}
+
+.rs-nav__item.is-active .rs-nav__icon {
+  color: var(--accent);
+}
+
+.rs-nav__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-nav__count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-3);
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+
+.rs-nav__item.is-active .rs-nav__count {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* -------------------------------------------------------- 资源卡片网格 --- */
+.rs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.rs-card.nw-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow: hidden;
+}
+
+.rs-card:hover {
+  background: color-mix(in srgb, var(--card-bg) 84%, var(--text) 6%);
+  box-shadow: var(--shadow-2), var(--shadow-inset-top);
+  transform: translateY(-2px);
+}
+
+.rs-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.rs-card__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+
+.rs-card__kind svg {
+  width: 13px;
+  height: 13px;
+}
+
+.rs-card:hover .rs-card__kind {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rs-card__size {
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
+}
+
+.rs-card__name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.35em * 2);
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.rs-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.rs-card__meta svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+}
+
+.rs-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-3);
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+.rs-card__foot .rs-card__open.nw-btn {
+  --_h: 30px;
+  --_px: 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.rs-card:hover .rs-card__foot .rs-card__open.nw-btn {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+.rs-card__error {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------ 扫描骨架 --- */
+.rs-skel.nw-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  min-height: 148px;
+  box-shadow: var(--shadow-1);
+}
+
+.rs-skel__bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  animation: rs-pulse 1.5s var(--ease) infinite;
+}
+
+.rs-skel__bar--sm {
+  width: 38%;
+  height: 9px;
+}
+
+.rs-skel__bar--lg {
+  width: 76%;
+  height: 14px;
+}
+
+.rs-skel__bar:last-child {
+  width: 52%;
+  height: 27px;
+  margin-top: auto;
+}
+
+.rs-skel:nth-child(even) .rs-skel__bar {
+  animation-delay: 220ms;
+}
+
+@keyframes rs-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ----------------------------------------------- 空状态 / 错误状态块 --- */
+.rs-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 340px;
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  background: var(--glass-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+}
+
+.rs-notice__icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: var(--radius-lg);
+  background: var(--fill-2);
+  color: var(--text-dim);
+}
+
+.rs-notice__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.rs-notice--error .rs-notice__icon {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.rs-notice__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  color: var(--text);
+}
+
+.rs-notice__hint {
+  max-width: 480px;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+.rs-notice__detail {
+  max-width: 620px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.rs-notice__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* -------------------------------------------------- 无障碍：减少动效 --- */
+@media (prefers-reduced-motion: reduce) {
+  .rs-nav__pill,
+  .rs-nav__item,
+  .rs-nav__icon,
+  .rs-nav__count,
+  .rs-card.nw-card,
+  .rs-card__kind,
+  .rs-card__foot .rs-card__open.nw-btn {
+    transition: none;
+  }
+
+  .rs-skel__bar {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .rs-notice {
+    animation: none;
+  }
+
+  .rs-card.nw-card:hover {
+    transform: none;
+  }
+}
+
+/* --------------------------------------------- 窄窗：导航转为横向排列 --- */
+@media (max-width: 880px) {
+  .rs-nav {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .rs-nav__list {
+    flex-direction: row;
+  }
+
+  /* 横向排布时胶囊定位失效，回退为逐项填充高亮。 */
+  .rs-nav__pill {
+    display: none;
+  }
+
+  .rs-nav__item.is-active {
+    background: var(--accent-soft);
+  }
+}

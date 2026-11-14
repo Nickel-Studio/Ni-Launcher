@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>加载动画留白与居中验收</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        background: var(--bg);
+      }
+      /* 仅用于测量输出；不影响动画布局。 */
+      #loading-result {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        z-index: 9999;
+        max-width: 520px;
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        white-space: pre-wrap;
+        font: var(--fs-2xs) / 1.4 var(--font-mono);
+        pointer-events: none;
+      }
+      html[data-ready] #loading-result {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="loading-result" aria-live="polite">正在准备加载场景…</pre>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

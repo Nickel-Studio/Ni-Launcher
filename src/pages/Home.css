@@ -1,0 +1,275 @@
+/* ============================================================
+   首页 · 左卡片 + 右留白
+   仅使用 tokens 变量；去线框化；gutter 感知（不贴边）。
+   ============================================================ */
+
+.home {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  box-sizing: border-box;
+  /* 外壳主内容区已含 padding: var(--gutter)；这里在其之上再留少量外边距，
+     并用 --gutter 参与高度计算，避免卡片顶部/底部贴边或产生多余滚动。
+     （--gutter 未定义时回退 0，保证独立构建下同样不溢出。） */
+  padding: var(--space-2);
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter, 0px) * 2);
+}
+
+/* 右侧整片留白：不渲染任何元素，让背景图直接透出 */
+.home__blank {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+}
+
+/* ---------- 左卡片 ---------- */
+.home .home__card {
+  flex: 0 0 400px;
+  width: 400px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: 420px;
+  border-color: transparent; /* 去线框化：以柔和投影替代描边 */
+  box-shadow: var(--shadow-3);
+  animation: home-card-in var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes home-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- 首次进场：分区分区交错 ---------- */
+.home__stage {
+  animation: home-rise var(--dur-slow) var(--ease-out) both;
+}
+.home__stage--1 {
+  animation-delay: 60ms;
+}
+.home__stage--2 {
+  animation-delay: 150ms;
+}
+.home__stage--3 {
+  animation-delay: 240ms;
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- 顶部：账号形态胶囊 + 账号管理 ---------- */
+.home__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 账号形态分段：与顶栏导航完全相同的滑动胶囊
+   （几何由 src/lib/useSlidePill.ts 计算，外观见 account.css 的 .acc-tabs）。 */
+.home__accounts.acc-tabs {
+  width: 100%;
+}
+
+.home__accounts .acc-tabs__item {
+  flex: 1 1 0;
+}
+
+.home__manage.nw-iconbtn {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-dim);
+}
+
+.home__manage.nw-iconbtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--text);
+}
+
+/* ---------- 中部：角色区 / 表单 ---------- */
+.home__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* 账号形态 / 登录态切换：淡出 → 淡入 + 轻微上移 */
+.home__swap {
+  width: 100%;
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.home__swap[data-phase="out"] {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.home__swap[data-phase="in"] {
+  animation: home-swap-in 200ms var(--ease-out) both;
+}
+@keyframes home-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.home__character {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  width: 100%;
+}
+
+/*
+ * 头像行的铅笔贴着头像左侧、切换账号贴在右侧，
+ * 两个按钮只在悬浮整块角色区或键盘 focus-visible 时淡入。
+ * 平时透明但占位，避免悬浮时头像被按钮挤动。
+ * 离线形态只渲染头像，不渲染这两个按钮（R9）。
+ */
+.home__avatar-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.home__identity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.home__identity-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home__avatar-action.nw-iconbtn {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  background: transparent;
+  color: var(--text-dim);
+  opacity: 0;
+  transform: scale(0.86);
+  transition: opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.home__character:hover .home__avatar-action,
+.home__avatar-row:has(:focus-visible) .home__avatar-action {
+  opacity: 1;
+  transform: none;
+}
+
+.home__avatar-action.nw-iconbtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+
+.home__name {
+  margin: 0;
+  max-width: 100%;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__email {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.home__form {
+  width: 100%;
+}
+
+/* ---------- 底部：启动区 ---------- */
+.home__launch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.home__launch-secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.home__ghost.nw-btn {
+  height: 40px;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-dim);
+  border-color: transparent;
+}
+
+.home .home__ghost.nw-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--text);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 760px) {
+  .home {
+    align-items: flex-start;
+  }
+  .home .home__card {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .home__blank {
+    display: none;
+  }
+}
+
+/* ---------- 无障碍：尊重 reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .home .home__card,
+  .home__stage,
+  .home__swap[data-phase="in"] {
+    animation: none;
+  }
+  .home__swap,
+  .home__avatar-action.nw-iconbtn {
+    transition: none;
+  }
+}

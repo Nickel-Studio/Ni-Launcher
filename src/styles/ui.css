@@ -1,0 +1,1018 @@
+﻿/* ============================================================================
+   Nickel · UI primitives
+   FILL-BASED language: surfaces are separated by translucent fill + soft layered
+   shadows, NOT by 1px outlines. Accent is reserved for selection / primary
+   action / focus ring / tiny indicators.
+   Every visual value derives from design tokens (src/styles/tokens.css).
+   ========================================================================== */
+
+/* ================================================================== Button == */
+.nw-btn {
+  --_h: 34px;
+  --_px: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--_h);
+  padding: 0 var(--_px);
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease),
+    box-shadow var(--t) var(--ease), transform var(--t-fast) var(--ease);
+}
+.nw-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.nw-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.nw-btn svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  /* 按钮内图标与单行中文并排：按视觉中心补半像素。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.nw-btn--sm {
+  --_h: 28px;
+  --_px: 13px;
+  font-size: var(--fs-sm);
+}
+.nw-btn--sm svg {
+  width: 14px;
+  height: 14px;
+}
+.nw-btn--lg {
+  --_h: 44px;
+  --_px: 24px;
+  font-size: var(--fs-lg);
+}
+.nw-btn--lg svg {
+  width: 18px;
+  height: 18px;
+}
+.nw-btn--full {
+  width: 100%;
+}
+
+/* primary — solid accent pill, high-contrast label */
+.nw-btn--primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 8px 20px -10px var(--accent-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.nw-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+.nw-btn--primary:active:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+/* secondary — translucent fill pill, no stroke */
+.nw-btn--secondary {
+  background: var(--fill-3);
+  color: var(--text);
+  box-shadow: var(--shadow-inset-top);
+}
+.nw-btn--secondary:hover:not(:disabled) {
+  background: var(--fill-4);
+}
+
+/* outline — softest translucent fill (kept name, de-stroked) */
+.nw-btn--outline {
+  background: var(--fill-1);
+  color: var(--text-dim);
+}
+.nw-btn--outline:hover:not(:disabled) {
+  background: var(--fill-3);
+  color: var(--text);
+}
+
+/* ghost — no background until hover */
+.nw-btn--ghost {
+  background: transparent;
+  color: var(--text-dim);
+}
+.nw-btn--ghost:hover:not(:disabled) {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.nw-btn--danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.nw-btn--danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.nw-btn__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: nw-spin 0.6s linear infinite;
+}
+
+/* ==================================================================== Card == */
+.nw-card {
+  position: relative;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-1), var(--shadow-inset-top);
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease),
+    transform var(--t) var(--ease);
+}
+.nw-card--pad-none {
+  padding: 0;
+}
+.nw-card--pad-sm {
+  padding: var(--space-4);
+}
+.nw-card--pad-md {
+  padding: var(--space-5);
+}
+.nw-card--pad-lg {
+  padding: var(--space-6);
+}
+.nw-card--interactive {
+  cursor: pointer;
+}
+.nw-card--interactive:hover {
+  background: color-mix(in srgb, var(--card-bg) 84%, var(--text) 6%);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2), var(--shadow-inset-top);
+}
+.nw-card--glass {
+  background: var(--glass-card);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+.nw-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.nw-card__head:last-child {
+  margin-bottom: 0;
+}
+.nw-card__titles {
+  min-width: 0;
+}
+.nw-card__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  letter-spacing: 0.012em;
+  color: var(--text);
+  line-height: 1.25;
+}
+.nw-card__subtitle {
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+.nw-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ================================================================ Checkbox == */
+/* 自绘勾选框：方框 + 文案同属一个按钮，避免原生 checkbox 的 UA 样式。 */
+.nw-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: var(--lh-snug);
+  text-align: left;
+  cursor: pointer;
+}
+.nw-check__box {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+  /* 未选中也要在深色底上可辨认：用 fill-4 而不是 fill-3。 */
+  background: var(--fill-4);
+  color: transparent;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.nw-check__box svg {
+  width: 13px;
+  height: 13px;
+}
+.nw-check:hover:not(:disabled) .nw-check__box {
+  background: var(--ring);
+}
+.nw-check[data-checked="true"] .nw-check__box {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.nw-check[data-checked="true"]:hover:not(:disabled) .nw-check__box {
+  background: var(--accent-strong);
+}
+.nw-check__label {
+  min-width: 0;
+}
+/* 禁用态只降透明度，不改鼠标形态：悬停时由容器保持默认箭头。 */
+.nw-check:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.nw-check:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  border-radius: var(--radius-xs);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nw-check__box {
+    transition: none;
+  }
+}
+
+/* ================================================================== Switch == */
+.nw-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-3);
+  cursor: pointer;
+  transition: background var(--t) var(--ease);
+}
+.nw-switch[data-on="true"] {
+  background: var(--accent);
+}
+.nw-switch:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.nw-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.nw-switch__knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateY(-50%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  transition: left var(--t) var(--ease-spring);
+}
+.nw-switch[data-on="true"] .nw-switch__knob {
+  left: 22px;
+}
+
+.nw-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.nw-field__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.nw-field__label > strong {
+  font-weight: 600;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.nw-field__label > span {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+/* ================================================================== Slider == */
+.nw-slider {
+  --slider-track: var(--space-1);
+  --slider-thumb: var(--space-3);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: var(--space-8);
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.nw-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.nw-slider:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+.nw-slider::-webkit-slider-runnable-track {
+  height: var(--slider-track);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--_p, 0%),
+    var(--fill-3) var(--_p, 0%),
+    var(--fill-3) 100%
+  );
+}
+.nw-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
+  margin-top: calc((var(--slider-track) - var(--slider-thumb)) / 2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--t-fast) var(--ease);
+}
+.nw-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.nw-slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+.nw-slider::-moz-range-track {
+  height: var(--slider-track);
+  border-radius: var(--radius-pill);
+  background: var(--fill-3);
+}
+.nw-slider::-moz-range-progress {
+  height: var(--slider-track);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.nw-slider::-moz-range-thumb {
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.nw-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+.nw-slider-row__val {
+  flex: 0 0 auto;
+  min-width: 8ch;
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nw-slider::-webkit-slider-thumb {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ================================================================== Select == */
+.nw-select {
+  position: relative;
+  width: 100%;
+}
+.nw-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  color: var(--text);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+.nw-select--sm .nw-select__trigger {
+  height: 30px;
+  font-size: var(--fs-sm);
+}
+.nw-select__trigger:hover {
+  background: var(--fill-3);
+}
+.nw-select__trigger:focus-visible,
+.nw-select__trigger[data-open="true"] {
+  outline: none;
+  background: var(--fill-3);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.nw-select__trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.nw-select__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nw-select__value[data-placeholder="true"] {
+  color: var(--text-faint);
+}
+.nw-select__chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--text-faint);
+  position: relative;
+  top: var(--icon-optical-shift);
+  transition: transform var(--t) var(--ease);
+}
+.nw-select__trigger[data-open="true"] .nw-select__chevron {
+  transform: rotate(180deg);
+}
+.nw-select__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-overlay);
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-3);
+  animation: nw-pop var(--t) var(--ease-out) both;
+}
+@keyframes nw-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.nw-select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+.nw-select__option:hover:not(:disabled) {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.nw-select__option[data-selected="true"] {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.nw-select__option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nw-select__option:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--accent-ring);
+}
+.nw-select__option svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+/* ============================================================== IconButton == */
+.nw-iconbtn {
+  --_s: 32px;
+  display: inline-grid;
+  place-items: center;
+  width: var(--_s);
+  height: var(--_s);
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease),
+    box-shadow var(--t) var(--ease), transform var(--t-fast) var(--ease);
+}
+.nw-iconbtn svg {
+  width: 17px;
+  height: 17px;
+}
+.nw-iconbtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.nw-iconbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nw-iconbtn--sm {
+  --_s: 26px;
+}
+.nw-iconbtn--sm svg {
+  width: 14px;
+  height: 14px;
+}
+.nw-iconbtn--lg {
+  --_s: 40px;
+}
+.nw-iconbtn--lg svg {
+  width: 20px;
+  height: 20px;
+}
+.nw-iconbtn--ghost:hover:not(:disabled) {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.nw-iconbtn--solid {
+  background: var(--fill-3);
+  color: var(--text);
+}
+.nw-iconbtn--solid:hover:not(:disabled) {
+  background: var(--fill-4);
+}
+.nw-iconbtn--outline {
+  background: var(--fill-1);
+  color: var(--text);
+}
+.nw-iconbtn--outline:hover:not(:disabled) {
+  background: var(--fill-3);
+}
+.nw-iconbtn[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* =================================================================== Modal == */
+.nw-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: var(--overlay);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: nw-fade var(--t) var(--ease-out) both;
+}
+@keyframes nw-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.nw-modal {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-3), var(--shadow-inset-top);
+  overflow: hidden;
+  animation: nw-modal-in var(--t-slow) var(--ease-out) both;
+}
+.nw-modal:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-3), var(--shadow-inset-top),
+    0 0 0 3px var(--accent-ring);
+}
+@keyframes nw-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.nw-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-3);
+}
+.nw-modal__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: 0.012em;
+  color: var(--text);
+}
+.nw-modal__desc {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.nw-modal__body {
+  padding: 0 var(--space-5) var(--space-5);
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+}
+.nw-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--fill-1);
+}
+
+/* ====================================================== SegmentedControl == */
+.nw-seg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+}
+.nw-seg--full {
+  display: flex;
+  width: 100%;
+}
+.nw-seg__item {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+
+.nw-seg__pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 8px 20px -10px var(--accent-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--t) var(--ease-out), width var(--t) var(--ease-out),
+    opacity var(--t-fast) var(--ease);
+}
+
+.nw-seg__pill:not([data-ready="true"]) {
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.nw-seg__pill[data-ready="true"] {
+  opacity: 1;
+}
+.nw-seg--sm .nw-seg__item {
+  height: 26px;
+  padding: 0 11px;
+  font-size: var(--fs-sm);
+}
+.nw-seg--full .nw-seg__item {
+  flex: 1 1 0;
+}
+.nw-seg__item svg {
+  width: 15px;
+  height: 15px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+.nw-seg__item:hover:not([data-active="true"]) {
+  color: var(--text);
+  background: var(--fill-2);
+}
+.nw-seg__item[data-active="true"] {
+  color: var(--accent-fg);
+  background: transparent;
+}
+.nw-seg__item[data-active="true"]:hover {
+  color: var(--accent-fg);
+  background: transparent;
+}
+.nw-seg__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* ==================================================================== Tabs == */
+.nw-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nw-tabs--underline {
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--hairline);
+}
+.nw-tabs--pills {
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  align-self: flex-start;
+  gap: 3px;
+}
+.nw-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+.nw-tabs--pills .nw-tab {
+  height: 30px;
+  padding: 0 15px;
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.nw-tabs--pills .nw-tab:hover {
+  color: var(--text);
+  background: var(--fill-2);
+}
+.nw-tabs--pills .nw-tab[data-active="true"] {
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+.nw-tab svg {
+  width: 15px;
+  height: 15px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+.nw-tabs--underline .nw-tab:hover {
+  color: var(--text-dim);
+}
+.nw-tabs--underline .nw-tab[data-active="true"] {
+  color: var(--text);
+}
+.nw-tabs--underline .nw-tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--t) var(--ease-out);
+}
+.nw-tabs--underline .nw-tab[data-active="true"]::after {
+  transform: scaleX(1);
+}
+.nw-tab__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+}
+
+/* =================================================================== Chips == */
+.nw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.03em;
+}
+.nw-chip svg {
+  width: 13px;
+  height: 13px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+/* ================================================================= Tooltip == */
+/* 自绘悬浮提示：填充式气泡 + 柔和分层阴影（无 1px 描边）。
+   --tip-gap / --tip-edge 同时被 Tooltip.tsx 读取用于定位，
+   保证「视觉间距」与「定位计算」同源，两处不会各写一个魔法数字。 */
+.nw-tooltip {
+  --tip-gap: var(--space-2);
+  --tip-edge: var(--space-2);
+  --tip-shift-x: 0px;
+  --tip-shift-y: 4px;
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-width: min(72ch, calc(100vw - var(--space-6)));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: var(--lh-snug);
+  text-align: center;
+  white-space: pre-line;
+  text-wrap: pretty;
+  box-shadow: var(--shadow-2), var(--shadow-inset-top);
+  pointer-events: none;
+  animation: nw-tooltip-in var(--t-fast) var(--ease-out) both;
+}
+/* 键盘回退：位移朝向触发元素——气泡在上方就从下方滑入，在下方就从上方滑入。 */
+.nw-tooltip[data-side="bottom"] {
+  --tip-shift-y: -4px;
+}
+/* 指针跟随：气泡在指针右下浮现，从指针一侧（左上）滑入；越界翻转的轴对称反向。 */
+.nw-tooltip[data-side="pointer"] {
+  --tip-shift-x: -4px;
+  --tip-shift-y: -4px;
+}
+.nw-tooltip[data-side="pointer"][data-flip~="x"] {
+  --tip-shift-x: 4px;
+}
+.nw-tooltip[data-side="pointer"][data-flip~="y"] {
+  --tip-shift-y: 4px;
+}
+@keyframes nw-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--tip-shift-x), var(--tip-shift-y)) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ================================================= Motion: Reveal / Stagger == */
+/* Staggered entrance used between modules: each item fades in and rises 8px.
+   Compose with <Reveal index={i} /> or wrap a list in <Stagger />. */
+.nw-stagger {
+  display: contents;
+}
+.nw-reveal {
+  animation: nw-reveal-in var(--t-slow) var(--ease-out) both;
+  will-change: opacity, transform;
+}
+@keyframes nw-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================= AnimatedSwap == */
+/* Cross-fade between swapped content: the outgoing layer fades/rises out while
+   the incoming layer fades/rises in. Pure CSS — no animation dependency. */
+.nw-swap {
+  position: relative;
+}
+.nw-swap__layer--in {
+  animation: nw-swap-in var(--t) var(--ease-out) both;
+}
+.nw-swap__layer--out {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: nw-swap-out var(--t) var(--ease-out) both;
+}
+@keyframes nw-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nw-swap-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nw-reveal,
+  .nw-swap__layer--in,
+  .nw-swap__layer--out,
+  .nw-tooltip,
+  .nw-modal__backdrop,
+  .nw-modal,
+  .nw-select__menu {
+    animation: none !important;
+  }
+  /* 媒体查询先于 change 事件生效，立即隐藏正在退出的旧层。 */
+  .nw-swap__layer--out {
+    display: none;
+  }
+
+  .nw-switch,
+  .nw-switch__knob,
+  .nw-seg__pill,
+  .nw-seg__item,
+  .nw-select__trigger,
+  .nw-select__chevron,
+  .nw-select__option {
+    transition: none;
+  }
+}

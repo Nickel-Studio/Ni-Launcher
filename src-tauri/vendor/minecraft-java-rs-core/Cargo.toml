@@ -1,0 +1,42 @@
+# NoWheRE vendored fork of `minecraft-java-rs-core` 0.4.1
+#
+# 上游 0.4.1 把 Mojang 官方下载地址硬编码在源码中，且未暴露任何可注入的
+# base URL / 镜像配置（详见 src/mirror.rs 顶部说明）。为了支持「下载源切换」
+# 而又不做大改动，这里以本目录为本地 patch：仅新增 src/mirror.rs 并在两个
+# 网络收口点（net::http、net::downloader）做 URL 重写，其余逻辑与 0.4.1 完全一致。
+#
+# 依赖与原 crate 保持一致，避免引入任何新依赖。
+
+[package]
+name = "minecraft-java-rs-core"
+version = "0.4.1"
+edition = "2021"
+description = "Core library for launching Minecraft Java Edition (NoWheRE vendored fork with BMCLAPI support)"
+license = "MIT"
+repository = "https://github.com/fitzxel/minecraft-java-rs-core"
+
+[lib]
+name = "minecraft_java_rs_core"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = "0.1"
+flate2 = "1"
+futures = "0.3"
+md-5 = "0.10"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = { version = "0.10", features = ["std"] }
+sha2 = { version = "0.10", features = ["std"] }
+tar = "0.4"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+walkdir = "2"
+zip = "2"
+
+# 与原 crate 一致的测试依赖（仅单元/集成测试使用，应用构建不会编译它们）。
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"

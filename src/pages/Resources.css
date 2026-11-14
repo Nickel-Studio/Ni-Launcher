@@ -1,0 +1,143 @@
+﻿/* ============================================================================
+   资源中心 · 页面骨架（扫描面板的排版；侧边栏由 PagerLayout 提供）
+   仅使用 design tokens（src/styles/tokens.css），不硬编码颜色/圆角/字号。
+   ========================================================================== */
+
+.rs-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ 页头 --- */
+.rs-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.rs-head__titles {
+  min-width: 0;
+}
+
+.rs-head__title {
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+.rs-head__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--space-3);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.rs-head__meta svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.rs-head__meta-label {
+  flex: 0 0 auto;
+}
+
+.rs-head__root {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-head__root--empty {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.rs-head__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* --------------------------------------------------- 部分种类失败提醒条 --- */
+.rs-issues {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+
+.rs-issues__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--warning);
+}
+
+.rs-issues__item svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+
+/* ----------------------------------------------------------- 加载指示器 --- */
+.rs-loading__spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: nw-spin 0.8s linear infinite;
+}
+
+/* ---------------------------------------------------- 无障碍：减少动效 --- */
+@media (prefers-reduced-motion: reduce) {
+  .rs-issues {
+    animation: none;
+  }
+
+  .rs-loading__spinner {
+    animation: none;
+  }
+}
+
+.resources-browser {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.resources-browser[hidden] {
+  display: none;
+}

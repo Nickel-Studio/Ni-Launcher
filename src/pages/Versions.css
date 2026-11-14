@@ -1,0 +1,697 @@
+/* ============================================================================
+   版本管理页 · versions
+   全部颜色/圆角/字号/动效取自 design tokens（src/styles/tokens.css），无业务硬编码色。
+   设计语言：填充式圆角、无描边；层次靠「填充亮度差 + 柔和阴影」；
+   颜色主题（accent）只用于选中态 / 主操作 / 焦点环。
+   ========================================================================== */
+
+.vs-root {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+  min-width: 0;
+}
+
+/* 明暗模式 / 颜色主题切换时的平滑色彩过渡（与设置页同一做法）。 */
+:where(.vs-root, .vs-root *) {
+  transition-property: background-color, border-color, color, box-shadow, fill,
+    stroke;
+  transition-duration: var(--t);
+  transition-timing-function: var(--ease);
+}
+
+/* ------------------------------------------------ 左侧：实例目录导航 --- */
+.vs-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--glass-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+.vs-nav__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-left: var(--space-2);
+}
+
+.vs-nav__empty {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+.vs-nav__list {
+  position: relative;
+  --nav-item-h: 56px;
+  --nav-gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nav-gap);
+}
+
+/* 高亮胶囊：随激活项平滑滑动的颜色主题填充块（无描边）。 */
+.vs-nav__pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--nav-item-h);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  transform: translateY(
+    calc(var(--nav-index, 0) * (var(--nav-item-h) + var(--nav-gap)))
+  );
+  transition: transform var(--t-slow) var(--ease-out),
+    background-color var(--t) var(--ease);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 激活目录不在列表中（例如 gameDir 指向了未注册目录）时不要悬空显示胶囊。 */
+.vs-nav__list[data-has-active="false"] .vs-nav__pill {
+  opacity: 0;
+}
+
+.vs-nav__row {
+  position: relative;
+}
+
+.vs-nav__item {
+  position: relative;
+  z-index: 1;
+  /* 两行网格：图标与目录名同行，路径独占第二行并横跨整宽（这样才能放下更长的路径）。 */
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  width: 100%;
+  height: var(--nav-item-h);
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
+  /* 给右侧「移除」按钮留位，避免目录名与图标重叠。 */
+  padding-right: 40px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+
+.vs-nav__item:hover {
+  color: var(--text);
+  background: var(--fill-2);
+}
+
+.vs-nav__item.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.vs-nav__icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: inline-flex;
+  color: var(--text-faint);
+  transition: color var(--t) var(--ease);
+  /* 与 .nw-pager__icon 同理：补偿中文墨迹中心相对行盒中心的偏移。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.vs-nav__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.vs-nav__item:hover .vs-nav__icon {
+  color: var(--text-dim);
+}
+
+.vs-nav__item.is-active .vs-nav__icon {
+  color: var(--accent);
+}
+
+.vs-nav__name {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.vs-nav__path {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-faint);
+}
+
+/* 「从列表移除」：低频动作，平时半隐，hover / 键盘焦点时才完全亮起。 */
+.vs-nav__remove.nw-iconbtn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  z-index: 2;
+  /* 垂直定位独立于 IconButton 的按下 transform，避免鼠标松开时误选目录。 */
+  translate: 0 -50%;
+  opacity: 0.4;
+  transition: opacity var(--t) var(--ease), background var(--t) var(--ease),
+    color var(--t) var(--ease);
+}
+
+.vs-nav__row:hover .vs-nav__remove.nw-iconbtn,
+.vs-nav__row:focus-within .vs-nav__remove.nw-iconbtn {
+  opacity: 1;
+}
+
+.vs-nav__row:has(.vs-nav__menu) {
+  z-index: 5;
+}
+.vs-nav__menu {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  /* 与共享 Select 菜单同一入场曲线，避免自绘菜单硬弹出来。 */
+  animation: nw-pop var(--t) var(--ease-out) both;
+}
+.vs-nav__menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.vs-nav__menu button:hover {
+  background: var(--fill-2);
+}
+.vs-nav__menu button:focus-visible,
+.vs-nav__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.vs-nav__menu svg {
+  width: 16px;
+  height: 16px;
+  /* 菜单项同样是「图标 + 中文」：下移半像素对齐文字视觉中心。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+.vs-nav__menu .is-danger {
+  color: var(--danger);
+}
+.vs-nav__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.vs-nav__add .nw-btn {
+  justify-content: flex-start;
+}
+
+.vs-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+/* 自建输入框外观：不依赖浏览器默认边框与字体。 */
+.vs-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  outline: none;
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+
+.vs-dialog-input::placeholder {
+  color: var(--text-faint);
+}
+
+.vs-dialog-input:hover {
+  background: var(--fill-3);
+}
+
+.vs-dialog-input:focus,
+.vs-dialog-input:focus-visible {
+  background: var(--fill-3);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.vs-dialog-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------ 右侧：标题 + 卡片区 --- */
+.vs-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* 加载态：内容区至少撑满一屏，右列在页头以下垂直居中。 */
+.vs-root--loading {
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+  align-items: stretch;
+}
+
+.vs-root--loading .vs-main > .nw-loading {
+  flex: 1 1 auto;
+}
+
+.vs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.vs-head__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* 返回按钮自占一行（独立页头部约定：返回入口在标题上方）。 */
+.vs-head__back {
+  align-self: flex-start;
+  margin: 0 0 var(--space-1) calc(var(--space-3) * -1);
+}
+
+.vs-head__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.vs-head__meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  min-width: 0;
+}
+
+.vs-head__meta svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.vs-head__root {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.vs-head__root--empty {
+  color: var(--text-faint);
+}
+
+.vs-head__launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.vs-head__launch svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.vs-head__launch-id {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.vs-head__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------- 操作失败提示条 --- */
+.vs-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.vs-alert svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  /* flex-start 布局：按第一行行盒（12px × 1.5 = 18px）居中，再补半像素。 */
+  margin-top: 2px;
+}
+
+/* --------------------------------------------------------- 卡片网格 --- */
+.vs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.vs-card.nw-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation-delay: calc(min(var(--vs-index, 0), 8) * 26ms);
+}
+
+.vs-card:hover {
+  background: var(--surface-2);
+  box-shadow: var(--shadow-2), var(--shadow-inset-top);
+  transform: translateY(-1px);
+}
+
+.vs-card:focus-within {
+  box-shadow: 0 0 0 2px var(--accent-ring), var(--shadow-2),
+    var(--shadow-inset-top);
+}
+
+.vs-card.is-selected {
+  background: var(--accent-soft);
+}
+
+.vs-card__select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 54px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 覆盖整张卡片，扩大点击热区；底部工具按钮以 z-index 浮在其上。 */
+.vs-card__select::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+}
+
+.vs-card__select:focus-visible {
+  outline: none;
+}
+
+.vs-card:has(.vs-card__select:focus-visible) {
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.vs-card__select:disabled {
+  cursor: default;
+}
+
+.vs-card__icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.vs-card__head {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.vs-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.vs-card__subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+
+.vs-card__selected {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.vs-card__selected svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vs-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 30px;
+  padding-top: var(--space-1);
+}
+
+.vs-card__tools {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: var(--space-1);
+}
+
+.vs-card__favorite.is-favorite {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.vs-card__broken {
+  margin-right: auto;
+  color: var(--danger);
+  font-size: var(--fs-xs);
+}
+
+/* --------------------------------------------------------------- 状态 --- */
+.vs-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 340px;
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  background: var(--glass-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+}
+
+.vs-notice__icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: var(--radius-lg);
+  background: var(--fill-2);
+  color: var(--text-dim);
+}
+
+.vs-notice__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.vs-notice__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  color: var(--text);
+}
+
+.vs-notice__hint {
+  max-width: 480px;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+}
+
+.vs-notice__detail {
+  max-width: 620px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-1);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.vs-notice__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* --------------------------------------------- 无障碍：减少动态偏好 --- */
+@media (prefers-reduced-motion: reduce) {
+  :where(.vs-root, .vs-root *) {
+    transition: none;
+  }
+
+  .vs-nav__pill {
+    transition: none;
+  }
+
+  .vs-nav__item,
+  .vs-nav__remove.nw-iconbtn,
+  .vs-card.nw-card,
+  .vs-card__tools .nw-iconbtn,
+  .vs-head__back.nw-btn {
+    transition: none;
+  }
+
+  .vs-card.nw-card,
+  .vs-notice,
+  .vs-nav__menu {
+    animation: none;
+  }
+
+  .vs-card:hover {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------- 窄窗：侧栏转为横向排列 --- */
+@media (max-width: 880px) {
+  .vs-root {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .vs-nav {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .vs-nav__list {
+    flex-direction: row;
+  }
+
+  /* 横向排布时胶囊定位失效，回退为逐项填充高亮。 */
+  .vs-nav__pill {
+    display: none;
+  }
+
+  .vs-nav__item.is-active {
+    background: var(--accent-soft);
+  }
+
+  .vs-nav__row {
+    flex: 1 1 0;
+    min-width: 216px;
+  }
+}

@@ -1,0 +1,344 @@
+/* 社区详情：信息卡、版本筛选 pill 与加载器×版本折叠分组，共用外层滚动。
+   单行版本卡行高 42px、发布图标 32px；
+   懒挂载占位与真实行共用 --pd-row-height，展开高度不跳动。 */
+.pd-page,
+.pd-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.pd-page {
+  /* 单行版本卡行高 42px；占位与真实行共用。 */
+  --pd-row-height: 42px;
+  padding-bottom: var(--space-6);
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+.pd-back__icon {
+  transform: rotate(90deg);
+}
+.pd-card,
+.pd-group {
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-inset-top);
+}
+.pd-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+.pd-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.pd-card__head > .nw-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.pd-card__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.pd-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pd-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.pd-card__desc {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pd-error,
+.pd-card__empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  overflow-wrap: anywhere;
+}
+.pd-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.pd-error svg {
+  flex: 0 0 auto;
+  width: var(--space-4);
+  height: var(--space-4);
+  /* flex-start 布局：按第一行行盒（12px × 1.4 ≈ 16.8px）居中，再补半像素。 */
+  margin-top: 1px;
+}
+.pd-error p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.pd-card__empty {
+  background: var(--fill-2);
+  color: var(--text-dim);
+}
+/* 版本筛选 pill 行（单选；选项 <2 时整行不渲染）。 */
+.pd-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.pd-pill {
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.pd-pill:hover {
+  background: var(--fill-3);
+  color: var(--text);
+}
+.pd-pill[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.pd-group__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t) var(--ease);
+}
+.pd-group__toggle:hover {
+  background: var(--fill-2);
+}
+.pd-group__title {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.pd-group__count {
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+.pd-group__chevron {
+  margin-left: auto;
+  color: var(--text-dim);
+  position: relative;
+  top: var(--icon-optical-shift);
+  transition: transform var(--t) var(--ease);
+}
+.pd-group[data-open="true"] > .pd-group__toggle .pd-group__chevron {
+  transform: rotate(180deg);
+}
+/* 「其他版本」卡的收录延迟提示（行动导向短句）。 */
+.pd-group__hint {
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--fill-1);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+.pd-list {
+  list-style: none;
+  margin: 0;
+  /* R4：组内容区顶部间距 = 卡间距，组标题 hover 白光与首卡不再无缝拼接。 */
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.pd-group__collapse {
+  min-width: 0;
+}
+/* 懒挂载占位：未进入视口的行只占一行高度。 */
+.pd-row-slot:not([data-mounted]) {
+  height: var(--pd-row-height);
+}
+/* 单行版本卡：发布类型图标 + 显示名 + 版本号 + 弹性空隙 + 加载器/大小/时间 + 状态。 */
+.pd-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--pd-row-height);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  color: inherit;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t) var(--ease);
+}
+.pd-row:hover {
+  background: var(--fill-4);
+}
+.pd-row:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* Nickel 立方徽记：64px 源图行内显示为 32px（2x 清晰）。 */
+.pd-row__release {
+  flex: 0 0 auto;
+  width: var(--space-7);
+  height: var(--space-7);
+  object-fit: contain;
+  image-rendering: auto;
+}
+.pd-row__main {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.pd-row__name,
+.pd-row__number {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-row__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.pd-row__number {
+  flex: 0 2 auto;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.pd-row__meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.pd-row__loader {
+  max-width: 160px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--fill-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-row__size,
+.pd-row__time {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.pd-row__status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.pd-row__status svg {
+  width: var(--space-4);
+  height: var(--space-4);
+}
+.pd-name-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+.pd-name-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  background: var(--fill-2);
+  color: var(--text);
+  font: inherit;
+}
+.pd-group__toggle:focus-visible,
+.pd-pill:focus-visible,
+.pd-row:focus-visible,
+.pd-name-input:focus-visible,
+.pd-name-modal .nw-btn:focus-visible,
+.pd-error .nw-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 calc(var(--space-1) / 2) var(--accent-ring);
+}
+@media (max-width: 720px) {
+  .pd-card__head {
+    flex-wrap: wrap;
+  }
+  .pd-card__head > .nw-btn {
+    margin-left: auto;
+  }
+  /* 窄屏隐藏大小与相对时间，保留显示名 / 版本号 / 状态。 */
+  .pd-row__size,
+  .pd-row__time {
+    display: none;
+  }
+  .pd-row__loader {
+    max-width: 96px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pd-page {
+    animation: none;
+  }
+  .pd-group__toggle,
+  .pd-group__chevron,
+  .pd-pill,
+  .pd-row {
+    transition: none;
+  }
+}

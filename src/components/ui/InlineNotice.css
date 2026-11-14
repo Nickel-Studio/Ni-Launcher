@@ -1,0 +1,101 @@
+/* 行内通知：状态变化时淡入；颜色只来自 design tokens。 */
+.nw-inline-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  box-shadow: var(--shadow-inset-top);
+  animation: nw-inline-notice-in var(--t) var(--ease-out) both;
+}
+
+.nw-inline-notice[data-tone="success"] {
+  background: var(--success-soft);
+  color: var(--text);
+}
+
+.nw-inline-notice[data-tone="warning"] {
+  background: var(--warning-soft);
+  color: var(--text);
+}
+
+.nw-inline-notice[data-tone="danger"] {
+  background: var(--danger-soft);
+  color: var(--text);
+}
+
+.nw-inline-notice__icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  /* 行内通知是 flex-start：图标按第一行行盒居中（标题 12px × 1.4 ≈ 16.8px），
+     原先额外的 1px 上边距会让它压低约 1px，这里不再叠加偏移。 */
+  color: var(--accent);
+}
+
+.nw-inline-notice[data-tone="success"] .nw-inline-notice__icon {
+  color: var(--success);
+}
+
+.nw-inline-notice[data-tone="warning"] .nw-inline-notice__icon {
+  color: var(--warning);
+}
+
+.nw-inline-notice[data-tone="danger"] .nw-inline-notice__icon {
+  color: var(--danger);
+}
+
+.nw-inline-notice__icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.nw-inline-notice__content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.nw-inline-notice__title {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  line-height: var(--lh-snug);
+}
+
+.nw-inline-notice__message {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  overflow-wrap: anywhere;
+}
+
+.nw-inline-notice__action {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+@keyframes nw-inline-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nw-inline-notice {
+    animation: none;
+  }
+}

@@ -1,0 +1,323 @@
+.vst-mods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  /* 撑满右侧滚动区：短列表时批量操作窗仍贴底，长列表时由 sticky 接管。 */
+  min-height: 100%;
+}
+
+.vst-mods__search {
+  padding: var(--space-4);
+}
+
+.vst-mods__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.vst-mods__list {
+  padding: var(--space-3);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-1);
+  border-radius: var(--radius-lg);
+}
+
+.vst-mods__entries {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vst-mod {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+
+.vst-mod:hover,
+.vst-mod:focus-within {
+  background: var(--fill-2);
+}
+.vst-mod[data-selected="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset var(--space-1) 0 var(--accent);
+  animation: vst-mod-select-in var(--t) var(--ease-out);
+}
+
+/* 选中时从普通填充过渡到信号色底，并让左侧强调条从 0 展开。 */
+@keyframes vst-mod-select-in {
+  from {
+    background: var(--fill-2);
+    box-shadow: inset 0 0 0 var(--accent);
+    transform: translateX(calc(var(--space-1) * -0.5));
+  }
+  to {
+    background: var(--accent-soft);
+    box-shadow: inset var(--space-1) 0 var(--accent);
+    transform: none;
+  }
+}
+
+.vst-mod__select {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vst-mod__select:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+
+.vst-mod__select:disabled {
+  cursor: default;
+}
+
+/* 占位图保持透明无框：不加背景、描边、圆角或阴影容器。 */
+.vst-mod__icon {
+  display: grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  flex: 0 0 var(--space-8);
+  color: var(--text-dim);
+  font-size: var(--fs-xl);
+}
+
+.vst-mod__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 占位图是像素画；真实 Mod 图标多为高分辨率，不做 pixelated 缩放。 */
+.vst-mod__icon img[data-placeholder="true"] {
+  image-rendering: pixelated;
+}
+
+.vst-mod__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vst-mod__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.vst-mod__version,
+.vst-mod__description {
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.vst-mod__description {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 真实元数据到达时轻量淡入：只改透明度，不改变行高或行顺序。 */
+@keyframes vst-mod-meta-in {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vst-mod__text[data-meta="true"] {
+  animation: vst-mod-meta-in 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vst-mod__text[data-meta="true"],
+  .vst-mod[data-selected="true"],
+  .vst-mods__selection {
+    animation: none;
+  }
+
+  .vst-mods__selection[data-leaving="true"] {
+    animation: none;
+  }
+
+  .vst-mod {
+    transition: none;
+  }
+}
+
+.vst-mod[data-enabled="false"] .vst-mod__text {
+  color: var(--text-dim);
+}
+
+.vst-mod__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.vst-mods__selection {
+  position: sticky;
+  bottom: var(--space-2);
+  /* margin-top:auto 把窗口压在可用高度底部；内容超出时 sticky 仍贴住视口底部。 */
+  margin-top: auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(var(--space-3));
+  z-index: 2;
+  animation: vst-mods-selection-in var(--t) var(--ease-out) both;
+}
+
+.vst-mods__selection[data-leaving="true"] {
+  animation: vst-mods-selection-out var(--t) var(--ease) both;
+  pointer-events: none;
+}
+
+@keyframes vst-mods-selection-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-3)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vst-mods-selection-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--space-3)) scale(0.98);
+  }
+}
+
+.vst-mods__selection-count {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.vst-mods__notice,
+.vst-mods__source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.vst-mods__source {
+  display: block;
+  background: var(--fill-1);
+}
+
+.vst-mod__update-error {
+  display: block;
+  color: var(--danger);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.vst-mods__paths {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vst-mods__paths span {
+  overflow-wrap: anywhere;
+}
+
+.vst-mods__empty {
+  margin: var(--space-6) var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.vst-mods__metadata {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.vst-mods__metadata dt {
+  color: var(--text-dim);
+}
+
+.vst-mods__metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 扫描失败行：文字与“重新扫描”按钮垂直居中，按钮靠右且不挤压正文。 */
+.vst-mods .vst-alert {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.vst-mods .vst-alert > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vst-mods .vst-alert > .nw-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
+  white-space: nowrap;
+}

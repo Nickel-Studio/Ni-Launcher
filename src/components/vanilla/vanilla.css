@@ -1,0 +1,426 @@
+/* ============================================================================
+   原版游戏 · 线上版本下载页
+   全部颜色、圆角、字号、动效取自 design tokens（src/styles/tokens.css）；
+   搜索框复用 modrinth.css 的 .mr-search（该样式随 ModrinthSearchPage 一起加载）。
+   ========================================================================== */
+
+/* 页面骨架：与社区资源页的 .mr-page 同构（flex 纵向 + gap），
+   保证页头与卡片区、卡片区与分组之间有稳定间距，不会贴在一起。 */
+.van-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+/* 加载态：页面骨架撑满右侧滚动区，让卡片在页头以下垂直居中。 */
+.van-page--loading {
+  min-height: 100%;
+  padding-bottom: 0;
+}
+
+/* 与 nw-pager--fill 一致：跨过 AnimatedSwap 的 auto 高度，恢复页头以下居中。 */
+.nw-pager--fill .van-page--loading {
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+}
+
+.van-page--loading > .nw-loading {
+  flex: 1 1 auto;
+}
+
+.van-page__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.van-page__titles {
+  min-width: 0;
+}
+
+.van-page__title {
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+
+.van-page__sub {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.van-page__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+/* ------------------------------------------------------------- 下载源切换 */
+.van-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.van-source__label {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.van-source__options {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+}
+
+.van-source__option {
+  border: 0;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
+}
+
+.van-source__option:hover {
+  color: var(--text);
+}
+
+.van-source__option[data-active="true"] {
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------- 最新版本卡 */
+.van-latest {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.van-latest__card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease),
+    background var(--t) var(--ease);
+}
+
+.van-latest__card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-3);
+}
+
+.van-latest__card:active {
+  transform: translateY(0);
+}
+
+.van-latest__icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  image-rendering: auto;
+  /* 图标自带完整像素画面：不再叠加底色/阴影，避免“图标外再画一层框”。 */
+  border-radius: var(--radius-sm);
+}
+
+.van-latest__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.van-latest__label {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.van-latest__id {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.van-latest__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.van-latest__date svg {
+  width: 12px;
+  height: 12px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.van-latest__card:focus-visible,
+.van-version:focus-visible,
+.van-group__head:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* 搜索无结果：提供明确原因与可执行的清除入口。 */
+.van-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--fill-1);
+  text-align: center;
+}
+
+.van-empty__icon {
+  display: grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-faint);
+}
+
+.van-empty__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.van-empty__title {
+  margin: 0;
+  max-width: 100%;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+
+.van-empty__hint {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+/* ------------------------------------------------------------ 折叠分组 */
+.van-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.van-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--fill-1);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+
+.van-group__head:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.van-group__arrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  /* 与分组标题同一行：在不改变旋转中心的前提下补半像素。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+  transform: rotate(-90deg);
+  transition: transform var(--t) var(--ease);
+  color: var(--text-faint);
+}
+.van-group__arrow svg {
+  width: 100%;
+  height: 100%;
+}
+.van-group__arrow[data-open="true"] {
+  transform: rotate(0deg);
+}
+
+.van-group__title {
+  color: var(--text);
+}
+
+.van-group__count {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+/* 分组不建立第二层滚动容器：全部版本由右侧 Pager 页统一滚动，长列表保持可达。 */
+.van-group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.van-version {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  border: 0;
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t) var(--ease);
+}
+
+.van-version:hover {
+  background: var(--fill-2);
+}
+
+.van-version[data-selected="true"] {
+  background: var(--accent-soft);
+}
+
+.van-version__id {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.van-version__meta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.van-version__type {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+}
+
+.van-version__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.van-version__date svg {
+  width: 12px;
+  height: 12px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+/* ---- Blocks 图标（版本行 / 加载器行）：纯净渲染，不加底框 ---- */
+.van-version__icon,
+.van-loader__icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: auto;
+  flex: 0 0 auto;
+  border-radius: var(--radius-xs);
+}
+
+/* ============================================================================
+   动画补齐：加载器步骤切换与页面内容进场
+   （分组开合由共享 Collapse 负责；均尊重 prefers-reduced-motion）
+   ========================================================================== */
+.van-picker {
+  animation: van-list-in var(--t-slow) var(--ease-out) both;
+}
+
+.van-loader {
+  animation: van-item-in var(--t) var(--ease-out) both;
+  animation-delay: calc(var(--van-index, 0) * 30ms);
+}
+
+.van-latest__card {
+  animation: van-item-in var(--t-slow) var(--ease-out) both;
+}
+
+.van-latest__card:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+@keyframes van-list-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes van-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 上面新增的进场动画在减少动效偏好下一律关闭。 */
+@media (prefers-reduced-motion: reduce) {
+  .van-picker,
+  .van-loader,
+  .van-latest__card {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .van-latest__card,
+  .van-group__arrow,
+  .van-version,
+  .van-source__option {
+    transition: none;
+  }
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Mod 扫描与设置说明回归</title>
+    <style>
+      html, body { height: 100%; overflow: auto; background: var(--bg); }
+      #root { height: 100%; }
+      .fixture-wrap { height: 100%; padding: var(--space-4); box-sizing: border-box; overflow: auto; }
+      #regression-result { margin: var(--space-4); padding: var(--space-4); color: var(--text); background: var(--surface); border-radius: var(--radius-md); white-space: pre-wrap; font: var(--fs-xs) / var(--lh-normal) var(--font-mono); }
+      html[data-visual] #regression-result { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="regression-result" aria-live="polite">正在运行回归…</pre>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

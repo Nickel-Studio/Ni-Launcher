@@ -1,0 +1,333 @@
+/* ============================================================================
+   Modrinth 社区资源 · 检索列表 / 结果卡（项目详情页样式见 community/projectDetail.css）
+   仅使用 design tokens（src/styles/tokens.css），不硬编码颜色/圆角/字号。
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 页面骨架 */
+.mr-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+/* ------------------------------------------------------------------ 搜索框 */
+/* 注意：input 是原生 type="search"，WebView 的 UA 样式会在 focus 时画一圈直角描边
+   （外框之外的第二层框）。这里用 appearance:none + outline:none + border:0 把原生
+   装饰彻底剥掉，只保留外层 .mr-search 自己的圆角焦点环 —— 否则会出现「一个直角
+   输入框 + 一个圆角外框」的双框观感。 */
+.mr-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(340px, 100%);
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text-faint);
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease),
+    color var(--t) var(--ease);
+}
+
+.mr-search:focus-within {
+  background: var(--fill-3);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  /* 聚焦后把整组提亮一档，placeholder 随之变白，增强可读性。 */
+  color: var(--text-dim);
+}
+
+.mr-search svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.mr-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+}
+
+.mr-search input::placeholder {
+  color: var(--text-faint);
+  transition: color var(--t) var(--ease);
+}
+
+/* 聚焦时灰字轻微变白（提亮到次要文字色），增强可读性。 */
+.mr-search:focus-within input::placeholder {
+  color: var(--text-dim);
+}
+
+.mr-search input:focus {
+  outline: none;
+  /* 第二层框的最后一个来源：UA 对 :focus-visible 的默认描边。 */
+  box-shadow: none;
+}
+
+.mr-search input::-webkit-search-cancel-button,
+.mr-search input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ------------------------------------------------------------ 结果列表 / 卡片 */
+.mr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 卡片用 grid：卡身占主列、动作区贴右（展开版本区已移除，点卡进独立详情页）。 */
+.mr-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0 var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-inset-top);
+  transition: background var(--t) var(--ease);
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+.mr-card:hover {
+  background: var(--surface-2);
+}
+
+.mr-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: default;
+}
+
+.mr-card__body[data-clickable="true"] {
+  cursor: pointer;
+}
+
+.mr-card__body:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  border-radius: var(--radius-lg);
+}
+
+.mr-card__icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mr-card__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mr-card__icon-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-faint);
+  font-size: var(--fs-xl);
+}
+
+.mr-card__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mr-card__title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.mr-card__name {
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr-card__author {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.mr-card__desc {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mr-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.mr-card__downloads {
+  color: var(--text-dim);
+}
+
+/* 来源徽标：检索来源小胶囊（Modrinth / CurseForge），合并检索时区分条目出处。 */
+.mr-card__source {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.mr-card__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding-right: var(--space-4);
+}
+
+.mr-card__link {
+  border: 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+
+.mr-card__link:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.mr-card__link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+/* ------------------------------------------------------------ 空态 / 提示 */
+.mr-page__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+
+.mr-page__notice[role="alert"] {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.mr-page__notice svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.mr-page__notice p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.mr-page__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+}
+
+.mr-page__error svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+/* ---------------------------------------------------------------- 响应式 */
+@media (max-width: 720px) {
+  .mr-card__actions {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------- 无障碍：减少动效 */
+@media (prefers-reduced-motion: reduce) {
+  .mr-card,
+  .mr-page__notice {
+    animation: none;
+  }
+
+  .mr-search,
+  .mr-card,
+  .mr-card__link {
+    transition: none;
+  }
+}

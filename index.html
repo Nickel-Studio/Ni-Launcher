@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/src/assets/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Nickel</title>
+    <script>
+      // 首次绘制前读取原存储键，避免升级后丢失明暗模式和颜色主题。
+      (function () {
+        try {
+          var raw = localStorage.getItem("nowhere.settings");
+          var settings = raw ? JSON.parse(raw) : {};
+          var mode = settings && settings.themeMode;
+          var resolved = "dark";
+          if (mode === "light" || mode === "dark") {
+            resolved = mode;
+          } else if (mode === "system") {
+            resolved = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          var root = document.documentElement;
+          root.dataset.theme = resolved;
+          root.dataset.accent = (settings && settings.accent) || "mono";
+          root.dataset.hasBg =
+            settings && settings.backgroundImage ? "true" : "false";
+        } catch {
+          document.documentElement.dataset.theme = "dark";
+          document.documentElement.dataset.accent = "mono";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        /* 透明窗口的圆角外侧必须保持透明。 */
+        background: transparent;
+      }
+      #nw-splash {
+        position: fixed;
+        inset: 0;
+        z-index: var(--z-splash);
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        user-select: none;
+        -webkit-user-select: none;
+        border-radius: var(--shell-radius);
+        overflow: hidden;
+        background: var(--bg);
+        transition: opacity var(--t-slow) var(--ease-out);
+      }
+      #nw-splash.nw-splash--leaving {
+        opacity: 0;
+      }
+      .nw-splash__inner {
+        position: relative;
+        display: grid;
+        place-items: center;
+        animation: nw-splash-in var(--t-accent) var(--ease-out) both;
+      }
+      .nw-splash__mark {
+        display: grid;
+        place-items: center;
+        width: calc(var(--space-7) * 3);
+        height: calc(var(--space-7) * 3);
+      }
+      .nw-splash__mark img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .nw-splash__word {
+        position: absolute;
+        top: calc(100% + var(--space-5));
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: var(--font-display);
+        font-size: var(--fs-xl);
+        font-weight: 600;
+        line-height: var(--lh-tight);
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .nw-splash__bar {
+        position: absolute;
+        top: calc(100% + var(--space-8) + var(--space-4));
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(var(--space-7) * 4);
+        height: var(--space-1);
+        border-radius: var(--radius-pill);
+        overflow: hidden;
+        background: var(--fill-2);
+      }
+      .nw-splash__bar span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--text);
+        animation: nw-splash-bar var(--t-mining) var(--ease-out) infinite;
+      }
+      @keyframes nw-splash-in {
+        from {
+          opacity: 0;
+          transform: translateY(var(--space-2));
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes nw-splash-bar {
+        from {
+          margin-left: -42%;
+        }
+        to {
+          margin-left: 102%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #nw-splash {
+          transition: none;
+        }
+        .nw-splash__inner,
+        .nw-splash__bar span {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="nw-splash" role="status" aria-label="正在启动 Nickel">
+      <div class="nw-splash__inner">
+        <div class="nw-splash__mark">
+          <img
+            src="/src/assets/logo.png"
+            alt=""
+            width="96"
+            height="96"
+            draggable="false"
+          />
+        </div>
+        <div class="nw-splash__word">Nickel</div>
+        <div class="nw-splash__bar"><span></span></div>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

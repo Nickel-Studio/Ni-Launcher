@@ -1,0 +1,37 @@
+[package]
+name = "ni-launcher"
+version = "0.4.0"
+description = "Nickel — Minecraft Java Edition launcher"
+authors = ["ItzArona", "ItzPlana"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/Nickel-Studio/Ni-Launcher"
+homepage = "https://github.com/Nickel-Studio/Ni-Launcher"
+edition = "2024"
+
+[lib]
+# 独立库名避免 Windows 链接时与二进制产物冲突。
+name = "ni_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+# 账号与加密密钥来自同一配置根；解密限定在后端认证流程。
+aes-gcm = "0.10"
+# 核心统一处理下载来源、传输预算与加载器解析；认证使用独立 HTTP 边界。
+minecraft-java-rs-core = { path = "vendor/minecraft-java-rs-core" }
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

@@ -1,0 +1,160 @@
+/* 下载浮层：视口大小的裁切容器（overflow:hidden 把波纹裁在视口内，
+   避免窄窗横向滚动）；气泡绝对锚定右下角。波纹只在新增任务时播放，不循环。 */
+.dl-overlay {
+  /* 40px 圆形入口（--space-7 32 + --space-2 8）。 */
+  --dl-bubble-size: calc(var(--space-7) + var(--space-2));
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-chrome);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.dl-bubble {
+  position: absolute;
+  right: var(--gutter);
+  bottom: var(--gutter);
+  display: grid;
+  place-items: center;
+  width: var(--dl-bubble-size);
+  height: var(--dl-bubble-size);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: var(--shadow-3);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: dl-bubble-in var(--t-slow) var(--ease-out) both;
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+
+.dl-bubble:hover {
+  background: var(--accent-strong);
+  box-shadow: var(--shadow-2);
+}
+.dl-bubble:focus-visible,
+.dl-top:focus-visible {
+  outline: var(--space-1) solid var(--accent-ring);
+  outline-offset: var(--space-1);
+}
+
+/* 水位：对比色半透明矩形从底部按全局进度裁剪上升。
+   颜色走 accent-fg 令牌，明暗模式与各色主题下都与按钮底色形成可见水位差。 */
+.dl-bubble__water {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent-fg);
+  opacity: 0.18;
+  pointer-events: none;
+  transition: clip-path var(--t-slow) var(--ease-out);
+}
+
+.dl-bubble__glyph,
+.dl-top__glyph {
+  display: grid;
+  place-items: center;
+}
+/* 下载入口内图标为 16px；回到顶部按钮沿用较大的 19px 图标。 */
+.dl-bubble__glyph {
+  font-size: var(--space-4);
+}
+.dl-top__glyph {
+  font-size: var(--fs-xl);
+}
+.dl-bubble__multiple {
+  position: absolute;
+  width: var(--space-1);
+  height: var(--space-1);
+  bottom: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* 波纹锚定气泡中心（右下角 gutter + 半个气泡）；容器 inset:0 + overflow:hidden
+   把波纹裁在视口内，窄窗不产生横向滚动。 */
+.dl-overlay__ripple {
+  position: absolute;
+  right: calc(var(--gutter) + var(--dl-bubble-size) / 2);
+  bottom: calc(var(--gutter) + var(--dl-bubble-size) / 2);
+  width: calc(var(--space-8) * 8);
+  height: calc(var(--space-8) * 8);
+  border-radius: var(--radius-pill);
+  background: radial-gradient(
+    circle,
+    transparent 48%,
+    var(--accent-ring) 50%,
+    transparent 54%
+  );
+  transform: translate(50%, 50%) scale(0);
+  opacity: 0;
+  animation: dl-ripple-in calc(var(--t-slow) * 3) var(--ease-out) both;
+}
+
+.dl-top {
+  position: fixed;
+  right: var(--gutter);
+  bottom: calc(var(--gutter) + var(--space-8) + var(--space-6));
+  z-index: var(--z-chrome);
+  display: grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--card-bg);
+  color: var(--text-dim);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  animation: dl-bubble-in var(--t) var(--ease-out) both;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.dl-top:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.dl-top__glyph {
+  font-size: var(--fs-xl);
+}
+
+@keyframes dl-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4)) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes dl-ripple-in {
+  0% {
+    opacity: 0;
+    transform: translate(50%, 50%) scale(0.15);
+  }
+  18% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(50%, 50%) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-bubble,
+  .dl-top {
+    animation: none;
+    transition: none;
+  }
+  .dl-overlay__ripple {
+    display: none;
+    animation: none;
+  }
+  /* 水位静态：保留填充高度，只关闭上升过渡。 */
+  .dl-bubble__water {
+    transition: none;
+  }
+}

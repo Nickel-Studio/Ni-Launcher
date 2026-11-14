@@ -1,0 +1,319 @@
+/* 下载页：左栏全局统计大数字 + 右栏命名阶段任务卡。
+   明暗模式与颜色主题共用令牌；深度用填充 + 柔和阴影，不用 1px 描边。 */
+.dd-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  animation: nw-fade-up var(--t) var(--ease-out) both;
+}
+.dd-page__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.dd-page__title {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+/* 移除灰字眉题后，「下载任务」自己就是左对齐主体，与下方内容同一条边。 */
+.dd-page__title h1 {
+  margin: 0;
+  color: var(--text);
+  font: 650 var(--fs-xl) / var(--lh-tight) var(--font-display);
+}
+.dd-page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.dd-count {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* 左右两栏：窄窗时任务卡在前、统计在后（沿用既有 grid-area 语义）。 */
+.dd-root {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
+  grid-template-areas: "side main";
+  align-items: start;
+  gap: var(--space-6);
+  min-width: 0;
+}
+/* 空态不保留左栏，让图标与文案在整块内容区水平居中。 */
+.dd-root[data-empty="true"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main";
+}
+.dd-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.dd-main {
+  grid-area: main;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 左栏全局统计：以居中大数字显示总进度、速度与剩余文件。 */
+.dd-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+.dd-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  text-align: center;
+}
+.dd-stat__label {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+.dd-stat__value {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* 任务卡：一任务一卡，标题 + 右上角 X，卡内一行一个命名阶段。 */
+.dd-card {
+  /* 阶段行高 26px；局部布局常量，不是颜色/圆角/字号令牌。 */
+  --dd-stage-row-h: 26px;
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+}
+.dd-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.dd-card__head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font: 650 var(--fs-lg) / var(--lh-snug) var(--font-display);
+  overflow-wrap: anywhere;
+}
+.dd-cancel.nw-iconbtn {
+  flex: 0 0 auto;
+  background: var(--fill-2);
+  color: var(--text-dim);
+}
+.dd-cancel.nw-iconbtn:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--fill-hover);
+}
+
+/* 阶段行：左状态列（对勾 / 整数% / 加载图标 / 队列序号）+ 右阶段名。 */
+.dd-stages {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dd-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--dd-stage-row-h);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.dd-stage[data-current="true"] {
+  color: var(--text);
+}
+.dd-stage__status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+.dd-stage[data-current="true"] .dd-stage__status {
+  color: var(--accent);
+}
+.dd-stage__status svg {
+  font-size: var(--fs-lg);
+}
+.dd-stage__spin {
+  animation: nw-spin 1s linear infinite;
+}
+.dd-stage__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 运行中任务的临时说明（取消收尾 / 取消失败原因）。 */
+.dd-card__note {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--fill-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  overflow-wrap: anywhere;
+}
+.dd-card__note[data-tone="warning"] {
+  color: var(--warning);
+}
+.dd-card__note[data-tone="danger"] {
+  color: var(--danger);
+}
+
+/* 失败卡：叉 + 可点击复制的错误文本 + 复制反馈。 */
+.dd-failure {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.dd-failure__mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--space-6);
+  color: var(--danger);
+  font-size: var(--fs-lg);
+}
+.dd-failure__text {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: color var(--t) var(--ease);
+}
+.dd-failure__text:hover {
+  color: var(--text);
+}
+.dd-failure__feedback {
+  margin: var(--space-2) 0 0;
+  min-height: var(--fs-xs);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-faint);
+}
+.dd-failure__feedback[data-feedback="copied"] {
+  color: var(--success);
+}
+.dd-failure__feedback[data-feedback="failed"] {
+  color: var(--danger);
+}
+
+/* 空态：图标、标题与说明整体居中；不提供返回按钮，任务清空会自动返回。 */
+.dd-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 4 - 64px);
+  padding: var(--space-8) var(--space-6);
+  color: var(--text-dim);
+  text-align: center;
+}
+.dd-main[data-empty="true"] {
+  min-height: 0;
+}
+.dd-empty > svg {
+  font-size: var(--fs-3xl);
+  color: var(--text-faint);
+}
+.dd-empty h2 {
+  margin: 0;
+  font: 600 var(--fs-xl) / var(--lh-tight) var(--font-display);
+  color: var(--text);
+}
+.dd-empty p {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+/* 键盘可达：取消按钮与可复制错误文本保留可见焦点环。 */
+.dd-cancel:focus-visible,
+.dd-failure__text:focus-visible {
+  outline: var(--space-1) solid var(--accent-ring);
+  outline-offset: var(--space-1);
+}
+
+@media (max-width: 800px) {
+  .dd-root {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "main"
+      "side";
+  }
+  .dd-side {
+    gap: var(--space-4);
+  }
+  /* 窄窗统计横排，节省纵向空间。 */
+  .dd-overview {
+    flex-direction: row;
+    justify-content: space-around;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+  .dd-stat {
+    flex: 1;
+  }
+  .dd-stat__value {
+    font-size: var(--fs-xl);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dd-page,
+  .dd-card {
+    animation: none;
+  }
+  .dd-stage__spin {
+    animation: none;
+  }
+  .dd-cancel.nw-iconbtn,
+  .dd-failure__text {
+    transition: none;
+  }
+}

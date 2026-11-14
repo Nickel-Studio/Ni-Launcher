@@ -1,0 +1,345 @@
+.van-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100%;
+  padding-bottom: var(--space-2);
+}
+
+/* Pager 的 AnimatedSwap 中间层为 auto 高度，100% 无法穿透。
+   与 nw-pager--fill 共用内容区高度公式；长页仍由 Pager 正常滚动，底部操作不悬浮。 */
+.nw-pager--fill .van-picker {
+  min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+}
+
+.van-picker__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.van-instance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-1);
+}
+.van-instance > img {
+  flex: 0 0 auto;
+  object-fit: contain;
+  image-rendering: auto;
+}
+.van-instance__field {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.van-instance__field input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--fill-2);
+  font-size: var(--fs-lg);
+  color: var(--text);
+  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+.van-instance__field input:hover {
+  background: var(--fill-3);
+}
+.van-instance__field input:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.van-picker__meta,
+.van-picker__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.van-picker__hint {
+  overflow-wrap: anywhere;
+}
+.van-picker__hint[data-error="true"],
+.van-picker__notice[data-error="true"] {
+  color: var(--danger);
+}
+.van-picker__tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.van-loaders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.van-loader {
+  border-radius: var(--radius-md);
+  background: var(--glass-card);
+  box-shadow: var(--shadow-1);
+}
+.van-loader__heading {
+  display: flex;
+  align-items: center;
+}
+.van-loader__heading .van-loader__head {
+  flex: 1;
+  min-width: 0;
+}
+.van-loader__head:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.van-loader__retry {
+  margin-right: var(--space-4);
+  flex: 0 0 auto;
+}
+.van-loader[data-state="failed"] .van-loader__status {
+  color: var(--danger);
+}
+.van-loader[data-state="incompatible"] .van-loader__status,
+.van-loader[data-blocked="true"] .van-loader__status,
+.van-build[data-compatibility="manualOnly"] .van-build__meta {
+  color: var(--warning);
+}
+.van-loader[data-blocked="true"] .van-loader__head {
+  cursor: not-allowed;
+}
+.van-loader__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: left;
+  transition: background var(--t) var(--ease);
+}
+.van-loader__head:hover:not(:disabled) {
+  background: var(--fill-2);
+}
+.van-loader__head:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.van-loader__name {
+  flex: 0 0 100px;
+  font-size: var(--fs-md);
+  font-weight: 650;
+  color: var(--text);
+}
+.van-loader__status {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 选中加载器时状态行由次要色渐变到 accent，而不是整行硬切。 */
+  transition: color var(--t) var(--ease);
+}
+.van-loader[data-selected="true"] .van-loader__status {
+  color: var(--accent);
+}
+.van-loader__check,
+.van-build__check {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  flex-shrink: 0;
+  /* 勾选图标与加载器名称 / 状态文字同一行，补半像素视觉对齐。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+  /* 勾选图标是条件挂载的：出现时做一次极短缩放淡入，退场保持瞬时。 */
+  animation: van-check-in var(--t-fast) var(--ease-out) both;
+}
+@keyframes van-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.van-loader__chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  position: relative;
+  top: var(--icon-optical-shift);
+  transform: rotate(-90deg);
+  transition: transform var(--t-slow) var(--ease);
+}
+.van-loader[data-open="true"] .van-loader__chevron {
+  transform: rotate(-180deg);
+}
+.van-loader__body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.van-loader__intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+.van-loader__all {
+  display: flex;
+  gap: 6px;
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.van-loader__all span {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.van-builds {
+  list-style: none;
+  margin: 0;
+  padding: 3px;
+}
+.van-builds--all {
+  max-height: 330px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.van-build {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast) var(--ease);
+}
+.van-build:hover,
+.van-build:focus-within {
+  background: var(--fill-2);
+}
+.van-build[data-selected="true"] {
+  background: var(--accent-soft);
+}
+.van-build__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+  min-height: 58px;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+}
+.van-build__pick:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+}
+.van-build__pick:disabled {
+  cursor: default;
+}
+.van-build__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.van-build__version {
+  font-size: var(--fs-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.van-build__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  line-height: var(--lh-normal);
+}
+.van-build__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.van-build__actions .nw-iconbtn {
+  color: var(--text-dim);
+}
+.van-build[data-selected="true"] .nw-iconbtn {
+  color: var(--accent);
+}
+.van-build__actions .nw-iconbtn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--fill-3);
+}
+.van-picker__notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--glass-card);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.van-picker__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-5);
+}
+.van-picker__download.nw-btn {
+  min-height: 44px;
+  padding: 0 24px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.van-picker__download.nw-btn svg {
+  width: 21px;
+  height: 21px;
+}
+@media (max-width: 720px) {
+  .van-instance {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .van-loader__name {
+    flex-basis: 80px;
+  }
+  .van-loader__head {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .van-build__meta {
+    font-size: var(--fs-xs);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .van-loader__chevron,
+  .van-loader__head,
+  .van-build,
+  .van-instance__field input,
+  .van-loader__status {
+    transition: none;
+  }
+
+  .van-loader__check,
+  .van-build__check {
+    animation: none;
+  }
+}

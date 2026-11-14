@@ -1,0 +1,110 @@
+name: Build
+
+# 打包构建（三平台）：
+#   * 手动触发（Actions → Build → Run workflow）：只产出安装包并上传为 artifact；
+#   * 推送 v* 标签：除产出安装包外，还会创建 GitHub Release（草稿，便于人工确认后再发布）。
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    name: 打包 · ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+          - label: macos-arm64
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin"
+          - label: macos-x64
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin"
+          - label: linux-x64
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: "--bundles deb,appimage"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri 在 Linux 上编译/打包所需的系统依赖
+      - name: 安装系统依赖（Linux）
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential curl wget file
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建安装包（打 tag 时同时创建 Release 草稿）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 打包使用 production；可选 API 配置由应用运行时读取。
+          NICKEL_CHANNEL: production
+        with:
+          args: ${{ matrix.args }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Nickel {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            Nickel 自动构建产物。
+
+            请从下方 **Assets** 下载对应平台的安装包：
+            - Windows：`.msi` / `.exe`
+            - macOS：`.dmg`
+            - Linux：`.deb` / `.AppImage`
+
+      - name: 上传安装包（非 Release 场景）
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nickel-${{ matrix.label }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/*/release/bundle/**

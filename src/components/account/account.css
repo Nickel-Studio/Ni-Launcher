@@ -1,0 +1,729 @@
+﻿/* ============================================================
+   账号区 / 角色头像 / 弹窗
+   仅使用 tokens 变量；去线框化：以半透明填充替代 1px 描边。
+   ============================================================ */
+
+/* ---------- 账号表单 ---------- */
+.account-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.account-form__note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.account-form__status {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.account-form__ok {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--success, var(--accent));
+  box-shadow: 0 0 0 4px var(--success-soft, var(--accent-soft));
+}
+
+.account-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.account-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.account-form__label {
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.account-form__input {
+  width: 100%;
+  padding: 0.62rem 0.75rem;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: none;
+  border-radius: var(--radius-md);
+  outline: none;
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.account-form__input::placeholder {
+  color: var(--text-faint);
+}
+
+.account-form__input:focus {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-ring), 0 0 0 3px var(--accent-soft);
+}
+
+.account-form__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.account-form__hint {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--fill-1);
+  border-radius: var(--radius-md);
+}
+
+.account-form__error {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Microsoft 设备码登录 ---------- */
+.account-msa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--fill-1);
+  border-radius: var(--radius-lg);
+}
+
+.account-msa__code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.account-msa__code {
+  font-family: var(--font-sans);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  user-select: all;
+  word-break: break-all;
+}
+
+.account-msa__uri {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+/* ---------- 角色头像：透明画布与轮廓阴影 ---------- */
+.char-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  /* 画布是透明的：脸与帽层的大小由图片本身决定（48/64、56/64），
+     裁切留白已在 composeHead 里完成，这里只负责尺寸与阴影。 */
+  width: var(--avatar-size, 64px);
+  height: var(--avatar-size, 64px);
+  z-index: 1;
+}
+
+.char-avatar__frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.char-avatar__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  opacity: 0;
+  /* 轮廓阴影跟随透明像素，让头部浮在卡片上；悬停时加强。 */
+  filter: drop-shadow(
+    0 4px 6px color-mix(in srgb, var(--overlay) 55%, transparent)
+  );
+  transition: opacity 240ms var(--ease-out), filter var(--dur) var(--ease-out);
+}
+.char-avatar__img[data-loaded="true"] {
+  opacity: 1;
+}
+
+/* 满幅头图（内置兜底 / mc-heads）按合成头像的同一比例缩小，视觉尺寸统一为 48/64。 */
+.char-avatar__img[data-framed="true"] {
+  transform: scale(0.75);
+}
+
+.char-avatar:hover .char-avatar__img {
+  filter: drop-shadow(
+    0 8px 14px color-mix(in srgb, var(--overlay) 90%, transparent)
+  );
+}
+
+.char-avatar__fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: repeating-conic-gradient(
+      from 0deg,
+      var(--surface-2) 0deg 90deg,
+      var(--surface-3, var(--surface-2)) 90deg 180deg
+    )
+    0 0 / 24px 24px;
+  border-radius: var(--radius-md);
+}
+
+.char-avatar__initial {
+  font-family: var(--font-display);
+  font-size: calc(var(--avatar-size, 64px) * 0.4);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* ---------- 切换账号弹窗 ---------- */
+.acc-switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.acc-switch__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.acc-switch__empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.acc-switch__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.acc-switch__row[data-active="true"] {
+  background: var(--accent-soft);
+}
+
+.acc-switch__pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.acc-switch__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.acc-switch__name {
+  font-size: var(--fs-md);
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acc-switch__sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acc-switch__type {
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-dim);
+}
+
+.acc-switch__check {
+  margin-left: auto;
+  padding-left: 8px;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+@media (max-width: 640px) {
+  .account-form__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   账号形态分段：与顶栏导航完全相同的滑动胶囊
+   几何（左移 / 宽度）由 src/lib/useSlidePill.ts 计算，
+   这里只负责外观，务必与 shell.css 的 .nw-navtab__pill / .nw-navtab
+   保持同一套动效参数（--t + --ease-out）。
+   ============================================================ */
+.acc-tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-1);
+}
+
+.acc-tabs__item {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+
+.acc-tabs__item svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.9;
+  position: relative;
+  top: var(--icon-optical-shift);
+  transition: transform var(--t) var(--ease-spring);
+}
+
+.acc-tabs__item:hover:not([data-active="true"]) {
+  color: var(--text);
+  background: var(--fill-3);
+}
+
+.acc-tabs__item:active {
+  transform: translateY(1px);
+}
+
+.acc-tabs__item[data-active="true"],
+.acc-tabs__item[data-active="true"]:hover {
+  color: var(--accent-fg);
+  background: transparent;
+}
+
+.acc-tabs__item[data-active="true"] svg {
+  transform: scale(1.06);
+}
+
+.acc-tabs__pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 8px 20px -10px var(--accent-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--t) var(--ease-out), width var(--t) var(--ease-out),
+    opacity var(--t-fast) var(--ease);
+}
+
+.acc-tabs__pill:not([data-ready="true"]) {
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.acc-tabs__pill[data-ready="true"] {
+  opacity: 1;
+}
+
+/* ============================================================
+   皮肤站登录：两阶段表单（阶段一邮箱 + 下一步；阶段二密码 + 登录）
+   输入框与按钮共用一个填充容器 → 同高、圆角自然衔接、主操作填充。
+   ============================================================ */
+.skin-login {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.skin-login__field {
+  display: flex;
+  align-items: stretch;
+  height: 46px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* 焦点环画在容器上：整体成一个控件，键盘聚焦同样清晰可见。 */
+.skin-login__field:focus-within {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-ring), 0 0 0 3px var(--accent-soft);
+}
+
+.skin-login__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  /* 输入框内文字由 UA 垂直居中，图标跟同排中文一样需要半像素补偿。 */
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+
+.skin-login__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.skin-login__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-2) 0 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--text);
+  outline: none;
+}
+/* 两阶段切换：AnimatedSwap 的层内仍保持表单的纵向间距。 */
+.skin-login__stage .nw-swap__layer--in {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skin-login__input::placeholder {
+  color: var(--text-faint);
+}
+
+/* 隐藏 Edge / WebView2 自带的密码小眼睛：它属于原生输入框装饰，
+   点击后焦点会落到装饰按钮上，看起来像光标“飞到了小眼睛旁边”。
+   可见性改由下方自绘按钮控制，并且 mousedown 不抢焦点。 */
+.skin-login__input::-ms-reveal,
+.skin-login__input::-ms-clear {
+  display: none;
+}
+
+.skin-login__reveal {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.skin-login__reveal svg {
+  width: 18px;
+  height: 18px;
+}
+
+.skin-login__reveal:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.skin-login__reveal:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* 容器已有整块焦点环，输入框自身不再叠加一圈。 */
+.skin-login__input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.skin-login__submit {
+  flex: 0 0 auto;
+  height: 100%;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: background var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.skin-login__submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+
+.skin-login__submit:active:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.skin-login__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.skin-login__who-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.skin-login__who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  color: var(--text-dim);
+}
+
+.skin-login__back {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.skin-login__back:hover {
+  color: var(--text);
+}
+
+/* ============================================================
+   多角色单选弹窗
+   ============================================================ */
+.skin-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* 页脚把「打开皮肤站角色页」推到左端，与右端的「关闭」相对。 */
+.character-picker__site {
+  margin-right: auto;
+}
+
+.skin-profiles__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.skin-profiles__row:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.skin-profiles__row:hover {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+}
+
+.skin-profiles__row[data-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.skin-profiles__row[data-selected="true"] .acc-switch__check {
+  color: var(--accent);
+}
+
+.skin-profiles__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skin-profiles + .account-form__error {
+  margin-top: var(--space-3);
+}
+
+/* ============================================================
+   登录 Minecraft 弹窗（设备码）
+   标题用颜色主题色 + 同色细线；局部类只作用于 .account-dialog。
+   ============================================================ */
+.account-dialog .nw-modal__title {
+  color: var(--accent);
+}
+
+/* 标题下方的同色细线 */
+.account-dialog .nw-modal__title::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 2px;
+  margin-top: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.account-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.account-dialog__status,
+.account-dialog__lead {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text-dim);
+}
+
+.account-dialog__code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--fill-1);
+}
+
+.account-dialog__code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  cursor: pointer;
+  user-select: all;
+  word-break: break-all;
+}
+
+.account-dialog__link {
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-all;
+}
+
+.account-dialog__link:hover {
+  color: var(--accent-strong);
+}
+
+/* 居中按钮行（正版登录按钮）。 */
+.account-form__row--center {
+  justify-content: center;
+}
+
+/* ---------- 无障碍：尊重 reduced-motion（胶囊退化为无位移的瞬时切换） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .acc-tabs__pill,
+  .acc-tabs__item,
+  .acc-tabs__item svg,
+  .char-avatar__img,
+  .skin-login__field,
+  .skin-login__submit,
+  .skin-profiles__row,
+  .skin-profiles__dot {
+    transition: none;
+  }
+}

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Nickel 社区与下载详情回归</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: auto;
+        min-height: 100%;
+      }
+
+      body {
+        overflow: auto;
+        background: var(--bg);
+      }
+
+      .fixture {
+        width: min(1180px, calc(100% - 32px));
+        margin: 16px auto 48px;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+      }
+
+      .fixture-head,
+      .fixture-panel {
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow-1), var(--shadow-inset-top);
+      }
+
+      .fixture-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        flex-wrap: wrap;
+      }
+
+      .fixture-head h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: var(--fs-xl);
+      }
+
+      .fixture-head p {
+        margin-top: var(--space-1);
+        color: var(--text-dim);
+        font-size: var(--fs-sm);
+      }
+
+      .fixture-controls {
+        display: flex;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+      }
+
+      .fixture-controls button {
+        border: 0;
+        padding: 7px var(--space-3);
+        border-radius: var(--radius-pill);
+        background: var(--fill-3);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .fixture-label {
+        margin-bottom: var(--space-3);
+        color: var(--text-faint);
+        font-size: var(--fs-xs);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .fixture-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--space-4);
+      }
+
+      .fixture-host {
+        min-width: 0;
+      }
+
+      .fixture-host--narrow {
+        width: min(540px, 100%);
+      }
+
+      .fixture-result-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .fixture-download {
+        min-width: 0;
+      }
+
+      #ui-remaining-result {
+        margin: 0;
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        color: var(--text);
+        white-space: pre-wrap;
+        /* 长 JSON 断言明细在窄窗强制断行，避免结果区撑出文档横向滚动。 */
+        overflow-wrap: anywhere;
+        font: var(--fs-xs) / var(--lh-normal) var(--font-mono);
+      }
+
+      #ui-remaining-result[data-status="pass"] {
+        color: var(--accent);
+      }
+
+      #ui-remaining-result[data-status="fail"] {
+        color: var(--danger);
+      }
+
+      @media (max-width: 820px) {
+        .fixture-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        const theme = params.get("theme") === "light" ? "light" : "dark";
+        const settings = {
+          themeMode: theme,
+          accent: "mono",
+          backgroundImage: null,
+          backgroundBlur: 0,
+          backgroundOpacity: 0.5,
+          privacyMode: false,
+          downloadSource: "official",
+          versionListSource: "official_auto",
+          fileDownloadSource: "official_auto",
+          communityApiSource: "official_auto",
+          modrinthApiMirror: "https://mod.mcimirror.top/modrinth/v2/",
+          curseforgeApiMirror: "https://mod.mcimirror.top/curseforge/v1/",
+          communityFileMirror: "https://mod.mcimirror.top/",
+          maxDownloadThreads: 10,
+          downloadLimitBps: 0,
+          verifyMicrosoftSsl: true,
+          offlineUsername: "FixturePlayer",
+          accountType: "offline",
+          littleskinServer: "https://littleskin.cn",
+          memoryMb: 4096,
+        };
+        localStorage.setItem("nowhere.settings", JSON.stringify(settings));
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.accent = "mono";
+        document.documentElement.dataset.regression = "running";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

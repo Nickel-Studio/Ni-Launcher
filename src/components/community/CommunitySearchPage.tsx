@@ -1,0 +1,329 @@
+/**
+ * 社区资源检索页（单页头 + 单工具栏 + 结果列表）。
+ *
+ * 三层堆叠已拍平：本组件是唯一的页头与工具栏——
+ * h2 分类名（无 eyebrow）+ 一行工具栏（搜索框 flex-1 · MC 版本可输入下拉 ·
+ * 加载器下拉（常驻，仅 Mod 分类）· 来源下拉）。
+ * 来源=全部 时并行调两源检索合并展示（useCombinedSearch），其余走单源 hook。
+ * 「共 N 个结果」在结果列表上方的独立计数行；分页是列表底部的
+ * 「上一页 · 页码 · 下一页」按钮组，切换 kind / query / 筛选 / 来源
+ * 都会回到第 1 页，翻页后列表滚回顶部（reduced-motion 下瞬时跳转）。
+ * 点结果卡 → `onOpenDetail` 上抛给 Resources.tsx（独立详情页替换内嵌展开区）。
+ *
+ * 通过 `useDetailInstance` 静默识别当前启动实例的真实 MC 版本与
+ * 加载器，作为两个下拉的默认值；识别失败全部落「全部」，不报错、不提示。
+ */
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Select } from "../ui";
+import { useSettings } from "../../lib/settings";
+import { IconSearch } from "../modrinth/icons";
+import { ModrinthSearchPage } from "../modrinth/ModrinthSearchPage";
+import { CurseforgeSearchPage } from "../curseforge/CurseforgeSearchPage";
+import { listRemoteVersions } from "../download/ipc";
+import { useDetailInstance } from "./searchView";
+import type { VersionFocus } from "../../lib/instances";
+import { McVersionCombobox } from "./McVersionCombobox";
+import { LoaderSelect } from "./LoaderSelect";
+import { CommunityPagination } from "./CommunityPagination";
+import { useCombinedSearch } from "./useCombinedSearch";
+import { useModrinthSearch } from "../modrinth/useModrinthSearch";
+import { useCurseforgeSearch } from "../curseforge/useCurseforgeSearch";
+import type {
+  ModrinthFilter,
+  ModrinthHit,
+  ModrinthKind,
+} from "../modrinth/types";
+
+/**
+ * 检索来源（页面级状态，不持久化——每次进页默认「全部来源」）。
+ * "all" = 两源合并检索；CurseForge 未配置 key 时静默退化为仅 Modrinth。
+ */
+export type CommunitySource = "all" | "modrinth" | "curseforge";
+
+/** 来源下拉选项（Q1 裁定：下拉替代胶囊 tab；R4 裁定：新增「全部来源」并设为默认）。 */
+const SOURCE_OPTIONS: ReadonlyArray<{ value: CommunitySource; label: string }> =
+  [
+    { value: "all", label: "全部来源" },
+    { value: "modrinth", label: "Modrinth" },
+    { value: "curseforge", label: "CurseForge" },
+  ];
+
+/**
+ * 工具栏的加载器选项（value 与后端检索参数同源）。
+ * 两个引擎的可过滤白名单一致（forge / neoforge / fabric，见后端
+ * modrinth.rs / curseforge.rs）；不含白名单之外的选项，避免「选了但后端
+ * 不过滤」的假交互。
+ */
+const LOADER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "forge", label: "Forge" },
+  { value: "neoforge", label: "NeoForge" },
+  { value: "fabric", label: "Fabric" },
+];
+
+/** 静默识别结果 → 可检索的加载器默认值；vanilla / optifine / 未知落「全部加载器」。 */
+const RETRIEVABLE_LOADERS: ReadonlySet<string> = new Set([
+  "forge",
+  "neoforge",
+  "fabric",
+]);
+
+interface Props {
+  kind: ModrinthKind;
+  label: string;
+  target?: VersionFocus | null;
+  /** 打开独立详情页（Resources.tsx 状态提升：侧边栏让位给详情页）。 */
+  onOpenDetail: (hit: ModrinthHit, kind: ModrinthKind) => void;
+}
+
+export function CommunitySearchPage({
+  kind,
+  label,
+  target,
+  onOpenDetail,
+}: Props) {
+  const { settings } = useSettings();
+  const [source, setSource] = useState<CommunitySource>("all");
+  const [query, setQuery] = useState("");
+  const [mcVersion, setMcVersion] = useState("");
+  const [loader, setLoader] = useState("");
+  /** MC 版本下拉的数据源（`list_remote_versions` 的 versions[].id）。 */
+  const [versionIds, setVersionIds] = useState<readonly string[]>([]);
+  /** 当前页码（1 起计；所有来源共用，条件变化即重置）。 */
+  const [page, setPage] = useState(1);
+
+  // 与详情共用实例快照；首页目标变化、安装完成及识别失败都会清除旧版本条件。
+  const instance = useDetailInstance(kind, target);
+  useEffect(() => {
+    setMcVersion(kind === "modpack" ? "" : instance.mcVersion);
+    setLoader(
+      kind !== "modpack" && RETRIEVABLE_LOADERS.has(instance.loader)
+        ? instance.loader
+        : ""
+    );
+  }, [kind, instance]);
+
+  // 远端版本清单（跟随全局下载源）；拿不到时下拉退化为主版本之外的自由输入，不报错。
+  useEffect(() => {
+    let cancelled = false;
+    listRemoteVersions(settings.versionListSource)
+      .then((manifest) => {
+        if (cancelled) return;
+        setVersionIds(manifest.versions.map((version) => version.id));
+      })
+      .catch(() => {
+        /* 清单不可用：下拉仍支持自由输入 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.versionListSource]);
+
+  // 版本归「全部」时加载器同步清空（值联动保留；渐进式浮现动画已废弃）。
+  const handleVersionChange = useCallback((next: string) => {
+    setMcVersion(next);
+    if (!next) setLoader("");
+  }, []);
+
+  const handleSourceChange = useCallback((next: string) => {
+    setSource(next as CommunitySource);
+    setPage(1);
+  }, []);
+
+  // 检索条件与分类变化一律回第 1 页；query 由引擎 hook 自行防抖。
+  useEffect(() => {
+    setPage(1);
+  }, [kind, query, mcVersion, loader]);
+
+  // 传给引擎的过滤条件：字段空串 = 该维度不过滤。
+  const filter: ModrinthFilter = useMemo(
+    () => ({ mcVersion, loader }),
+    [mcVersion, loader]
+  );
+
+  // 翻页 / 重置后把列表滚回可视区顶部（reduced-motion 下瞬时跳转）。
+  // 锚点是结果区顶端的空 div；滚动容器由它向上找（.nw-pager__page），
+  // 只改 scrollTop 才能把标题行也带回来，scrollIntoView 会停在锚点上。
+  const listAnchorRef = useRef<HTMLDivElement | null>(null);
+  const scrollTimer = useRef<number | null>(null);
+  const scrollToTop = useCallback(() => {
+    if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current);
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollTimer.current = window.setTimeout(() => {
+      scrollTimer.current = null;
+      const anchor = listAnchorRef.current;
+      if (!anchor) return;
+      let scroller: HTMLElement | null = anchor.parentElement;
+      while (
+        scroller &&
+        scroller !== document.body &&
+        scroller.scrollHeight <= scroller.clientHeight
+      ) {
+        scroller = scroller.parentElement;
+      }
+      if (scroller && scroller !== document.body) {
+        const target = Math.max(0, anchor.offsetTop - 8);
+        if (reduced) {
+          scroller.scrollTop = target;
+          return;
+        }
+        const start = scroller.scrollTop;
+        const delta = target - start;
+        const startedAt = performance.now();
+        const step = (now: number) => {
+          const progress = Math.min(1, (now - startedAt) / 220);
+          scroller.scrollTop = start + delta * (1 - Math.pow(1 - progress, 3));
+          if (progress < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+      }
+    }, 80);
+  }, []);
+  useLayoutEffect(() => {
+    scrollToTop();
+    return () => {
+      if (scrollTimer.current !== null) {
+        window.clearTimeout(scrollTimer.current);
+        scrollTimer.current = null;
+      }
+    };
+  }, [page, kind, scrollToTop]);
+
+  // 三种来源各持一个检索 hook（hooks 顺序稳定），但只启用当前来源的那个，
+  // 未启用的 hook 不发请求；同一时刻只消费被启用 hook 的返回值。
+  const combined = useCombinedSearch({
+    kind,
+    query,
+    filter,
+    page,
+    enabled: source === "all",
+  });
+  const modrinth = useModrinthSearch(
+    kind,
+    query,
+    filter,
+    page,
+    source === "modrinth"
+  );
+  const curseforge = useCurseforgeSearch(
+    kind,
+    query,
+    filter,
+    page,
+    source === "curseforge"
+  );
+
+  const view = useMemo(() => {
+    if (source === "all") return combined;
+    if (source === "modrinth") return modrinth;
+    return curseforge;
+  }, [source, combined, modrinth, curseforge]);
+
+  const goPrev = useCallback(() => setPage((p) => Math.max(1, p - 1)), []);
+  const goNext = useCallback(() => setPage((p) => p + 1), []);
+
+  const showCount = view.state === "ready" && view.total !== null;
+  const isLoading = view.state === "loading";
+
+  return (
+    <div className={`mr-page${isLoading ? " mr-page--loading" : ""}`}>
+      <header className="cv-page__head">
+        <h2 className="cv-page__title">{label}</h2>
+
+        <div className="cv-toolbar">
+          <label className="mr-search cv-toolbar__search">
+            <IconSearch aria-hidden />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={`搜索${label}`}
+              aria-label={`搜索${label}`}
+            />
+          </label>
+
+          <McVersionCombobox
+            versions={versionIds}
+            value={mcVersion}
+            onChange={handleVersionChange}
+            emptyText={
+              versionIds.length > 0
+                ? "没有匹配的版本号"
+                : "版本清单不可用，可直接输入版本号"
+            }
+            ariaLabel="MC 版本"
+            className="cv-toolbar__version"
+          />
+
+          {kind === "mod" ? (
+            <LoaderSelect
+              value={loader}
+              options={LOADER_OPTIONS}
+              onChange={setLoader}
+            />
+          ) : null}
+
+          <Select
+            size="sm"
+            className="cv-toolbar__source"
+            ariaLabel="检索来源"
+            value={source}
+            onChange={handleSourceChange}
+            options={SOURCE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+          />
+        </div>
+      </header>
+
+      <>
+        {/* 翻页锚点：纯空 div（aria-hidden 不遮蔽计数行的 live 播报）。 */}
+        <div ref={listAnchorRef} aria-hidden="true" />
+        {showCount ? (
+          <p className="cv-count" aria-live="polite">
+            共 {view.total} 个结果
+          </p>
+        ) : null}
+
+        {source === "all" ? (
+          <ModrinthSearchPage
+            kind={kind}
+            view={combined}
+            loadingLabel="正在检索"
+            onOpen={onOpenDetail}
+          />
+        ) : source === "modrinth" ? (
+          <ModrinthSearchPage
+            kind={kind}
+            view={modrinth}
+            onOpen={onOpenDetail}
+          />
+        ) : (
+          <CurseforgeSearchPage
+            kind={kind}
+            view={curseforge}
+            onOpen={onOpenDetail}
+          />
+        )}
+
+        {view.state === "ready" && (page > 1 || view.hasMore) ? (
+          <CommunityPagination
+            page={page}
+            hasMore={view.hasMore}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
+      </>
+    </div>
+  );
+}
