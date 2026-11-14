@@ -33,7 +33,7 @@ accounts.json
 active_account.json
 .minecraft/
 
-# 开发资料与会话记录由私有仓显式收录；默认不进入源码提交。
+# 开发资料与会话记录
 .snow/
 .agents/
 .claude/
@@ -47,3 +47,4 @@ QA-FINAL-REPORT.md
 .playwright-mcp/
 *.bak
 *.tmp
+.vscode/
