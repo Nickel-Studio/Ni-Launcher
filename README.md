@@ -12,6 +12,7 @@
 
 Minecraft Java 版启动器 · Windows / macOS / Linux
 
+[![版本](https://img.shields.io/badge/Nickel-1.0.0-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.0)
 [![CI](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml)
 [![代码许可](https://img.shields.io/badge/Code-AGPL--3.0-343a40)](LICENSE)
 [![美术许可](https://img.shields.io/badge/Art-CC--BY--SA--4.0-343a40)](LICENSE-ASSETS)

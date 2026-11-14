@@ -207,9 +207,7 @@ pub async fn post_json<T, V: Fn(&serde_json::Value) -> Result<T, String>>(
     let candidates = api_candidates(platform, url, mirror, key)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(
-            crate::http::TIMEOUT_SECS,
-        ))
+        .timeout(std::time::Duration::from_secs(crate::http::TIMEOUT_SECS))
         .build()
         .map_err(|_| "初始化社区 API 客户端失败".to_string())?;
     let mut last_error = String::new();
@@ -393,16 +391,43 @@ mod tests {
     use super::*;
     #[test]
     fn cf_without_key_still_has_mirror() {
+        let official = format!("{CURSEFORGE_API}mods/1");
         let values = api_candidates(
             Platform::Curseforge,
-            "https://api.curseforge.com/v1/mods/1",
+            &official,
             "https://mod.mcimirror.top/curseforge/v1/",
             None,
         )
         .unwrap();
-        assert_eq!(values.len(), 1);
-        assert!(values[0].is_mirror);
-        assert!(!values[0].headers.contains_key("x-api-key"));
+        let production = crate::build_channel::is_production();
+        assert_eq!(values.len(), if production { 2 } else { 1 });
+        if production {
+            assert!(!values[0].is_mirror);
+            assert_eq!(values[0].url, official);
+        }
+        assert!(values.last().is_some_and(|candidate| candidate.is_mirror));
+        assert!(values.iter().all(|candidate| {
+            !candidate.headers.contains_key("x-api-key")
+                && candidate
+                    .headers
+                    .get("user-agent")
+                    .is_some_and(|value| value == USER_AGENT)
+        }));
+    }
+
+    #[test]
+    fn cf_without_key_or_mirror_obeys_build_channel() {
+        let official = format!("{CURSEFORGE_API}mods/1");
+        let result = api_candidates(Platform::Curseforge, &official, "", None);
+        if crate::build_channel::is_production() {
+            let values = result.unwrap();
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0].url, official);
+            assert!(!values[0].is_mirror);
+            assert!(!values[0].headers.contains_key("x-api-key"));
+        } else {
+            assert!(result.is_err());
+        }
     }
     #[test]
     fn cf_key_is_only_on_exact_official_candidate() {

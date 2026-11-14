@@ -81,9 +81,11 @@ pnpm tauri dev
 
 ## CI 与发行
 
-[CI](../.github/workflows/ci.yml) 在 `main` 推送和 PR 上运行前端构建与 Rust 测试。[Build](../.github/workflows/build.yml) 支持手动打包与 `v*` 标签，覆盖 Windows x64、macOS arm64 / x64 和 Linux x64。标签触发时创建 Release 草稿。
+[CI](../.github/workflows/ci.yml) 在 `main` 推送和 PR 上运行前端构建与 production 通道的 Rust 测试；本地可分别设置 development / production 验证两种请求策略。[Build](../.github/workflows/build.yml) 支持手动打包与 `v*` 标签，覆盖 Windows x64、macOS arm64 / x64 和 Linux x64。标签触发时创建 Release 草稿。
 
-发布前保持版本配置一致、质量检查通过，并检查发行文件的图标、名称、许可证和首次运行。打包附带 AGPL、美术许可与第三方声明。
+发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。
+
+质量检查通过后推送版本标签，等待四个平台的安装包构建完成。验收图标、名称、随包许可和源码归档，附上 `SHA256SUMS.txt`，再将 Release 草稿公开。打包附带 AGPL、美术许可与第三方声明。
 
 ## 结构与约定
 

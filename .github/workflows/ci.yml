@@ -41,6 +41,8 @@ jobs:
   backend:
     name: Rust · 编译 + 单元测试
     runs-on: ubuntu-22.04
+    env:
+      NICKEL_CHANNEL: production
     steps:
       - uses: actions/checkout@v4
 
