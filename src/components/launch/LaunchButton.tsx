@@ -34,9 +34,7 @@ export function LaunchButton({
         {running ? <span className="launch-button__spinner" /> : <IconPlay />}
       </span>
       <span className="launch-button__text">
-        <span className="launch-button__main">
-          {running ? "正在启动..." : label}
-        </span>
+        <span className="launch-button__main">{label}</span>
         {subLabel ? (
           <span className="launch-button__sub">{subLabel}</span>
         ) : null}

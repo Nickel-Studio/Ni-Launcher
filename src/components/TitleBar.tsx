@@ -2,7 +2,8 @@ import { type ComponentType } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppNav, type Route } from "../lib/nav";
 import { useSlidePill } from "../lib/useSlidePill";
-import { isTauri } from "../lib/settings";
+import { isTauri, useSettings } from "../lib/settings";
+import { ThemeArtwork } from "./ui/ThemeArtwork";
 import { PRODUCT_NAME } from "../lib/brand";
 import { Tooltip } from "./ui";
 import {
@@ -62,6 +63,7 @@ async function closeWindow(): Promise<void> {
 
 export function TitleBar() {
   const { route, setRoute } = useAppNav();
+  const { settings } = useSettings();
   const activeIndex = NAV_ITEMS.findIndex((item) => item.route === route);
   const { navRef, registerTab, pill } = useSlidePill<
     HTMLElement,
@@ -69,7 +71,16 @@ export function TitleBar() {
   >(activeIndex);
 
   return (
-    <header className="nw-titlebar" data-tauri-drag-region>
+    <header
+      className="nw-titlebar"
+      data-tauri-drag-region
+      data-tinted={settings.titlebarTint}
+    >
+      <ThemeArtwork
+        accent={settings.accent}
+        placement="titlebar"
+        decoration={settings.customTheme.decoration}
+      />
       <div className="nw-titlebar__left" data-tauri-drag-region>
         <span className="nw-brand">
           <span className="nw-brand__text" data-tauri-drag-region>

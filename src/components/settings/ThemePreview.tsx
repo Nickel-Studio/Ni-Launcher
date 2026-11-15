@@ -1,9 +1,44 @@
 import { PRODUCT_NAME } from "../../lib/brand";
+import { useBackgroundSrc, useSettings } from "../../lib/settings";
+import { ThemeArtwork } from "../ui/ThemeArtwork";
+import type { CSSProperties } from "react";
 
 export function ThemePreview() {
+  const { settings } = useSettings();
+  const background = useBackgroundSrc(settings.backgroundImage);
+  const hasUserBackground = Boolean(settings.backgroundImage?.trim());
+  const style = {
+    "--preview-bg-blur": `${settings.backgroundBlur / 4}px`,
+    "--preview-bg-opacity": settings.backgroundOpacity,
+  } as CSSProperties;
   return (
-    <div className="st-preview" role="img" aria-label="当前外观实时预览">
-      <div className="st-preview__bar">
+    <div
+      className="st-preview"
+      role="img"
+      aria-label="当前外观实时预览"
+      style={style}
+      data-user-background={hasUserBackground}
+    >
+      <div className="st-preview__art" aria-hidden="true">
+        {!hasUserBackground ? (
+          <ThemeArtwork
+            accent={settings.accent}
+            decoration={settings.customTheme.decoration}
+          />
+        ) : null}
+        {background ? (
+          <div
+            className="st-preview__image"
+            style={{ backgroundImage: `url(${JSON.stringify(background)})` }}
+          />
+        ) : null}
+      </div>
+      <div className="st-preview__bar" data-tinted={settings.titlebarTint}>
+        <ThemeArtwork
+          accent={settings.accent}
+          placement="titlebar"
+          decoration={settings.customTheme.decoration}
+        />
         <span className="st-preview__dot" />
         <span className="st-preview__dot" />
         <span className="st-preview__dot" />

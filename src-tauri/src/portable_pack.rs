@@ -29,7 +29,11 @@ const PAYLOAD_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const COPY_BUFFER_BYTES: usize = 64 * 1024;
 const TEXT_MAX_BYTES: usize = 512;
 const THEME_MODES: &[&str] = &["system", "light", "dark"];
-const ACCENTS: &[&str] = &["mono", "emerald", "blue", "violet", "amber", "rose"];
+const ACCENTS: &[&str] = &[
+    "mono", "emerald", "blue", "violet", "amber", "rose",
+    "nickel", "copper", "abyss", "paper", "fortyTwo", "custom",
+];
+const THEME_DECORATIONS: &[&str] = &["none", "lattice", "ribbons", "orbits", "folds"];
 const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"];
 const SOURCE_FILE: &str = "SOURCE.txt";
 // 单文件启动器不会复制 bundle resources；固定嵌入许可，且保留 NOTICE 的相对链接布局。
@@ -126,6 +130,45 @@ pub struct PortableManifest {
     pub personalization: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PortableCustomTheme {
+    pub hue: f64,
+    pub saturation: f64,
+    pub lightness: f64,
+    pub titlebar_hue_shift: f64,
+    pub decoration: String,
+    pub decoration_opacity: f64,
+}
+
+impl Default for PortableCustomTheme {
+    fn default() -> Self {
+        Self {
+            hue: 174.0,
+            saturation: 39.0,
+            lightness: 44.0,
+            titlebar_hue_shift: 0.0,
+            decoration: "lattice".into(),
+            decoration_opacity: 0.35,
+        }
+    }
+}
+
+impl PortableCustomTheme {
+    fn is_valid(&self) -> bool {
+        [
+            (self.hue, 0.0, 360.0),
+            (self.saturation, 0.0, 100.0),
+            (self.lightness, 0.0, 100.0),
+            (self.titlebar_hue_shift, -180.0, 180.0),
+            (self.decoration_opacity, 0.0, 1.0),
+        ]
+        .iter()
+        .all(|(value, min, max)| value.is_finite() && (*min..=*max).contains(value))
+            && THEME_DECORATIONS.contains(&self.decoration.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PortablePersonalization {
@@ -133,6 +176,10 @@ pub struct PortablePersonalization {
     pub theme_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_theme: Option<PortableCustomTheme>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub titlebar_tint: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_blur: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,6 +325,7 @@ impl PortablePersonalization {
                 .accent
                 .as_deref()
                 .is_some_and(|v| !ACCENTS.contains(&v))
+            || self.custom_theme.as_ref().is_some_and(|v| !v.is_valid())
             || self
                 .background_blur
                 .is_some_and(|v| !v.is_finite() || !(0.0..=40.0).contains(&v))
@@ -534,6 +582,31 @@ fn validate_background(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// Project nested appearance fields instead of copying arbitrary settings JSON.
+fn select_custom_theme(value: &Value) -> Option<PortableCustomTheme> {
+    value.as_object()?;
+    let defaults = PortableCustomTheme::default();
+    let bounded = |key: &str, min: f64, max: f64, fallback: f64| {
+        value[key]
+            .as_f64()
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(min, max))
+            .unwrap_or(fallback)
+    };
+    Some(PortableCustomTheme {
+        hue: bounded("hue", 0.0, 360.0, defaults.hue),
+        saturation: bounded("saturation", 0.0, 100.0, defaults.saturation),
+        lightness: bounded("lightness", 0.0, 100.0, defaults.lightness),
+        titlebar_hue_shift: bounded("titlebarHueShift", -180.0, 180.0, defaults.titlebar_hue_shift),
+        decoration: value["decoration"]
+            .as_str()
+            .filter(|v| THEME_DECORATIONS.contains(v))
+            .unwrap_or(&defaults.decoration)
+            .to_owned(),
+        decoration_opacity: bounded("decorationOpacity", 0.0, 1.0, defaults.decoration_opacity),
+    })
+}
+
 fn select_personalization(value: &Value) -> PortablePersonalization {
     PortablePersonalization {
         theme_mode: value["themeMode"]
@@ -544,6 +617,9 @@ fn select_personalization(value: &Value) -> PortablePersonalization {
             .as_str()
             .filter(|v| ACCENTS.contains(v))
             .map(str::to_owned),
+        custom_theme: select_custom_theme(&value["customTheme"])
+            .or_else(|| (value["accent"].as_str() == Some("custom")).then(PortableCustomTheme::default)),
+        titlebar_tint: value["titlebarTint"].as_bool(),
         background_blur: value["backgroundBlur"]
             .as_f64()
             .filter(|v| v.is_finite() && (0.0..=40.0).contains(v)),
@@ -1361,6 +1437,168 @@ mod tests {
             settings.validate(&manifest).unwrap();
         }
     }
+
+
+    #[test]
+    fn personalization_theme_roundtrip_preserves_all_accents_and_custom_values() {
+        let custom = json!({
+            "hue": 312.5, "saturation": 82.0, "lightness": 46.5,
+            "titlebarHueShift": -72.0, "decoration": "folds", "decorationOpacity": 0.72,
+        });
+        for directory in [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY] {
+            let manifest = manifest_for_layout(directory);
+            for accent in ACCENTS {
+                let selected = select_personalization(&json!({
+                    "themeMode": "light", "accent": accent, "customTheme": custom,
+                    "titlebarTint": true,
+                }));
+                let encoded = serde_json::to_value(&selected).unwrap();
+                assert_eq!(encoded["accent"], *accent);
+                assert_eq!(encoded["customTheme"], custom);
+                assert_eq!(encoded["titlebarTint"], true);
+                let decoded: PortablePersonalization = serde_json::from_value(encoded.clone()).unwrap();
+                decoded.validate(&manifest).unwrap();
+                assert_eq!(decoded.resolved_value(Path::new("."), &manifest).unwrap(), encoded);
+                assert_eq!(decoded, selected);
+            }
+        }
+    }
+
+    #[test]
+    fn personalization_theme_projection_bounds_values_and_drops_nested_private_state() {
+        let projected = select_personalization(&json!({
+            "accent": "custom", "titlebarTint": false,
+            "customTheme": {
+                "hue": 999, "saturation": -1, "lightness": 150,
+                "titlebarHueShift": -999, "decoration": "not-a-decoration", "decorationOpacity": 3,
+                "accessToken": "credential", "eulaAccepted": true, "changelogSeen": "future",
+            },
+            "eulaAccepted": true, "changelogSeen": "future", "accounts": [],
+            "accessToken": "credential", "javaPath": "private", "preLaunchCommand": "run",
+        }));
+        assert_eq!(serde_json::to_value(&projected).unwrap(), json!({
+            "accent": "custom", "titlebarTint": false,
+            "customTheme": {
+                "hue": 360.0, "saturation": 0.0, "lightness": 100.0,
+                "titlebarHueShift": -180.0, "decoration": "lattice", "decorationOpacity": 1.0,
+            },
+        }));
+        projected.validate(&manifest_for_layout(app_paths::DATA_DIRECTORY)).unwrap();
+        for malformed in [Value::Null, json!(false), json!([]), json!("invalid")] {
+            let selected = select_personalization(&json!({"accent": "custom", "customTheme": malformed}));
+            assert_eq!(selected.custom_theme, Some(PortableCustomTheme::default()));
+        }
+        let selected = select_personalization(&json!({"accent": "custom", "customTheme": {
+            "hue": "42", "saturation": null, "lightness": false,
+            "titlebarHueShift": [], "decorationOpacity": {},
+        }}));
+        assert_eq!(selected.custom_theme, Some(PortableCustomTheme::default()));
+    }
+
+    #[test]
+    fn personalization_theme_import_rejects_invalid_or_unknown_fields() {
+        let manifest = manifest_for_layout(app_paths::DATA_DIRECTORY);
+        for (key, invalid) in [
+            ("hue", json!(-0.01)), ("hue", json!(360.01)),
+            ("saturation", json!(100.01)), ("lightness", json!(-0.01)),
+            ("titlebarHueShift", json!(-180.01)), ("titlebarHueShift", json!(180.01)),
+            ("decorationOpacity", json!(-0.01)), ("decorationOpacity", json!(1.01)),
+            ("decoration", json!("external-image")),
+            ("accessToken", json!("credential")), ("eulaAccepted", json!(true)),
+            ("changelogSeen", json!("future")),
+        ] {
+            let mut custom = serde_json::to_value(PortableCustomTheme::default()).unwrap();
+            custom[key] = invalid;
+            assert!(serde_json::from_value::<PortablePersonalization>(json!({
+                "accent": "custom", "customTheme": custom,
+            })).map(|v| v.validate(&manifest).is_err()).unwrap_or(true), "accepted invalid {key}");
+        }
+        for value in [
+            json!({"eulaAccepted": true}), json!({"changelogSeen": "future"}),
+            json!({"titlebarTint": "true"}), json!({"customTheme": {"hue": 42}}),
+        ] {
+            assert!(serde_json::from_value::<PortablePersonalization>(value).is_err());
+        }
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(!PortableCustomTheme { hue: invalid, ..PortableCustomTheme::default() }.is_valid());
+        }
+    }
+
+    #[test]
+    fn personalization_theme_legacy_data_keeps_optional_fields_absent() {
+        for directory in [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY] {
+            let manifest = manifest_for_layout(directory);
+            for accent in &ACCENTS[..6] {
+                let legacy = json!({"themeMode": "dark", "accent": accent, "backgroundBlur": 0.0});
+                let decoded: PortablePersonalization = serde_json::from_value(legacy.clone()).unwrap();
+                decoded.validate(&manifest).unwrap();
+                assert_eq!(decoded.custom_theme, None);
+                assert_eq!(decoded.titlebar_tint, None);
+                assert_eq!(decoded.resolved_value(Path::new("."), &manifest).unwrap(), legacy);
+            }
+        }
+    }
+
+    #[test]
+    fn personalization_theme_zip_roundtrip_exports_only_appearance() {
+        let fixture = Fixture::new();
+        let cancel = CancellationToken::new();
+        let whitelist = [
+            "themeMode", "accent", "customTheme", "titlebarTint",
+            "backgroundBlur", "backgroundOpacity", "backgroundImage",
+        ];
+        for (index, accent) in ACCENTS.iter().enumerate() {
+            let source = fixture.0.join(format!("theme-{index}"));
+            let mut snapshot = fixture_snapshot(&source, false, false);
+            let custom = json!({
+                "hue": 312.5, "saturation": 82.0, "lightness": 46.5,
+                "titlebarHueShift": -72.0, "decoration": "folds", "decorationOpacity": 0.72,
+            });
+            let mut private_custom = custom.clone();
+            private_custom["accessToken"] = json!("private-credential");
+            private_custom["eulaAccepted"] = json!(true);
+            let selected = select_personalization(&json!({
+                "themeMode": "light", "accent": accent, "customTheme": private_custom,
+                "titlebarTint": index % 2 == 0, "backgroundBlur": 12, "backgroundOpacity": 0.4,
+                "eulaAccepted": true, "eulaVersion": "private-version",
+                "accounts": [{"accessToken": "private-credential"}],
+                "activeAccount": "private-account", "changelogSeen": "private-update",
+                "updateHistory": ["private-update"], "onboardingComplete": true,
+            }));
+            selected.validate(&snapshot.manifest).unwrap();
+            let relative = data_path(PERSONALIZATION_FILE);
+            snapshot.manifest.personalization = Some(relative.clone());
+            snapshot.inline_entries.push((relative.clone(), serde_json::to_vec(&selected).unwrap()));
+            let archive = fixture.0.join(format!("theme-{index}.zip"));
+            snapshot.write(&archive, &cancel, |_, _, _| {}).unwrap();
+            let bytes = read_zip_entry(&archive, &relative, MANIFEST_MAX_BYTES, &cancel).unwrap();
+            let encoded: Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(encoded.as_object().unwrap().keys().all(|key| whitelist.contains(&key.as_str())));
+            assert_eq!(encoded["accent"], *accent);
+            assert_eq!(encoded["customTheme"], custom);
+            assert_eq!(encoded["titlebarTint"], index % 2 == 0);
+            assert!(!String::from_utf8(bytes.clone()).unwrap().contains("private-"));
+            for forbidden in ["accounts.json", "active_account.json", "settings.json", "eula.json", "update-history.json"] {
+                assert!(read_zip_entry(&archive, forbidden, MANIFEST_MAX_BYTES, &cancel).is_err());
+                assert!(read_zip_entry(&archive, &data_path(forbidden), MANIFEST_MAX_BYTES, &cancel).is_err());
+            }
+            let relocated = fixture.0.join(format!("theme-relocated-{index}"));
+            std::fs::create_dir(&relocated).unwrap();
+            std::fs::write(
+                relocated.join(MANIFEST_FILE),
+                read_zip_entry(&archive, MANIFEST_FILE, MANIFEST_MAX_BYTES, &cancel).unwrap(),
+            ).unwrap();
+            extract_zip_subtrees(
+                &archive, &relocated.join(app_paths::DATA_DIRECTORY),
+                &[app_paths::DATA_DIRECTORY.into()], &[], &ArchiveLimits::default(), &cancel,
+            ).unwrap();
+            let bootstrap = load_bootstrap(&relocated).unwrap().unwrap();
+            let decoded = bootstrap.personalization.unwrap();
+            assert_eq!(decoded, selected);
+            assert_eq!(decoded.resolved_value(&bootstrap.root, &bootstrap.manifest).unwrap(), encoded);
+        }
+    }
+
 
     #[test]
     fn legacy_bootstrap_keeps_payload_settings_and_background_in_original_directory() {

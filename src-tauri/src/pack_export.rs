@@ -1,11 +1,16 @@
 //! 标准 Modrinth 整合包与便携 ZIP 导出：共用内容快照、校验和任务终态。
+#[path = "pack_export_content.rs"]
+mod content;
 #[path = "instance_settings_export.rs"]
 pub(crate) mod instance_settings_export;
+#[cfg(test)]
+#[path = "pack_export_regression.rs"]
+mod regression;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use minecraft_java_rs_core::net::transfer::TransferContext;
+use minecraft_java_rs_core::net::transfer::{CancellationToken, TransferContext};
 use minecraft_java_rs_core::utils::archive::{ArchiveLimits, write_zip_files};
 use minecraft_java_rs_core::utils::hash::{HashAlgorithm, get_file_hash_cancellable};
 use serde::{Deserialize, Serialize};
@@ -17,38 +22,24 @@ use crate::{app_tasks, modpacks, named_profiles};
 
 const CONFIG_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 512;
-const CONTENT_DIRECTORIES: &[&str] = &[
-    "mods",
-    "config",
-    "defaultconfigs",
-    "kubejs",
-    "scripts",
-    "resourcepacks",
-    "shaderpacks",
-    "screenshots",
-    "saves",
-    "Xaero",
-    "xaero",
-    "XaeroWaypoints",
-    "XaeroWorldMap",
-    "journeymap",
-    "voxelmap",
-];
-const CONTENT_FILES: &[&str] = &[
-    "options.txt",
-    "optionsof.txt",
-    "optionsshaders.txt",
-    "servers.dat",
-    "servers.dat_old",
-    "hotbar.nbt",
-    "command_history.txt",
-];
+use content::{CONTENT_DIRECTORIES, CONTENT_FILES};
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportEntryKind {
+    File,
+    Directory,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportFile {
+    // Directory selections are scoped tokens, never archive entry paths.
     pub path: String,
-    pub size_bytes: u64,
+    pub source_path: String,
+    pub display_name: String,
+    pub kind: ExportEntryKind,
+    pub size_bytes: Option<u64>,
     pub group: String,
     pub selected: bool,
 }
@@ -149,65 +140,8 @@ fn config(request: &PackExportRequest) -> ExportConfig {
     }
 }
 
-fn sensitive_path(path: &str) -> bool {
-    path.split('/').any(|part| {
-        let name = part.to_ascii_lowercase();
-        name.starts_with('.')
-            || name.starts_with("nowhere.")
-            || name.contains("secret")
-            || name.contains("token")
-            || name.contains("password")
-            || name.contains("credential")
-            || matches!(
-                name.as_str(),
-                "accounts.json"
-                    | "launcher_accounts.json"
-                    | "launcher_profiles.json"
-                    | "usercache.json"
-                    | "usernamecache.json"
-            )
-            || name.ends_with(".pem")
-            || name.ends_with(".key")
-            || name.ends_with(".p12")
-    })
-}
-
 fn group_for(path: &str) -> Option<(&'static str, bool)> {
-    if sensitive_path(path) {
-        return None;
-    }
-    let lower = path.to_ascii_lowercase();
-    // 光影包旁的设置文件独立勾选；解压后的 shaders/ 源码和内置属性仍属于光影包本体。
-    let shader_options = matches!(lower.as_str(), "optionsshaders.txt" | "config/iris.properties" | "config/oculus.properties")
-        || lower.strip_prefix("shaderpacks/").is_some_and(|file| {
-            !file.contains('/') && matches!(file.rsplit('.').next(), Some("txt" | "properties" | "cfg" | "ini" | "json" | "toml" | "yaml" | "yml"))
-        });
-    if shader_options {
-        return Some(("shaderOptions", true));
-    }
-    let root = lower.split('/').next()?;
-    Some(match root {
-        "mods"
-            if lower.ends_with(".disabled")
-                || lower.ends_with(".disable")
-                || lower.ends_with(".old") =>
-        {
-            ("disabledMods", false)
-        }
-        "mods" => ("mods", true),
-        "config" | "defaultconfigs" | "kubejs" | "scripts" => ("config", true),
-        "resourcepacks" => ("resourcepacks", true),
-        "shaderpacks" => ("shaderpacks", true),
-        "screenshots" => ("screenshots", false),
-        "saves" => ("saves", false),
-        "xaero" | "xaerowaypoints" | "xaeroworldmap" | "journeymap" | "voxelmap" => {
-            ("maps", false)
-        }
-        "options.txt" | "optionsof.txt" if !lower.contains('/') => ("gameOptions", true),
-        "servers.dat" | "servers.dat_old" if !lower.contains('/') => ("servers", false),
-        "hotbar.nbt" | "command_history.txt" if !lower.contains('/') => ("personal", false),
-        _ => return None,
-    })
+    content::group_for(path)
 }
 
 pub(crate) fn content_directory(
@@ -227,76 +161,47 @@ pub(crate) fn content_directory(
     }
 }
 
+#[cfg(test)]
 fn collect_files(
     root: &Path,
     path: &Path,
     files: &mut Vec<ExportFile>,
     total: &mut u64,
 ) -> Result<(), String> {
-    let metadata = match std::fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("读取导出文件失败：{error}")),
-    };
-    modpacks::check_destination(root, path)?;
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| "导出文件超出实例目录")?
-        .to_str()
-        .ok_or("导出文件名不是有效 Unicode")?
-        .replace('\\', "/");
-    if sensitive_path(&relative) {
-        return Ok(());
-    }
-    modpacks::validate_pack_path(&relative).map_err(|e| e.to_string())?;
-    if metadata.is_dir() {
-        for child in std::fs::read_dir(path).map_err(|e| format!("读取导出目录失败：{e}"))?
-        {
-            collect_files(
-                root,
-                &child.map_err(|e| e.to_string())?.path(),
-                files,
-                total,
-            )?;
-        }
-    } else if metadata.is_file() {
-        let Some((group, selected)) = group_for(&relative) else {
-            return Ok(());
-        };
-        let limits = ArchiveLimits::default();
-        *total = total
-            .checked_add(metadata.len())
-            .ok_or("导出文件总大小溢出")?;
-        if files.len() >= limits.max_entries
-            || metadata.len() > limits.max_entry_bytes
-            || *total > limits.max_total_bytes
-        {
-            return Err("导出内容超过归档配额，请减少所选内容".into());
-        }
-        files.push(ExportFile {
-            path: relative,
-            size_bytes: metadata.len(),
-            group: group.into(),
-            selected,
-        });
-    } else {
-        return Err(format!("导出内容不能包含特殊文件：{relative}"));
-    }
+    content::collect_preview(root, path, files, &CancellationToken::new())?;
+    *total = files.iter().filter_map(|file| file.size_bytes).sum();
     Ok(())
 }
 
-fn inspect(app: &AppHandle, dir: &str, version_id: &str) -> Result<ExportInstance, String> {
+fn inspect(
+    app: &AppHandle,
+    dir: &str,
+    version_id: &str,
+    cancel: &CancellationToken,
+) -> Result<ExportInstance, String> {
+    cancel.check()?;
     named_profiles::validate_name(version_id)?;
     let root = std::fs::canonicalize(dir).map_err(|e| format!("读取实例根目录失败：{e}"))?;
     let resource_root = crate::runtime_settings::resource_directory(app, &root, version_id)?;
-    inspect_resolved(&root, version_id, resource_root)
+    inspect_resolved_cancellable(&root, version_id, resource_root, cancel)
 }
 
+#[cfg(test)]
 fn inspect_resolved(
     root: &Path,
     version_id: &str,
     resource_root: PathBuf,
 ) -> Result<ExportInstance, String> {
+    inspect_resolved_cancellable(root, version_id, resource_root, &CancellationToken::new())
+}
+
+fn inspect_resolved_cancellable(
+    root: &Path,
+    version_id: &str,
+    resource_root: PathBuf,
+    cancel: &CancellationToken,
+) -> Result<ExportInstance, String> {
+    cancel.check()?;
     let directory = root.join("versions").join(version_id);
     modpacks::check_destination(root, &directory)?;
     if resource_root != root {
@@ -347,19 +252,23 @@ fn inspect_resolved(
         Err(error) => (Vec::new(), Vec::new(), Some(error)),
     };
     let mut files = Vec::new();
-    let mut total = 0_u64;
-    // 大小写不敏感文件系统上 Xaero/xaero 只遍历一次。
     let mut visited = HashSet::new();
     for name in CONTENT_DIRECTORIES.iter().chain(CONTENT_FILES) {
+        cancel.check()?;
         let path = content_directory(&resource_root, name, &mods_loader, &minecraft_version);
         if let Ok(canonical) = std::fs::canonicalize(&path) {
             if !visited.insert(canonical) {
                 continue;
             }
         }
-        collect_files(&resource_root, &path, &mut files, &mut total)?;
+        content::collect_preview(&resource_root, &path, &mut files, cancel)?;
     }
-    files.sort_by(|a, b| a.group.cmp(&b.group).then_with(|| a.path.cmp(&b.path)));
+    files.sort_by(|a, b| {
+        a.group
+            .cmp(&b.group)
+            .then_with(|| a.display_name.cmp(&b.display_name))
+            .then_with(|| a.path.cmp(&b.path))
+    });
     Ok(ExportInstance {
         resource_root,
         preview: ExportPreview {
@@ -389,17 +298,19 @@ fn validate_config(config: &ExportConfig) -> Result<(), String> {
             ));
         }
     }
-    if config.format == ExportFormat::Mrpack && (config.include_launcher || config.include_personalization) {
+    if config.format == ExportFormat::Mrpack
+        && (config.include_launcher || config.include_personalization)
+    {
         return Err("附带启动器或个性化设置时，请选择「便携 ZIP」".into());
     }
     if config.files.len() > ArchiveLimits::default().max_entries {
-        return Err("导出文件数量超过上限".into());
+        return Err("导出选择数量超过上限".into());
     }
     let mut seen = HashSet::new();
     for file in &config.files {
-        modpacks::validate_pack_path(file).map_err(|e| e.to_string())?;
-        if group_for(file).is_none() || !seen.insert(file.to_lowercase()) {
-            return Err(format!("导出文件不允许或重复：{file}"));
+        content::parse_selection(file)?;
+        if !seen.insert(file.to_lowercase()) {
+            return Err(format!("导出选择重复：{file}"));
         }
     }
     Ok(())
@@ -430,47 +341,375 @@ fn manifest(
     Ok(bytes)
 }
 
-fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
+fn read_policy_text(path: &Path, relative: &str) -> Result<String, String> {
+    use std::io::Read;
+    let input = std::fs::File::open(path).map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
+    if input.metadata().map_err(|e| e.to_string())?.len() > CONFIG_MAX_BYTES {
+        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
+    }
+    let mut text = String::new();
+    input
+        .take(CONFIG_MAX_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
+    }
+    Ok(text)
+}
+
+fn credential_key(key: &str) -> bool {
+    let leaf = key.rsplit('.').next().unwrap_or(key);
+    let folded: String = leaf
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    matches!(
+        folded.as_str(),
+        "accesstoken"
+            | "clienttoken"
+            | "refreshtoken"
+            | "authtoken"
+            | "bearertoken"
+            | "sessiontoken"
+            | "apitoken"
+            | "clientsecret"
+            | "apikey"
+            | "apikeys"
+            | "password"
+            | "authorization"
+            | "privatekey"
+            | "secretkey"
+    )
+}
+
+fn credential_value(text: &str) -> bool {
+    let value = text.trim();
+    let folded: String = value
+        .chars()
+        .filter(|character| !matches!(character, '_' | '-' | ' '))
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    if value.is_empty()
+        || matches!(
+            folded.as_str(),
+            "null"
+                | "none"
+                | "true"
+                | "false"
+                | "disabled"
+                | "unset"
+                | "notset"
+                | "changeme"
+                | "placeholder"
+                | "redacted"
+                | "yourapikey"
+                | "yourapikeyhere"
+                | "yourtoken"
+                | "yourtokenhere"
+                | "yourpassword"
+                | "yourpasswordhere"
+                | "yourclientsecret"
+                | "<apikey>"
+                | "<token>"
+                | "<password>"
+        )
+        || value.bytes().all(|character| character == b'*')
+        || (value.contains("${") && value.contains('}'))
+        || (value.starts_with('%') && value.ends_with('%'))
+        || folded.starts_with("process.env.")
+        || folded.starts_with("system.getenv(")
+        || folded.starts_with("os.getenv(")
+        || folded.starts_with("getenv(")
+    {
+        return false;
+    }
+    true
+}
+
+fn embedded_credentials(text: &str) -> bool {
+    let text = text.trim();
+    let lower = text.to_ascii_lowercase();
+    let authorization = lower
+        .strip_prefix("authorization:")
+        .map_or(text, |rest| &text[text.len() - rest.trim_start().len()..]);
+    if authorization.to_ascii_lowercase().starts_with("bearer ") {
+        let token = authorization[7..].trim();
+        if token.len() >= 16
+            && credential_value(token)
+            && token.bytes().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, b'_' | b'-' | b'.' | b'+' | b'/' | b'=')
+            })
+        {
+            return true;
+        }
+    }
+    if authorization.to_ascii_lowercase().starts_with("basic ") {
+        use base64::Engine;
+        if base64::engine::general_purpose::STANDARD
+            .decode(authorization[6..].trim())
+            .is_ok_and(|bytes| bytes.contains(&b':'))
+        {
+            return true;
+        }
+    }
+    if [
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker) && text.contains("-----END "))
+    {
+        return true;
+    }
+    if let Ok(url) = minecraft_java_rs_core::net::client::reqwest::Url::parse(text) {
+        if url.password().is_some_and(credential_value)
+            || url
+                .query_pairs()
+                .any(|(key, value)| credential_key(&key) && credential_value(&value))
+        {
+            return true;
+        }
+    }
+    let parts: Vec<_> = text.split('.').collect();
+    text.starts_with("eyJ")
+        && parts.len() == 3
+        && parts[0].len() >= 8
+        && parts[1].len() >= 8
+        && parts[2].len() >= 16
+        && parts.iter().all(|part| {
+            part.bytes().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, b'_' | b'-')
+            })
+        })
+}
+
+enum CredentialToken {
+    Text { value: String, quoted: bool },
+    Assignment,
+    Other,
+}
+
+fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
+    let bytes = text.as_bytes();
+    loop {
+        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) {
+            *offset += 1;
+        }
+        let rest = text.get(*offset..)?;
+        if rest.starts_with('#') || rest.starts_with("//") || rest.starts_with("--") {
+            *offset += rest.find('\n').unwrap_or(rest.len());
+        } else if rest.starts_with("/*") {
+            *offset += rest.find("*/").map_or(rest.len(), |end| end + 2);
+        } else {
+            break;
+        }
+    }
+    let first = *bytes.get(*offset)?;
+    let start = *offset;
+    *offset += 1;
+    match first {
+        b'$' if bytes.get(*offset) == Some(&b'{') => {
+            // Treat an unquoted environment placeholder as one value.
+            let rest = &text[*offset..];
+            if let Some(end) = rest.find('}') {
+                if !rest[..end].contains(['\n', '\r']) {
+                    *offset += end + 1;
+                    return Some(CredentialToken::Text {
+                        value: text[start..*offset].to_owned(),
+                        quoted: false,
+                    });
+                }
+            }
+            Some(CredentialToken::Text {
+                value: "$".into(),
+                quoted: false,
+            })
+        }
+        b'"' | b'\'' | b'`' => {
+            let mut escaped = false;
+            while let Some(&character) = bytes.get(*offset) {
+                *offset += 1;
+                if escaped {
+                    escaped = false;
+                } else if character == b'\\' {
+                    escaped = true;
+                } else if character == first {
+                    let raw = &text[start..*offset];
+                    let inner = &raw[1..raw.len() - 1];
+                    let encoded = if first == b'"' {
+                        raw.to_owned()
+                    } else {
+                        format!("\"{}\"", inner.replace("\\'", "'").replace('"', "\\\""))
+                    };
+                    let value = serde_json::from_str::<String>(&encoded)
+                        .unwrap_or_else(|_| inner.to_owned());
+                    return Some(CredentialToken::Text {
+                        value,
+                        quoted: true,
+                    });
+                }
+            }
+            Some(CredentialToken::Other)
+        }
+        b'=' if matches!(bytes.get(*offset), Some(b'=' | b'>')) => {
+            *offset += 1;
+            Some(CredentialToken::Other)
+        }
+        b'=' | b':' => Some(CredentialToken::Assignment),
+        b'{' | b'}' | b'[' | b']' | b'(' | b')' | b',' | b';' => Some(CredentialToken::Other),
+        _ => {
+            while bytes.get(*offset).is_some_and(|character| {
+                !character.is_ascii_whitespace()
+                    && !matches!(
+                        character,
+                        b'"' | b'\''
+                            | b'`'
+                            | b'='
+                            | b':'
+                            | b'{'
+                            | b'}'
+                            | b'['
+                            | b']'
+                            | b'('
+                            | b')'
+                            | b','
+                            | b';'
+                    )
+            }) {
+                *offset += 1;
+            }
+            let raw = &text[start..*offset];
+            let value = if raw.contains("\\u") {
+                serde_json::from_str::<String>(&format!("\"{raw}\""))
+                    .unwrap_or_else(|_| raw.to_owned())
+            } else {
+                raw.to_owned()
+            };
+            Some(CredentialToken::Text {
+                value,
+                quoted: false,
+            })
+        }
+    }
+}
+
+fn credential_text(text: &str, script: bool) -> bool {
+    let mut offset = 0;
+    while let Some(token) = credential_token(text, &mut offset) {
+        let CredentialToken::Text { value, quoted } = token else {
+            continue;
+        };
+        if quoted && embedded_credentials(&value) {
+            return true;
+        }
+        if !credential_key(&value) {
+            continue;
+        }
+        let mut next = offset;
+        if !matches!(
+            credential_token(text, &mut next),
+            Some(CredentialToken::Assignment)
+        ) {
+            continue;
+        }
+        if let Some(CredentialToken::Text { value, quoted }) = credential_token(text, &mut next) {
+            let mut after = next;
+            if !quoted
+                && matches!(
+                    credential_token(text, &mut after),
+                    Some(CredentialToken::Assignment)
+                )
+            {
+                continue;
+            }
+            if (quoted || !script || value.parse::<u64>().is_ok()) && credential_value(&value) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn json_has_credentials(value: &Value) -> bool {
+    fn populated(value: &Value) -> bool {
+        match value {
+            Value::String(text) => credential_value(text),
+            Value::Number(_) => true,
+            Value::Array(values) => values.iter().any(populated),
+            Value::Object(values) => values.values().any(populated),
+            Value::Null | Value::Bool(_) => false,
+        }
+    }
+    match value {
+        Value::String(text) => embedded_credentials(text),
+        Value::Array(values) => values.iter().any(json_has_credentials),
+        Value::Object(values) => values.iter().any(|(key, value)| {
+            (credential_key(key) && populated(value)) || json_has_credentials(value)
+        }),
+        _ => false,
+    }
+}
+
+fn is_policy_text(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|v| v.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !matches!(
+    matches!(
         extension.as_str(),
-        "json" | "toml" | "yaml" | "yml" | "properties" | "cfg" | "ini" | "txt"
-    ) {
+        "json"
+            | "json5"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "properties"
+            | "cfg"
+            | "conf"
+            | "config"
+            | "ini"
+            | "txt"
+            | "js"
+            | "ts"
+            | "zs"
+            | "lua"
+            | "mcmeta"
+            | "snbt"
+    )
+}
+
+fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
+    if !is_policy_text(path) {
         return Ok(());
     }
-    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if size > CONFIG_MAX_BYTES {
-        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
-    }
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
-    let folded: String = text
-        .to_ascii_lowercase()
-        .chars()
-        .filter(|c| !matches!(c, '_' | '-' | ' '))
-        .collect();
-    if [
-        "accesstoken",
-        "clienttoken",
-        "refreshtoken",
-        "clientsecret",
-        "apikey",
-        "password",
-        "authorization",
-        "privatekey",
-    ]
-    .iter()
-    .any(|key| folded.contains(key))
-    {
-        return Err(format!("配置文件含凭据字段，请取消选择后重试：{relative}"));
+    let text = read_policy_text(path, relative)?;
+    let script = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "js" | "ts" | "zs" | "lua"
+            )
+        });
+    // Field names and comments describe configuration; only populated credential
+    // assignments or recognizable embedded authentication material reject a pack.
+    let contains_credentials = match serde_json::from_str::<Value>(&text) {
+        Ok(value) => json_has_credentials(&value),
+        Err(_) => credential_text(&text, script),
+    };
+    if contains_credentials {
+        return Err(format!(
+            "配置或脚本含真实凭据，请移除凭据或取消选择后重试：{relative}"
+        ));
     }
     Ok(())
 }
-
 
 fn has_host_path(value: &str, source_roots: &[&Path]) -> bool {
     let normalized = value.replace('\\', "/").to_ascii_lowercase();
@@ -478,57 +717,140 @@ fn has_host_path(value: &str, source_roots: &[&Path]) -> bool {
         let bytes = value.as_bytes();
         value.starts_with('/')
             || value.starts_with("file:")
-            || (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/')
+            || (bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && bytes[2] == b'/')
             || source_roots.iter().any(|root| {
-                let root = root.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+                let root = root
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_ascii_lowercase();
                 let root = root.trim_end_matches('/');
-                root.len() > 1 && (value == root || value.strip_prefix(root).is_some_and(|suffix| suffix.starts_with('/')))
+                root.len() > 1
+                    && (value == root
+                        || value
+                            .strip_prefix(root)
+                            .is_some_and(|suffix| suffix.starts_with('/')))
             })
     };
-    normalized.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`')).any(|token| {
-        let token = token.trim_matches(|c| matches!(c, '[' | ']' | '{' | '}' | '(' | ')' | ',' | ';'));
-        if is_local_path(token) {
-            return true;
-        }
-        // 先保留完整 URL 和命名空间资源标识，避免将 URL 查询参数中的斜杠误判为本机路径。
-        if minecraft_java_rs_core::net::client::reqwest::Url::parse(token).is_ok() {
-            return false;
-        }
-        let value = token.split_once('=').map_or(token, |(_, value)| value);
-        is_local_path(value)
-    })
+    normalized
+        .split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`'))
+        .any(|token| {
+            let token =
+                token.trim_matches(|c| matches!(c, '[' | ']' | '{' | '}' | '(' | ')' | ',' | ';'));
+            if is_local_path(token) {
+                return true;
+            }
+            // 先保留完整 URL 和命名空间资源标识，避免将 URL 查询参数中的斜杠误判为本机路径。
+            if minecraft_java_rs_core::net::client::reqwest::Url::parse(token).is_ok() {
+                return false;
+            }
+            let value = token.split_once('=').map_or(token, |(_, value)| value);
+            is_local_path(value)
+        })
 }
 
 fn portable_json_has_host_data(value: &Value, source_roots: &[&Path]) -> bool {
     match value {
         Value::String(value) => has_host_path(value, source_roots),
-        Value::Array(values) => values.iter().any(|value| portable_json_has_host_data(value, source_roots)),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| portable_json_has_host_data(value, source_roots)),
         Value::Object(values) => values.iter().any(|(key, value)| {
             if has_host_path(key, source_roots) {
                 return true;
             }
-            let key: String = key.chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect();
-            key.eq_ignore_ascii_case("preLaunchCommand") || portable_json_has_host_data(value, source_roots)
+            let key: String = key
+                .chars()
+                .filter(|c| !matches!(c, '_' | '-' | ' '))
+                .collect();
+            key.eq_ignore_ascii_case("preLaunchCommand")
+                || portable_json_has_host_data(value, source_roots)
         }),
         _ => false,
     }
 }
 
-fn reject_portable_host_data(path: &Path, relative: &str, source_roots: &[&Path]) -> Result<(), String> {
-    let extension = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
-    if !matches!(extension.as_str(), "json" | "toml" | "yaml" | "yml" | "properties" | "cfg" | "ini" | "txt" | "js" | "ts") {
+fn policy_host_scan_text(text: &str) -> String {
+    let mut bytes = text.as_bytes().to_vec();
+    let mut offset = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut previous = None;
+    while offset < bytes.len() {
+        let character = bytes[offset];
+        if line_comment {
+            if matches!(character, b'\n' | b'\r') {
+                line_comment = false;
+                previous = None;
+            }
+        } else if block_comment {
+            if bytes[offset..].starts_with(b"*/") {
+                bytes[offset..offset + 2].fill(b' ');
+                block_comment = false;
+                offset += 2;
+                continue;
+            }
+        } else if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == b'\\' {
+                escaped = true;
+            } else if character == delimiter {
+                quote = None;
+            }
+        } else if matches!(character, b'"' | b'\'' | b'`') {
+            quote = Some(character);
+            previous = Some(character);
+        } else if bytes[offset..].starts_with(b"/*") {
+            bytes[offset..offset + 2].fill(b' ');
+            block_comment = true;
+            offset += 2;
+            continue;
+        } else if bytes[offset..].starts_with(b"//") && !matches!(previous, Some(b'=' | b':')) {
+            bytes[offset..offset + 2].fill(b' ');
+            line_comment = true;
+            offset += 2;
+            continue;
+        } else if character == b'#' || bytes[offset..].starts_with(b"--") {
+            line_comment = true;
+        } else if matches!(character, b'\n' | b'\r') {
+            previous = None;
+        } else if !character.is_ascii_whitespace() {
+            previous = Some(character);
+        }
+        offset += 1;
+    }
+    // Only ASCII delimiters are masked. Comment bodies still undergo host-path
+    // checks, and quoted paths, URL schemes, and unquoted UNC values stay intact.
+    String::from_utf8(bytes).expect("masking ASCII preserves UTF-8")
+}
+
+fn reject_portable_host_data(
+    path: &Path,
+    relative: &str,
+    source_roots: &[&Path],
+) -> Result<(), String> {
+    if !is_policy_text(path) {
         return Ok(());
     }
-    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if size > CONFIG_MAX_BYTES { return Err(format!("配置文件过大，请取消选择后重试：{relative}")); }
-    let text = std::fs::read_to_string(path).map_err(|e| format!("读取便携配置失败 {relative}：{e}"))?;
-    let folded: String = text.to_ascii_lowercase().chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect();
+    let text = read_policy_text(path, relative)?;
+    let folded: String = text
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| !matches!(c, '_' | '-' | ' '))
+        .collect();
     let has_host_data = match serde_json::from_str::<Value>(&text) {
         Ok(value) => portable_json_has_host_data(&value, source_roots),
-        Err(_) => has_host_path(&text, source_roots),
+        Err(_) => has_host_path(&policy_host_scan_text(&text), source_roots),
     };
     if has_host_data || folded.contains("prelaunchcommand") {
-        return Err(format!("请将配置中的本机路径改为相对路径，并移除启动前命令，或取消选择后重试：{relative}"));
+        return Err(format!(
+            "请将配置中的本机路径改为相对路径，并移除启动前命令，或取消选择后重试：{relative}"
+        ));
     }
     Ok(())
 }
@@ -536,6 +858,7 @@ fn reject_portable_host_data(path: &Path, relative: &str, source_roots: &[&Path]
 struct ExportSnapshot {
     root: PathBuf,
     preview: ExportPreview,
+    files: Vec<String>,
     hashes: Vec<(String, String, u64)>,
 }
 
@@ -544,37 +867,69 @@ fn snapshot_files(
     request: &PackExportRequest,
     task: &app_tasks::TaskContext,
 ) -> Result<ExportSnapshot, String> {
-    use std::io::{Read, Write};
     task.check_cancelled()?;
-    let instance = inspect(app, &request.dir, &request.version_id)?;
-    let available: HashSet<_> = instance
-        .preview
-        .files
-        .iter()
-        .map(|file| file.path.as_str())
-        .collect();
-    let root = task.workspace.join("export-content");
+    task.stage("准备导出文件", &request.name);
+    let cancel = task.transfer.cancellation();
+    let instance = inspect(app, &request.dir, &request.version_id, cancel)?;
+    snapshot_instance(
+        instance,
+        request,
+        &task.workspace,
+        cancel,
+        |done, total, relative| {
+            task.file(relative, 1.0, true);
+            task.progress(done as u64, total as u64, 0.0, 0);
+        },
+    )
+}
+
+fn snapshot_instance(
+    instance: ExportInstance,
+    request: &PackExportRequest,
+    workspace: &Path,
+    cancel: &CancellationToken,
+    mut progress: impl FnMut(usize, usize, &str),
+) -> Result<ExportSnapshot, String> {
+    use std::io::{Read, Write};
+    cancel.check()?;
+    validate_config(&config(request))?;
+    let selected = content::selected_files(
+        &instance.resource_root,
+        &instance.preview.files,
+        &request.files,
+        cancel,
+    )?;
+    let root = workspace.join("export-content");
+    modpacks::check_destination(workspace, &root)?;
     std::fs::create_dir(&root).map_err(|e| format!("创建导出暂存目录失败：{e}"))?;
     let mut hashes = Vec::new();
+    let mut files = Vec::with_capacity(selected.len());
     let mut total = 0_u64;
     let limits = ArchiveLimits::default();
-    task.stage("准备导出文件", &request.name);
-    for (index, relative) in request.files.iter().enumerate() {
-        task.check_cancelled()?;
-        if !available.contains(relative.as_str()) {
-            return Err(format!("文件已变化，请刷新导出列表：{relative}"));
-        }
+    for (index, selected_file) in selected.iter().enumerate() {
+        cancel.check()?;
+        let relative = &selected_file.path;
         let source = instance.resource_root.join(relative);
         modpacks::check_destination(&instance.resource_root, &source)?;
+        let source_metadata = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
+        if !source_metadata.is_file() || source_metadata.len() != selected_file.size_bytes {
+            return Err(format!("导出文件已变化，请刷新后重试：{relative}"));
+        }
         let destination = root.join(relative);
+        modpacks::check_destination(&root, &destination)?;
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        modpacks::check_destination(&root, &destination)?;
         let mut input =
             std::fs::File::open(&source).map_err(|e| format!("读取导出文件失败：{e}"))?;
         let metadata = input.metadata().map_err(|e| e.to_string())?;
-        if !metadata.is_file() || metadata.len() > limits.max_entry_bytes {
-            return Err(format!("导出文件无效或过大：{relative}"));
+        modpacks::check_destination(&instance.resource_root, &source)?;
+        if !metadata.is_file()
+            || metadata.len() != selected_file.size_bytes
+            || metadata.len() > limits.max_entry_bytes
+        {
+            return Err(format!("导出文件无效、已变化或过大：{relative}"));
         }
         let mut output = std::fs::OpenOptions::new()
             .create_new(true)
@@ -584,13 +939,13 @@ fn snapshot_files(
         let mut buffer = [0_u8; 64 * 1024];
         let mut copied = 0_u64;
         loop {
-            task.check_cancelled()?;
+            cancel.check()?;
             let count = input.read(&mut buffer).map_err(|e| e.to_string())?;
             if count == 0 {
                 break;
             }
-            copied += count as u64;
-            total += count as u64;
+            copied = copied.checked_add(count as u64).ok_or("导出文件大小溢出")?;
+            total = total.checked_add(count as u64).ok_or("导出总大小溢出")?;
             if copied > metadata.len() || total > limits.max_total_bytes {
                 return Err("导出文件已变化或超过归档配额，请刷新后重试".into());
             }
@@ -598,41 +953,78 @@ fn snapshot_files(
                 .write_all(&buffer[..count])
                 .map_err(|e| e.to_string())?;
         }
-        if copied != metadata.len() {
+        if copied != metadata.len() || input.metadata().map_err(|e| e.to_string())?.len() != copied
+        {
             return Err(format!("导出文件已变化，请刷新后重试：{relative}"));
         }
         drop(output);
+        cancel.check()?;
         reject_credentials(&destination, relative)?;
         if request.format == ExportFormat::Portable {
-            reject_portable_host_data(&destination, relative, &[Path::new(&request.dir), &instance.resource_root])?;
-        }
-        // 仅资源文件需要内容身份，以便生成标准下载条目；配置和存档保持 overrides。
-        if !request.bundle_resources && is_download_resource(relative) {
-            let digest = get_file_hash_cancellable(
+            reject_portable_host_data(
                 &destination,
-                HashAlgorithm::Sha512,
-                task.transfer.cancellation(),
+                relative,
+                &[Path::new(&request.dir), &instance.resource_root],
             )?;
+        }
+        if !request.bundle_resources && is_download_resource(relative) {
+            let digest = get_file_hash_cancellable(&destination, HashAlgorithm::Sha512, cancel)?;
             hashes.push((relative.clone(), digest, copied));
         }
-        task.file(relative, 1.0, true);
-        task.progress((index + 1) as u64, request.files.len() as u64, 0.0, 0);
+        files.push(relative.clone());
+        progress(index + 1, selected.len(), relative);
     }
+    cancel.check()?;
     Ok(ExportSnapshot {
         root,
         preview: instance.preview,
+        files,
         hashes,
     })
 }
 
-fn is_download_resource(path: &str) -> bool {
-    matches!(
-        group_for(path),
-        Some(("mods" | "disabledMods" | "resourcepacks" | "shaderpacks", _))
-    ) && matches!(
-        path.rsplit('.').next(),
-        Some("jar" | "zip" | "disabled" | "disable")
+fn write_snapshot_payload(
+    snapshot: &ExportSnapshot,
+    destination: &Path,
+    index: Vec<u8>,
+    remote_paths: &HashSet<String>,
+    cancel: &CancellationToken,
+    progress: impl FnMut(usize, usize, &str),
+) -> Result<(), String> {
+    let entries: Vec<_> = snapshot
+        .files
+        .iter()
+        .filter(|path| !remote_paths.contains(*path))
+        .map(|path| (format!("overrides/{path}"), path.clone()))
+        .collect();
+    write_zip_files(
+        destination,
+        &snapshot.root,
+        &entries,
+        &[("modrinth.index.json".into(), index)],
+        &ArchiveLimits::default(),
+        cancel,
+        progress,
     )
+}
+
+fn is_download_resource(path: &str) -> bool {
+    let Some((group, _)) = group_for(path) else {
+        return false;
+    };
+    let standalone = match group {
+        "mods" | "disabledMods" => true,
+        "resourcepacks" | "shaderpacks" => path.split('/').count() == 2,
+        _ => false,
+    };
+    standalone
+        && matches!(
+            path.rsplit('.')
+                .next()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("jar" | "zip" | "disabled" | "disable")
+        )
 }
 
 fn remote_entry(version: &Value, relative: &str, digest: &str, size: u64) -> Result<Value, String> {
@@ -680,7 +1072,10 @@ async fn export_to_staging(
         let portable = if copied_request.format == ExportFormat::Portable {
             reporter.stage("准备便携整合包", &copied_request.name);
             Some(crate::portable_pack::prepare_snapshot(
-                &app, &copied_request, &reporter.workspace, reporter.transfer.cancellation(),
+                &app,
+                &copied_request,
+                &reporter.workspace,
+                reporter.transfer.cancellation(),
             )?)
         } else {
             None
@@ -721,34 +1116,30 @@ async fn export_to_staging(
                 task.check_cancelled()?;
                 if request.modrinth_only {
                     return Err(format!(
-                        "Modrinth 未收录 {relative}；请取消选择此文件或开启「打包资源文件」"
+                        "Modrinth 未收录 {relative}；请取消选择此文件或开启「导出资源文件」"
                     ));
                 }
             }
             Err(error) => {
                 return Err(format!(
-                    "匹配 {relative} 失败，请重试或开启「打包资源文件」：{error}"
+                    "匹配 {relative} 失败，请重试或开启「导出资源文件」：{error}"
                 ));
             }
         }
     }
     let index = manifest(&snapshot.preview, &config(&request), &downloads)?;
-    let entries: Vec<_> = request
-        .files
-        .iter()
-        .filter(|path| !remote_paths.contains(*path))
-        .map(|path| (format!("overrides/{path}"), path.clone()))
-        .collect();
     let reporter = task.clone();
     task.stage("写入整合包", &request.name);
     tokio::task::spawn_blocking(move || {
-        let payload = portable.as_ref().map(|pack| pack.payload_path()).unwrap_or_else(|| staged.clone());
-        write_zip_files(
+        let payload = portable
+            .as_ref()
+            .map(|pack| pack.payload_path())
+            .unwrap_or_else(|| staged.clone());
+        write_snapshot_payload(
+            &snapshot,
             &payload,
-            &snapshot.root,
-            &entries,
-            &[("modrinth.index.json".into(), index)],
-            &ArchiveLimits::default(),
+            index,
+            &remote_paths,
             reporter.transfer.cancellation(),
             |done, total, name| {
                 reporter.file(name, 1.0, true);
@@ -757,10 +1148,14 @@ async fn export_to_staging(
         )?;
         if let Some(portable) = portable {
             reporter.stage("写入便携 ZIP", &request.name);
-            portable.write(&staged, reporter.transfer.cancellation(), |done, total, name| {
-                reporter.file(name, 1.0, true);
-                reporter.progress(done as u64, total as u64, 0.0, 0);
-            })?;
+            portable.write(
+                &staged,
+                reporter.transfer.cancellation(),
+                |done, total, name| {
+                    reporter.file(name, 1.0, true);
+                    reporter.progress(done as u64, total as u64, 0.0, 0);
+                },
+            )?;
         }
         Ok(())
     })
@@ -803,9 +1198,11 @@ pub async fn pack_export_inspect(
     dir: String,
     version_id: String,
 ) -> Result<ExportPreview, String> {
-    tokio::task::spawn_blocking(move || inspect(&app, &dir, &version_id).map(|instance| instance.preview))
-        .await
-        .map_err(|e| format!("读取导出内容失败：{e}"))?
+    tokio::task::spawn_blocking(move || {
+        inspect(&app, &dir, &version_id, &CancellationToken::new()).map(|instance| instance.preview)
+    })
+    .await
+    .map_err(|e| format!("读取导出内容失败：{e}"))?
 }
 
 #[tauri::command]
@@ -923,18 +1320,22 @@ mod tests {
     struct Fixture(PathBuf);
     impl Fixture {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!("nowhere-r6-export-{}", crate::store::random_token()));
+            let root = std::env::temp_dir().join(format!(
+                "nowhere-r6-export-{}",
+                crate::store::random_token()
+            ));
             std::fs::create_dir_all(&root).unwrap();
             Self(root)
         }
     }
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn export_selection_roundtrips_through_local_import_and_safe_overrides() {
-        use minecraft_java_rs_core::net::transfer::CancellationToken;
         use minecraft_java_rs_core::utils::archive::extract_zip_subtrees;
         let fixture = Fixture::new();
         let version_id = "directory-identity";
@@ -942,7 +1343,11 @@ mod tests {
         std::fs::create_dir_all(directory.join("mods")).unwrap();
         std::fs::create_dir_all(directory.join("config")).unwrap();
         std::fs::write(directory.join("mods/local.jar"), b"local mod").unwrap();
-        std::fs::write(directory.join("config/client.json"), br#"{"quality":"high"}"#).unwrap();
+        std::fs::write(
+            directory.join("config/client.json"),
+            br#"{"quality":"high"}"#,
+        )
+        .unwrap();
         std::fs::write(directory.join("config/accounts.json"), b"must not export").unwrap();
         std::fs::write(directory.join("servers.dat"), b"private servers").unwrap();
         std::fs::write(directory.join("nowhere.profile.json"), serde_json::to_vec(&json!({
@@ -957,19 +1362,83 @@ mod tests {
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
         assert_eq!(instance.preview.name, "显示名称不等于目录");
-        assert!(instance.preview.files.iter().all(|file| !file.path.contains("accounts")));
-        assert!(!instance.preview.files.iter().find(|file| file.path == "servers.dat").unwrap().selected);
-        let config = ExportConfig { name:"可移植整合包".into(),version:"1.0".into(),files:instance.preview.files.iter().filter(|file|file.selected).map(|file|file.path.clone()).collect(),bundle_resources:true,modrinth_only:false, ..ExportConfig::default() };
-        let archive = fixture.0.join("roundtrip.mrpack");
-        let entries = config.files.iter().map(|path|(format!("overrides/{path}"),path.clone())).collect::<Vec<_>>();
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| !file.path.contains("accounts"))
+        );
+        assert!(
+            !instance
+                .preview
+                .files
+                .iter()
+                .find(|file| file.path == "servers.dat")
+                .unwrap()
+                .selected
+        );
+        let request = PackExportRequest {
+            dir: root.to_string_lossy().into_owned(),
+            version_id: version_id.into(),
+            name: "可移植整合包".into(),
+            version: "1.0".into(),
+            files: instance
+                .preview
+                .files
+                .iter()
+                .filter(|file| file.selected)
+                .map(|file| file.path.clone())
+                .collect(),
+            bundle_resources: true,
+            modrinth_only: false,
+            format: ExportFormat::Mrpack,
+            include_launcher: false,
+            include_personalization: false,
+        };
+        assert!(request.files.iter().any(|path| path.starts_with("@dir/")));
+        let workspace = fixture.0.join("roundtrip-stage");
+        std::fs::create_dir(&workspace).unwrap();
         let cancel = CancellationToken::new();
-        write_zip_files(&archive, &instance.resource_root, &entries, &[("modrinth.index.json".into(),manifest(&instance.preview,&config,&[]).unwrap())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        let (_, imported) = modpacks::local_manifest(&archive,&cancel).unwrap();
-        assert_eq!(imported.name,config.name);
-        assert_eq!(imported.loader,instance.preview.loader);
-        let destination=fixture.0.join("imported");
-        extract_zip_subtrees(&archive,&destination,&imported.overrides,&[],&ArchiveLimits::default(),&cancel).unwrap();
-        assert_eq!(std::fs::read(destination.join("mods/local.jar")).unwrap(),b"local mod");
+        let snapshot =
+            snapshot_instance(instance, &request, &workspace, &cancel, |_, _, _| {}).unwrap();
+        assert_eq!(snapshot.files, ["config/client.json", "mods/local.jar"]);
+        std::fs::write(
+            directory.join("mods/local.jar"),
+            b"source changed after snapshot",
+        )
+        .unwrap();
+        let archive = fixture.0.join("roundtrip.mrpack");
+        write_snapshot_payload(
+            &snapshot,
+            &archive,
+            manifest(&snapshot.preview, &config(&request), &[]).unwrap(),
+            &HashSet::new(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_, imported) = modpacks::local_manifest(&archive, &cancel).unwrap();
+        assert_eq!(imported.name, request.name);
+        assert_eq!(imported.loader, snapshot.preview.loader);
+        let destination = fixture.0.join("imported");
+        extract_zip_subtrees(
+            &archive,
+            &destination,
+            &imported.overrides,
+            &[],
+            &ArchiveLimits::default(),
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(destination.join("mods/local.jar")).unwrap(),
+            b"local mod"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("config/client.json")).unwrap(),
+            br#"{"quality":"high"}"#
+        );
         assert!(!destination.join("servers.dat").exists());
         assert!(!destination.join("config/accounts.json").exists());
     }
@@ -988,22 +1457,39 @@ mod tests {
             std::fs::write(
                 directory.join(format!("{version_id}.json")),
                 serde_json::to_vec(&json!({ "id": "1.20.1", "type": "release" })).unwrap(),
-            ).unwrap();
+            )
+            .unwrap();
             if named {
                 std::fs::write(
                     directory.join("nowhere.profile.json"),
                     serde_json::to_vec(&json!({
                         "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
                         "loader": null, "loaderVersion": "", "ready": true
-                    })).unwrap(),
-                ).unwrap();
+                    }))
+                    .unwrap(),
+                )
+                .unwrap();
             }
             for isolation in [false, true] {
-                let resources = crate::runtime_settings::game_directory(&root, version_id, isolation);
+                let resources =
+                    crate::runtime_settings::game_directory(&root, version_id, isolation);
                 let instance = inspect_resolved(&root, version_id, resources.clone()).unwrap();
-                let paths: Vec<_> = instance.preview.files.iter().map(|file| file.path.as_str()).collect();
-                let expected = if isolation { "mods/isolated.jar" } else { "mods/shared.jar" };
-                assert_eq!(paths, vec![expected], "named={named}, isolation={isolation}");
+                let paths: Vec<_> = instance
+                    .preview
+                    .files
+                    .iter()
+                    .map(|file| file.path.as_str())
+                    .collect();
+                let expected = if isolation {
+                    "mods/isolated.jar"
+                } else {
+                    "mods/shared.jar"
+                };
+                assert_eq!(
+                    paths,
+                    vec![expected],
+                    "named={named}, isolation={isolation}"
+                );
                 assert_eq!(instance.resource_root, resources);
             }
         }
@@ -1012,38 +1498,69 @@ mod tests {
     #[test]
     fn local_import_accepts_curseforge_manifest_but_not_arbitrary_zip() {
         use minecraft_java_rs_core::net::transfer::CancellationToken;
-        let fixture=Fixture::new();
-        let cancel=CancellationToken::new();
-        let cf=fixture.0.join("cf.zip");
-        let manifest=json!({"manifestType":"minecraftModpack","manifestVersion":1,"name":"CF local","version":"1","minecraft":{"version":"1.20.1","modLoaders":[{"id":"forge-47.3.0","primary":true}]},"files":[],"overrides":"overrides"});
-        write_zip_files(&cf,&fixture.0,&[],&[("manifest.json".into(),serde_json::to_vec(&manifest).unwrap())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        assert_eq!(modpacks::local_manifest(&cf,&cancel).unwrap().1.name,"CF local");
-        let arbitrary=fixture.0.join("arbitrary.zip");
-        write_zip_files(&arbitrary,&fixture.0,&[],&[("file.txt".into(),b"not a pack".to_vec())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        assert!(modpacks::local_manifest(&arbitrary,&cancel).is_err());
+        let fixture = Fixture::new();
+        let cancel = CancellationToken::new();
+        let cf = fixture.0.join("cf.zip");
+        let manifest = json!({"manifestType":"minecraftModpack","manifestVersion":1,"name":"CF local","version":"1","minecraft":{"version":"1.20.1","modLoaders":[{"id":"forge-47.3.0","primary":true}]},"files":[],"overrides":"overrides"});
+        write_zip_files(
+            &cf,
+            &fixture.0,
+            &[],
+            &[(
+                "manifest.json".into(),
+                serde_json::to_vec(&manifest).unwrap(),
+            )],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(
+            modpacks::local_manifest(&cf, &cancel).unwrap().1.name,
+            "CF local"
+        );
+        let arbitrary = fixture.0.join("arbitrary.zip");
+        write_zip_files(
+            &arbitrary,
+            &fixture.0,
+            &[],
+            &[("file.txt".into(), b"not a pack".to_vec())],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(modpacks::local_manifest(&arbitrary, &cancel).is_err());
     }
 
     #[test]
     fn remote_resource_requires_matching_hash_size_and_modrinth_host() {
-        let hash="a".repeat(128);
-        let mut version=json!({"files":[{"hashes":{"sha512":hash,"sha1":"b".repeat(40)},"size":42,"url":"https://cdn.modrinth.com/data/example/file.jar"}]});
-        assert!(remote_entry(&version,"mods/a.jar",&hash,42).is_ok());
-        assert!(remote_entry(&version,"mods/a.jar",&hash,43).is_err());
-        version["files"][0]["url"]=json!("https://example.com/file.jar");
-        assert!(remote_entry(&version,"mods/a.jar",&hash,42).is_err());
+        let hash = "a".repeat(128);
+        let mut version = json!({"files":[{"hashes":{"sha512":hash,"sha1":"b".repeat(40)},"size":42,"url":"https://cdn.modrinth.com/data/example/file.jar"}]});
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 42).is_ok());
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 43).is_err());
+        version["files"][0]["url"] = json!("https://example.com/file.jar");
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 42).is_err());
     }
 
     #[test]
     fn export_config_roundtrip_keeps_flags_and_rejects_credentials() {
-        let config=ExportConfig{name:"包".into(),version:"1".into(),files:vec!["mods/a.jar".into()],bundle_resources:true,modrinth_only:true, ..ExportConfig::default()};
-        let decoded:ExportConfig=serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
+        let config = ExportConfig {
+            name: "包".into(),
+            version: "1".into(),
+            files: vec!["mods/a.jar".into()],
+            bundle_resources: true,
+            modrinth_only: true,
+            ..ExportConfig::default()
+        };
+        let decoded: ExportConfig =
+            serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
         assert!(decoded.bundle_resources && decoded.modrinth_only);
-        let fixture=Fixture::new();
-        let path=fixture.0.join("service.json");
-        std::fs::write(&path,br#"{"access_token":"fixture-value"}"#).unwrap();
-        assert!(reject_credentials(&path,"config/service.json").is_err());
+        let fixture = Fixture::new();
+        let path = fixture.0.join("service.json");
+        std::fs::write(&path, br#"{"access_token":"fixture-value"}"#).unwrap();
+        assert!(reject_credentials(&path, "config/service.json").is_err());
     }
-
 
     #[test]
     fn personal_content_is_opt_in_and_secrets_are_excluded() {
@@ -1083,15 +1600,21 @@ mod tests {
         let mut files = Vec::new();
         let mut total = 0;
         collect_files(&root, &lite, &mut files, &mut total).unwrap();
-        assert!(files
-            .iter()
-            .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods"));
+        assert!(
+            files
+                .iter()
+                .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods")
+        );
         assert!(files.iter().any(|file| {
             file.path == "mods/1.12.2/legacy.litemod.old"
                 && file.group == "disabledMods"
                 && !file.selected
         }));
-        assert!(files.iter().all(|file| !file.path.starts_with("mods/ignored")));
+        assert!(
+            files
+                .iter()
+                .all(|file| !file.path.starts_with("mods/ignored"))
+        );
         assert_eq!(
             content_directory(&root, "mods", "forge", "1.20.1"),
             root.join("mods")
@@ -1107,30 +1630,98 @@ mod tests {
         std::fs::create_dir_all(directory.join("XaeroWorldMap")).unwrap();
         std::fs::write(directory.join("XaeroWaypoints/waypoints.txt"), b"waypoint").unwrap();
         std::fs::write(directory.join("XaeroWorldMap/region.dat"), b"map").unwrap();
-        std::fs::write(directory.join("nowhere.settings.json"), serde_json::to_vec(&json!({
-            "windowTitle": "安全标题", "memoryMode": "custom", "memoryMb": 6144,
-            "jvmArgs": "-XX:+UseG1GC", "javaPath": "C:/Users/private/java.exe",
-            "accessToken": "secret", "preLaunchCommand": "echo hidden",
-        })).unwrap()).unwrap();
-        std::fs::write(directory.join("nowhere.profile.json"), serde_json::to_vec(&json!({
-            "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
-            "loader": null, "loaderVersion": "", "ready": true
-        })).unwrap()).unwrap();
-        std::fs::write(directory.join(format!("{version_id}.json")), serde_json::to_vec(&json!({
-            "id": "1.20.1", "type": "release",
-            "nowhereCustom": {"name": "设置预览"}
-        })).unwrap()).unwrap();
-
+        std::fs::write(
+            directory.join("nowhere.settings.json"),
+            serde_json::to_vec(&json!({
+                "windowTitle": "安全标题", "memoryMode": "custom", "memoryMb": 6144,
+                "jvmArgs": "-XX:+UseG1GC", "javaPath": "C:/Users/private/java.exe",
+                "accessToken": "secret", "preLaunchCommand": "echo hidden",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("nowhere.profile.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
+                "loader": null, "loaderVersion": "", "ready": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join(format!("{version_id}.json")),
+            serde_json::to_vec(&json!({
+                "id": "1.20.1", "type": "release", "nowhereCustom": {"name": "设置预览"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
-        assert!(instance.preview.instance_settings.iter().any(|field| field == "窗口标题"));
-        assert!(instance.preview.instance_settings.iter().any(|field| field == "内存上限"));
-        assert!(instance.preview.instance_settings.iter().all(|field| field != "Java 路径"));
-        assert!(instance.preview.files.iter().any(|file| file.path == "XaeroWaypoints/waypoints.txt" && file.group == "maps"));
-        assert!(instance.preview.files.iter().any(|file| file.path == "XaeroWorldMap/region.dat" && file.group == "maps"));
-        assert!(instance.preview.files.iter().all(|file| file.path != "nowhere.settings.json"));
-        assert_eq!(group_for("XaeroWaypoints/waypoints.txt"), Some(("maps", false)));
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "窗口标题")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "内存上限")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .all(|field| field != "Java 路径")
+        );
+        for relative in ["XaeroWaypoints", "XaeroWorldMap"] {
+            assert!(instance.preview.files.iter().any(|file| {
+                file.path == format!("@dir/maps/{relative}")
+                    && file.source_path == relative
+                    && file.kind == ExportEntryKind::Directory
+                    && file.group == "maps"
+                    && !file.selected
+                    && file.size_bytes.is_none()
+            }));
+        }
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| file.path != "nowhere.settings.json")
+        );
+        let selections: Vec<_> = instance
+            .preview
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect();
+        let selected = content::selected_files(
+            &instance.resource_root,
+            &instance.preview.files,
+            &selections,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            selected
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            ["XaeroWaypoints/waypoints.txt", "XaeroWorldMap/region.dat"]
+        );
+        assert_eq!(
+            group_for("XaeroWaypoints/waypoints.txt"),
+            Some(("maps", false))
+        );
         assert_eq!(group_for("XaeroWorldMap/region.dat"), Some(("maps", false)));
     }
 
@@ -1184,7 +1775,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn old_export_config_and_request_keep_mrpack_defaults() {
         let old = json!({ "name": "旧配置", "version": "1", "files": ["mods/local.jar"] });
@@ -1207,9 +1797,14 @@ mod tests {
         for include_launcher in [false, true] {
             for include_personalization in [false, true] {
                 let config = ExportConfig {
-                    name: "便携配置".into(), version: "1".into(), format: ExportFormat::Portable,
-                    files: vec!["mods/local.jar".into()], bundle_resources: true, modrinth_only: true,
-                    include_launcher, include_personalization,
+                    name: "便携配置".into(),
+                    version: "1".into(),
+                    format: ExportFormat::Portable,
+                    files: vec!["mods/local.jar".into()],
+                    bundle_resources: true,
+                    modrinth_only: true,
+                    include_launcher,
+                    include_personalization,
                 };
                 let encoded = serde_json::to_value(&config).unwrap();
                 let decoded: ExportConfig = serde_json::from_value(encoded.clone()).unwrap();
@@ -1224,14 +1819,19 @@ mod tests {
                 let mut invalid = encoded;
                 invalid["format"] = json!("renamed-zip");
                 assert!(serde_json::from_value::<ExportConfig>(invalid).is_err());
-                let standard = ExportConfig { format: ExportFormat::Mrpack, ..config };
-                assert_eq!(validate_config(&standard).is_ok(), !include_launcher && !include_personalization);
+                let standard = ExportConfig {
+                    format: ExportFormat::Mrpack,
+                    ..config
+                };
+                assert_eq!(
+                    validate_config(&standard).is_ok(),
+                    !include_launcher && !include_personalization
+                );
             }
         }
         assert_eq!(ExportFormat::Mrpack.extension(), "mrpack");
         assert_eq!(ExportFormat::Portable.extension(), "zip");
     }
-
 
     #[test]
     fn portable_text_rejects_host_paths_and_commands_without_changing_standard_policy() {
@@ -1257,8 +1857,19 @@ mod tests {
             json!({"pre_launch_command": "echo start"}),
         ] {
             std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[Path::new("/custom-root/game")]).is_err(), "{value}");
-            assert!(reject_credentials(&path, "config/client.json").is_ok(), "{value}");
+            assert!(
+                reject_portable_host_data(
+                    &path,
+                    "config/client.json",
+                    &[Path::new("/custom-root/game")]
+                )
+                .is_err(),
+                "{value}"
+            );
+            assert!(
+                reject_credentials(&path, "config/client.json").is_ok(),
+                "{value}"
+            );
         }
         for text in [
             r#"{"folder":"\u0043:\u002fUsers/private/game"}"#,
@@ -1268,8 +1879,14 @@ mod tests {
             r#"{"\u002ftmp/local-cache":"cached"}"#,
         ] {
             std::fs::write(&path, text).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[]).is_err(), "{text}");
-            assert!(reject_credentials(&path, "config/client.json").is_ok(), "{text}");
+            assert!(
+                reject_portable_host_data(&path, "config/client.json", &[]).is_err(),
+                "{text}"
+            );
+            assert!(
+                reject_credentials(&path, "config/client.json").is_ok(),
+                "{text}"
+            );
         }
         let portable = json!({
             "folder": "config/client",
@@ -1285,10 +1902,22 @@ mod tests {
             "minecraft:textures/block/stone.png": "resource",
         });
         std::fs::write(&path, serde_json::to_vec(&portable).unwrap()).unwrap();
-        reject_portable_host_data(&path, "config/client.json", &[Path::new("/custom-root/game")]).unwrap();
-        for text in ["cache=/tmp/local-cache", "java=/opt/jdk/bin/java", r"cache=\\server\share\game"] {
+        reject_portable_host_data(
+            &path,
+            "config/client.json",
+            &[Path::new("/custom-root/game")],
+        )
+        .unwrap();
+        for text in [
+            "cache=/tmp/local-cache",
+            "java=/opt/jdk/bin/java",
+            r"cache=\\server\share\game",
+        ] {
             std::fs::write(&path, text).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[]).is_err(), "{text}");
+            assert!(
+                reject_portable_host_data(&path, "config/client.json", &[]).is_err(),
+                "{text}"
+            );
         }
         std::fs::write(&path, "url=https://example.com/home/files?cache=/tmp/local-cache\nmodel=minecraft:textures/block/stone.png").unwrap();
         reject_portable_host_data(&path, "config/client.json", &[]).unwrap();
@@ -1300,17 +1929,30 @@ mod tests {
         use minecraft_java_rs_core::utils::archive::extract_zip_subtrees;
 
         let settings = [
-            "optionsshaders.txt", "config/iris.properties", "config/oculus.properties",
-            "shaderpacks/Forest.zip.txt", "shaderpacks/Forest.properties", "shaderpacks/Forest.json",
+            "optionsshaders.txt",
+            "config/iris.properties",
+            "config/oculus.properties",
+            "shaderpacks/Forest.zip.txt",
+            "shaderpacks/Forest.properties",
+            "shaderpacks/Forest.json",
         ];
         for path in settings {
             assert_eq!(group_for(path), Some(("shaderOptions", true)), "{path}");
             assert!(!is_download_resource(path), "{path}");
         }
-        assert_eq!(group_for("shaderpacks/Forest.zip"), Some(("shaderpacks", true)));
+        assert_eq!(
+            group_for("shaderpacks/Forest.zip"),
+            Some(("shaderpacks", true))
+        );
         assert!(is_download_resource("shaderpacks/Forest.zip"));
-        assert_eq!(group_for("shaderpacks/Forest/shaders/shaders.properties"), Some(("shaderpacks", true)));
-        assert_eq!(group_for("config/client.properties"), Some(("config", true)));
+        assert_eq!(
+            group_for("shaderpacks/Forest/shaders/shaders.properties"),
+            Some(("shaderpacks", true))
+        );
+        assert_eq!(
+            group_for("config/client.properties"),
+            Some(("config", true))
+        );
         assert_eq!(group_for("optionsof.txt"), Some(("gameOptions", true)));
         assert!(group_for("shaderpacks/private-token.txt").is_none());
 
@@ -1322,7 +1964,8 @@ mod tests {
         }
         let old: ExportConfig = serde_json::from_value(json!({
             "name": "光影设置", "version": "1", "files": settings,
-        })).unwrap();
+        }))
+        .unwrap();
         validate_config(&old).unwrap();
         assert_eq!(old.files, settings);
         let mut files = Vec::new();
@@ -1330,25 +1973,58 @@ mod tests {
         for path in &old.files {
             collect_files(&fixture.0, &fixture.0.join(path), &mut files, &mut size).unwrap();
         }
-        assert!(files.iter().all(|file| file.group == "shaderOptions" && file.selected));
+        assert!(
+            files
+                .iter()
+                .all(|file| file.group == "shaderOptions" && file.selected)
+        );
         let preview = ExportPreview {
-            name: old.name.clone(), minecraft_version: "1.20.1".into(), loader: None, files,
+            name: old.name.clone(),
+            minecraft_version: "1.20.1".into(),
+            loader: None,
+            files,
             launcher: crate::portable_pack::launcher_availability(),
-            instance_settings: vec![], instance_settings_omitted: vec![], instance_settings_error: None,
+            instance_settings: vec![],
+            instance_settings_omitted: vec![],
+            instance_settings_error: None,
         };
-        let entries = old.files.iter().map(|path| (format!("overrides/{path}"), path.clone())).collect::<Vec<_>>();
+        let entries = old
+            .files
+            .iter()
+            .map(|path| (format!("overrides/{path}"), path.clone()))
+            .collect::<Vec<_>>();
         let archive = fixture.0.join("shader-options.mrpack");
         let cancel = CancellationToken::new();
-        write_zip_files(&archive, &fixture.0, &entries, &[("modrinth.index.json".into(), manifest(&preview, &old, &[]).unwrap())], &ArchiveLimits::default(), &cancel, |_, _, _| {}).unwrap();
+        write_zip_files(
+            &archive,
+            &fixture.0,
+            &entries,
+            &[(
+                "modrinth.index.json".into(),
+                manifest(&preview, &old, &[]).unwrap(),
+            )],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
         let (_, imported) = modpacks::local_manifest(&archive, &cancel).unwrap();
         let destination = fixture.0.join("imported");
-        extract_zip_subtrees(&archive, &destination, &imported.overrides, &[], &ArchiveLimits::default(), &cancel).unwrap();
+        extract_zip_subtrees(
+            &archive,
+            &destination,
+            &imported.overrides,
+            &[],
+            &ArchiveLimits::default(),
+            &cancel,
+        )
+        .unwrap();
         for path in settings {
-            assert_eq!(std::fs::read_to_string(destination.join(path)).unwrap(), "quality=high");
+            assert_eq!(
+                std::fs::read_to_string(destination.join(path)).unwrap(),
+                "quality=high"
+            );
         }
         assert!(!destination.join("shaderpacks/Forest.zip").exists());
     }
-
-
-
 }

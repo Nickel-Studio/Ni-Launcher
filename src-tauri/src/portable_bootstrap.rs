@@ -93,6 +93,7 @@ pub async fn portable_bootstrap_status(app: AppHandle) -> Result<Option<Bootstra
 
 #[tauri::command]
 pub async fn portable_bootstrap_start(app: AppHandle) -> Result<Option<String>, String> {
+    crate::onboarding::require_accepted(&app)?;
     let root = app_paths::executable_directory_for(&app)?;
     let root = std::fs::canonicalize(root).map_err(|e| format!("读取便携目录失败：{e}"))?;
     let task = {

@@ -236,8 +236,21 @@ function Frontier() {
         </div>
       </Card>
 
-      {/* 星月图书馆：紧跟计划提示置顶，位于其它实验性项之前。 */}
       <StarlightLibrary />
+
+      <Card className="mo-card" padding="lg" title="用户界面项">
+        <div className="mo-frontier__row">
+          <div className="mo-frontier__row-label">
+            <strong>顶栏颜色小改</strong>
+            <span>让半透明顶栏轻微跟随主题色。</span>
+          </div>
+          <Switch
+            aria-label="顶栏颜色小改"
+            checked={settings.titlebarTint}
+            onChange={(titlebarTint) => update({ titlebarTint })}
+          />
+        </div>
+      </Card>
 
       <Card
         className="mo-card"
@@ -254,8 +267,8 @@ function Frontier() {
             <Switch
               aria-label="实例取名优化"
               checked={settings.instanceNamingOptimize}
-              onChange={(checked) =>
-                update({ instanceNamingOptimize: checked })
+              onChange={(instanceNamingOptimize) =>
+                update({ instanceNamingOptimize })
               }
             />
           </Tooltip>

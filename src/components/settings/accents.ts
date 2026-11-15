@@ -1,25 +1,55 @@
+import { THEME_COLORS } from "../../lib/theme";
 import type { AccentColor, SourcePolicy, ThemeMode } from "./types";
 
-/**
- * 颜色主题色板（本项目说的「主题」＝ accent，与明暗模式无关）。
- * 顺序 = 白名单顺序 = 设置页展示顺序，mono（黑与白）置顶且为默认。
- *
- * `color` 必须与 src/styles/tokens.css 中同一 accent 的 `--accent` 逐字一致
- * （mono 取暗色模式的 --accent 值）。这是全项目唯一允许出现的硬编码色，
- * 且仅用于色板预览；真正生效的仍是由 var(--accent) 令牌在运行时决定。
- */
+/** Palette order is also the persisted theme whitelist order. */
 export const ACCENT_OPTIONS: {
   value: AccentColor;
   label: string;
   color: string;
+  description?: string;
 }[] = [
-  // mono 的圆点不是纯色块，而是黑白分割的双色块（见 settings.css 的 .st-swatch--mono）。
-  { value: "mono", label: "黑与白", color: "#f2f4f5" },
-  { value: "emerald", label: "翡翠绿", color: "#3ecf8e" },
-  { value: "blue", label: "海蓝色", color: "#5a97e8" },
-  { value: "violet", label: "魅紫色", color: "#9b8cf0" },
-  { value: "amber", label: "琥珀色", color: "#e0aa4c" },
-  { value: "rose", label: "玫瑰红", color: "#ea6f8b" },
+  { value: "mono", label: "黑与白", color: THEME_COLORS.mono },
+  { value: "emerald", label: "翡翠绿", color: THEME_COLORS.emerald },
+  { value: "blue", label: "海蓝色", color: THEME_COLORS.blue },
+  { value: "violet", label: "魅紫色", color: THEME_COLORS.violet },
+  { value: "amber", label: "琥珀色", color: THEME_COLORS.amber },
+  { value: "rose", label: "玫瑰红", color: THEME_COLORS.rose },
+  {
+    value: "nickel",
+    label: "镍光",
+    color: THEME_COLORS.nickel,
+    description: "矿晶折面与冷绿微光",
+  },
+  {
+    value: "copper",
+    label: "铜霞",
+    color: THEME_COLORS.copper,
+    description: "弧形铜带与暮色光点",
+  },
+  {
+    value: "abyss",
+    label: "深海",
+    color: THEME_COLORS.abyss,
+    description: "等深流线与海面星标",
+  },
+  {
+    value: "paper",
+    label: "纸灯",
+    color: THEME_COLORS.paper,
+    description: "纸折灯影与温暖留白",
+  },
+  {
+    value: "fortyTwo",
+    label: "四十二",
+    color: THEME_COLORS.fortyTwo,
+    description: "青绿到浅薄荷，三分钟完整往返；无需解锁",
+  },
+  {
+    value: "custom",
+    label: "自定义",
+    color: "var(--theme-ink, var(--accent))",
+    description: "在独立的自定义选项卡中调整颜色与装饰",
+  },
 ];
 
 export const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [

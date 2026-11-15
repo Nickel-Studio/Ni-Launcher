@@ -92,6 +92,7 @@ struct VersionFile {
 #[serde(rename_all = "camelCase")]
 struct ProjectVersion {
     id: String,
+    project_id: String,
     name: String,
     version_number: String,
     loaders: Vec<String>,
@@ -99,6 +100,7 @@ struct ProjectVersion {
     date_published: String,
     release_type: String,
     files: Vec<VersionFile>,
+    dependencies: Option<Vec<crate::community_dependencies::RequiredDependency>>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,7 +166,7 @@ fn str_array(value: &serde_json::Value, key: &str) -> Vec<String> {
 /// pageSize, total } }`，条目是**平铺的 Mod 对象**（id / slug / name / summary /
 /// logo / authors / downloadCount / dateModified / modLoaderTypes / classId …）。
 /// 这里同时兼容早期的嵌套包裹形态（条目内再套一层 `mod`），以实测为准。
-fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
+pub(crate) fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
     let data = value
         .get("data")
         .and_then(|d| d.as_array())
@@ -173,16 +175,13 @@ fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
         .get("pagination")
         .and_then(|p| p.get("totalCount").or_else(|| p.get("total")))
         .and_then(|t| t.as_u64());
-
     let out: Vec<SearchHit> = data
         .iter()
         .filter_map(|m| {
-            // slug 是结果卡片的唯一标识（项目页靠它），缺失或为空的条目丢弃。
             let slug = str_field(m, "slug");
             if slug.is_empty() {
                 return None;
             }
-            // 数字项目 id 是文件 / 安装链路的必填标识。
             let project_id = m
                 .get("id")
                 .and_then(|v| v.as_i64())
@@ -195,13 +194,10 @@ fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
                 .map(|a| str_field(a, "name"))
                 .unwrap_or_default();
             let loaders = normalize_loader_names(&str_array(m, "modLoaderTypes"));
-            // title 先于结构体构造计算：字段初始化按书写顺序 move，
-            // `slug` 进结构体后就不能再被 title 回退逻辑借用。
             let title = {
                 let name = str_field(m, "name");
                 if name.is_empty() { slug.clone() } else { name }
             };
-            // thumbnailUrl 是缩略图（列表卡片尺寸），缺失时退回原图。
             let icon_url = {
                 let thumb = m
                     .get("logo")
@@ -231,7 +227,6 @@ fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
                     .and_then(|c| c.as_u64())
                     .map(|c| format!("cf-class-{c}"))
                     .unwrap_or_default(),
-                // CF 搜索响应不携带可用版本列表，versions 维度在文件接口给出。
                 versions: Vec::new(),
                 loaders,
                 date_modified: str_field(m, "dateModified"),
@@ -239,14 +234,12 @@ fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
             })
         })
         .collect();
-
     let total = total.unwrap_or(out.len() as u64);
     serde_json::to_string(&SearchResult { total, hits: out })
         .map_err(|e| format!("搜索结果序列化失败：{e}"))
 }
 
-/// CFCore `data:[File]` 响应 → 前端「版本」契约（与 `modrinth_project_versions` 同形）。
-/// `class_id` 用于推断 projectType（mod 类的文件带 loaders 标签，其余为空）。
+/// CFCore 文件响应归一化；relationType=3 的必要前置保留在所属文件中。
 fn normalize_files(data: &[serde_json::Value]) -> Vec<ProjectVersion> {
     let mut out = Vec::new();
     for file in data {
@@ -265,15 +258,13 @@ fn normalize_files(data: &[serde_json::Value]) -> Vec<ProjectVersion> {
             .get("hashes")
             .and_then(|h| h.as_array())
             .and_then(|arr| {
-                arr.iter().find(|h| {
-                    h.get("algo").and_then(|a| a.as_i64()) == Some(1) // SHA1（见 CF HashAlgo 枚举）
-                })
+                arr.iter()
+                    .find(|h| h.get("algo").and_then(|a| a.as_i64()) == Some(1))
             })
             .map(|h| str_field(h, "value"))
             .unwrap_or_default();
         let url = str_field(file, "downloadUrl");
         let filename = str_field(file, "fileName");
-
         let mut loaders = normalize_loader_names(&str_array(file, "modLoaderTypes"));
         for tag in str_array(file, "gameVersions") {
             let tag = tag.to_ascii_lowercase();
@@ -285,6 +276,11 @@ fn normalize_files(data: &[serde_json::Value]) -> Vec<ProjectVersion> {
         }
         out.push(ProjectVersion {
             id,
+            project_id: file
+                .get("modId")
+                .and_then(|value| value.as_u64())
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             name: display_name,
             version_number: str_field(file, "fileName"),
             loaders,
@@ -299,8 +295,6 @@ fn normalize_files(data: &[serde_json::Value]) -> Vec<ProjectVersion> {
                 .collect(),
             date_published: str_field(file, "fileDate"),
             release_type: normalize_release_type(file.get("releaseType")),
-            // CF File 自身就是要下载的文件；downloadUrl 为空（需额外解密）时留空，
-            // 由 pick_file 报可读错误而不是假下载。
             files: if url.is_empty() {
                 Vec::new()
             } else {
@@ -312,9 +306,17 @@ fn normalize_files(data: &[serde_json::Value]) -> Vec<ProjectVersion> {
                     hash_sha1,
                 }]
             },
+            dependencies: crate::community_dependencies::curseforge_dependencies(file),
         });
     }
     out
+}
+
+pub(crate) fn normalize_dependency_versions(
+    files: &[serde_json::Value],
+) -> Result<serde_json::Value, String> {
+    serde_json::to_value(normalize_files(files))
+        .map_err(|error| format!("前置文件序列化失败：{error}"))
 }
 
 fn normalize_file_page(
@@ -558,7 +560,10 @@ pub async fn curseforge_install(
     let root = PathBuf::from(dir.trim());
     let key = crate::secrets::curseforge_api_key(app.clone())?;
     let context = crate::app_tasks::begin(&app, &root, None)?;
-    context.describe_kind(crate::app_tasks::TaskKind::Resource, &format!("CurseForge {project_id}"));
+    context.describe_kind(
+        crate::app_tasks::TaskKind::Resource,
+        &format!("CurseForge {project_id}"),
+    );
     let task_id = context.id.clone();
     tauri::async_runtime::spawn(async move {
         let result = async {

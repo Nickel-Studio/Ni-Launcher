@@ -95,6 +95,47 @@ pub fn registry_to_text(registry: &Registry) -> String {
     serde_json::to_string(registry).unwrap_or_else(|_| EMPTY_REGISTRY.to_string())
 }
 
+fn root_identity(value: &str) -> String {
+    let value = value.trim().replace('\\', "/");
+    #[cfg(windows)]
+    let value = {
+        let value = value.to_lowercase();
+        if let Some(unc) = value.strip_prefix("//?/unc/") {
+            format!("//{unc}")
+        } else {
+            value
+        }
+    };
+    value.strip_prefix("//?/").unwrap_or(&value).trim_end_matches('/').to_owned()
+}
+
+/// 保存列表的先后顺序代表添加先后；迁移时不伪造历史时间。
+fn ordered_roots(incoming: &[String], previous: &[String], default: Option<&str>) -> Vec<String> {
+    let mut unique = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for value in incoming {
+        if !value.trim().is_empty() && seen.insert(root_identity(value)) {
+            unique.push(value.clone());
+        }
+    }
+    let mut result = Vec::with_capacity(unique.len());
+    for old in previous {
+        if let Some(index) = unique.iter().position(|value| root_identity(value) == root_identity(old)) {
+            result.push(unique.remove(index));
+        }
+    }
+    result.extend(unique);
+    if let Some(default) = default {
+        if let Some(index) = result.iter().position(|value| root_identity(value) == root_identity(default)) {
+            if index > 0 {
+                let value = result.remove(index);
+                result.insert(0, value);
+            }
+        }
+    }
+    result
+}
+
 pub(crate) fn reject_links(path: &Path) -> Result<(), String> {
     for ancestor in path.ancestors() {
         if let Ok(metadata) = std::fs::symlink_metadata(ancestor) {
@@ -459,23 +500,24 @@ pub fn instances_get(app: AppHandle) -> String {
         registry.roots.insert(0, portable.clone());
         registry.active = Some(portable);
     }
+    let default = crate::app_paths::bundled_game_dir(&app).ok();
+    registry.roots = ordered_roots(&registry.roots, &[], default.as_deref().and_then(Path::to_str));
     registry_to_text(&registry)
 }
 
-/// 写入实例注册表：>256KB 或非法 JSON 拒绝；合法则原子写入。
+/// 有界写入注册表；已有目录保持原顺序，新目录追加，默认目录优先。
 #[tauri::command]
 pub fn instances_set(app: AppHandle, json: String) -> Result<(), String> {
     if json.len() > INSTANCES_MAX_BYTES {
-        return Err(format!(
-            "实例注册表内容过大（{} 字节，上限 {} 字节）",
-            json.len(),
-            INSTANCES_MAX_BYTES
-        ));
+        return Err(format!("实例注册表内容过大（{} 字节，上限 {} 字节）", json.len(), INSTANCES_MAX_BYTES));
     }
-    // 校验合法性后原样透传（后端不解析业务字段）。
-    serde_json::from_str::<serde_json::Value>(&json).map_err(|e| format!("非法 JSON: {e}"))?;
+    let mut registry: Registry = serde_json::from_str(&json).map_err(|_| "实例注册表格式无效，请刷新后重试")?;
+    let _guard = store::lock();
     let path = store::instances_path(&app)?;
-    write_registry_atomic(&path, &json)
+    let previous = read_registry(&path);
+    let default = crate::app_paths::bundled_game_dir(&app).ok();
+    registry.roots = ordered_roots(&registry.roots, &previous.roots, default.as_deref().and_then(Path::to_str));
+    write_registry_atomic(&path, &registry_to_text(&registry))
 }
 
 /// 扫描 `<dir>/versions/*/` 下的版本实例，返回 JSON 数组文本；目录不存在 → `"[]"`。
@@ -1435,6 +1477,30 @@ mod tests {
         let registry = registry_from_text(r#"{"roots":["C:/a","C:/b"],"active":"C:/b"}"#);
         assert_eq!(registry.roots, vec!["C:/a".to_string(), "C:/b".to_string()]);
         assert_eq!(registry.active.as_deref(), Some("C:/b"));
+    }
+
+    #[test]
+    fn root_addition_order_survives_activation_removal_and_legacy_migration() {
+        let values = |items: &[&str]| items.iter().map(|value| value.to_string()).collect::<Vec<_>>();
+        let legacy = values(&["Z:/old", "C:/default", "A:/new"]);
+        let initial = ordered_roots(&legacy, &[], Some("C:/default"));
+        assert_eq!(initial, values(&["C:/default", "Z:/old", "A:/new"]));
+        let requested = values(&["B:/latest", "A:/new", "C:/default", "Z:/old"]);
+        let appended = ordered_roots(&requested, &initial, Some("C:/default"));
+        assert_eq!(appended, values(&["C:/default", "Z:/old", "A:/new", "B:/latest"]));
+        let removed = ordered_roots(&values(&["B:/latest", "C:/default", "A:/new"]), &appended, Some("C:/default"));
+        assert_eq!(removed, values(&["C:/default", "A:/new", "B:/latest"]));
+        let registry = Registry { roots: removed.clone(), active: Some("B:/latest".into()), ..Default::default() };
+        assert_eq!(registry_from_text(&registry_to_text(&registry)).roots, removed);
+        assert_eq!(ordered_roots(&[], &initial, Some("C:/default")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn root_order_collapses_path_aliases_without_sorting_names() {
+        let values = vec!["D:/older".into(), "D:/older/".into(), "D:/default".into(), "D:/latest".into()];
+        assert_eq!(ordered_roots(&values, &[], Some("D:/default")), vec!["D:/default", "D:/older", "D:/latest"]);
+        #[cfg(windows)]
+        assert_eq!(ordered_roots(&vec![r"\\?\D:\OLDER".into(), "d:/older".into()], &[], None).len(), 1);
     }
 
     #[test]

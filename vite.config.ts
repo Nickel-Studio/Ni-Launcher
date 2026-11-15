@@ -7,6 +7,26 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react()],
+  // Keep dev optimization local and independent of fixture entry points.
+  cacheDir: ".vite",
+  optimizeDeps: {
+    entries: ["index.html"],
+    include: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/event",
+      "@tauri-apps/api/window",
+      "@tauri-apps/plugin-opener",
+    ],
+    holdUntilCrawlEnd: false,
+    // 项目源码只引用下方 include 列出的依赖；关闭额外扫描，
+    // 避免开发服务启动时因依赖扫描阻塞首个请求（表现为停在启动画面）。
+    noDiscovery: true,
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -25,8 +45,9 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 4. 只监视应用源码：src-tauri、测试夹具与构建产物目录体积很大，
+      // 纳入监视会在开发启动时长时间占用事件循环，使首个页面请求迟迟得不到响应。
+      ignored: ["**/src-tauri/**", "**/tests/**", "**/dist/**", "**/.vite/**"],
     },
   },
 }));

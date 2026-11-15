@@ -7,6 +7,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 node_modules/
+.vite/
 dist/
 dist-ssr/
 target/
@@ -48,3 +49,11 @@ QA-FINAL-REPORT.md
 *.bak
 *.tmp
 .vscode/
+
+# 本地验收产物与参考工程不入库
+HNLLauncher/
+tests/task-audit/
+tests/*/evidence/
+tests/*/backend-evidence/
+tests/export-regression/.backend-overlay/
+tests/embedded-config/detached-release*.json

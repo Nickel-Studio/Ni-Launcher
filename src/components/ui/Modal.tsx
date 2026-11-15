@@ -12,6 +12,7 @@ export interface ModalProps {
   footer?: ReactNode;
   width?: number;
   closeOnBackdrop?: boolean;
+  dismissible?: boolean;
   ariaLabel?: string;
   /** 只影响当前弹窗的局部样式。 */
   className?: string;
@@ -45,6 +46,7 @@ export function Modal({
   footer,
   width = 480,
   closeOnBackdrop = true,
+  dismissible = true,
   ariaLabel = "对话框",
   className,
 }: ModalProps) {
@@ -85,7 +87,7 @@ export function Modal({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        closeRef.current();
+        if (dismissible) closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -135,7 +137,7 @@ export function Modal({
         }
       });
     };
-  }, [open]);
+  }, [open, dismissible]);
 
   if (!open) return null;
 
@@ -143,7 +145,12 @@ export function Modal({
     <div
       className="nw-modal__backdrop"
       onMouseDown={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+        if (
+          dismissible &&
+          closeOnBackdrop &&
+          event.target === event.currentTarget
+        )
+          onClose();
       }}
     >
       <div
@@ -171,9 +178,11 @@ export function Modal({
                 </div>
               ) : null}
             </div>
-            <IconButton label="关闭" size="sm" onClick={onClose}>
-              <IconClose />
-            </IconButton>
+            {dismissible ? (
+              <IconButton label="关闭" size="sm" onClick={onClose}>
+                <IconClose />
+              </IconButton>
+            ) : null}
           </div>
         )}
         {children != null ? (

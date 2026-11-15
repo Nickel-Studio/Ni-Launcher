@@ -1,0 +1,45 @@
+.ta-specimen {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 1060px;
+  margin: 0 auto;
+}
+.ta-art-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  min-height: 300px;
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
+}
+.ta-art-stage__text {
+  position: relative;
+  z-index: 1;
+  padding: 86px var(--space-8);
+}
+.ta-art-stage__text h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  margin: var(--space-2) 0;
+}
+.ta-art-stage__text p {
+  color: var(--text-dim);
+}
+.ta-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+.ta-controls .nw-slider-row {
+  min-width: 190px;
+}
+.ta-signal {
+  color: var(--accent-text);
+  margin-top: var(--space-4);
+}
+.ta-body-text {
+  color: var(--text);
+  margin-top: var(--space-2);
+}

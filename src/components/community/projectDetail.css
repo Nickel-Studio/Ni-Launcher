@@ -189,9 +189,12 @@
 .pd-group__collapse {
   min-width: 0;
 }
-/* 懒挂载占位：未进入视口的行只占一行高度。 */
+/* Reserve the version row and its compact dependency disclosure before mounting. */
+.pd-row-slot {
+  min-width: 0;
+}
 .pd-row-slot:not([data-mounted]) {
-  height: var(--pd-row-height);
+  height: calc(var(--pd-row-height) + var(--space-7) + var(--space-1));
 }
 /* 单行版本卡：发布类型图标 + 显示名 + 版本号 + 弹性空隙 + 加载器/大小/时间 + 状态。 */
 .pd-row {
@@ -339,6 +342,180 @@
   .pd-group__chevron,
   .pd-pill,
   .pd-row {
+    transition: none;
+  }
+}
+
+/* Exact-version requirements use the same controls and theme as the download list. */
+.pd-dependency-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  overflow-wrap: anywhere;
+}
+.pd-row[data-required="true"] {
+  background: var(--accent-soft);
+}
+.pd-row__required {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.pd-deps {
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+.pd-deps__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--space-7);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  transition: background var(--t) var(--ease);
+}
+.pd-deps__toggle:hover {
+  background: var(--fill-2);
+  color: var(--text);
+}
+.pd-deps__toggle svg {
+  flex: 0 0 auto;
+  width: var(--space-3);
+  height: var(--space-3);
+  transition: transform var(--t) var(--ease);
+}
+.pd-deps__toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.pd-deps__none {
+  display: flex;
+  align-items: center;
+  min-height: var(--space-7);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+.pd-deps__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.pd-deps__hint,
+.pd-deps__meta {
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  overflow-wrap: anywhere;
+}
+.pd-deps__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pd-deps__project,
+.pd-deps__unresolved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.pd-deps__project {
+  transition: background var(--t) var(--ease);
+}
+.pd-deps__project:hover {
+  background: var(--fill-3);
+}
+.pd-deps__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.pd-deps__title {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pd-deps__icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-7);
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  color: var(--text-dim);
+}
+.pd-deps__icon img,
+.pd-deps__icon svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+.pd-deps__link {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+.pd-deps__error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.pd-deps__toggle:focus-visible,
+.pd-deps__project:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 calc(var(--space-1) / 2) var(--accent-ring);
+}
+@media (max-width: 720px) {
+  .pd-deps__project,
+  .pd-deps__unresolved {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pd-deps__toggle,
+  .pd-deps__toggle svg,
+  .pd-deps__project {
     transition: none;
   }
 }

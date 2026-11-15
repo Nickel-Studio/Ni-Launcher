@@ -141,3 +141,21 @@
 .resources-browser[hidden] {
   display: none;
 }
+
+.resources-details {
+  position: relative;
+  min-width: 0;
+}
+.resources-detail {
+  min-width: 0;
+}
+/* Keep retained disclosure measurements without extending the active page's scroll. */
+.resources-detail[hidden] {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}

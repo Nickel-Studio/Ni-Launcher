@@ -22,10 +22,12 @@ mod accounts; // 账号存储（accounts.json）
 mod app_paths;
 mod app_tasks;
 mod build_channel; // 构建通道（development / production）
+mod community_dependencies;
 mod community_network;
 mod community_save_as; // 社区资源另存为（先对话框后下载，目标由用户选择）
 mod curseforge; // CurseForge 社区资源检索 / 安装（第二引擎，x-api-key 鉴权）
 mod dwm; // Windows DWM 外观微调（去掉系统画的 1px 窗口边框）
+mod error_report;
 mod game; // 游戏 / 版本设置（game.json）
 mod game_junk; // 清理游戏与启动器日志、崩溃报告等可再生成文件
 mod gpu_preferences;
@@ -54,6 +56,7 @@ mod msa; // 微软正版登录（Device Code Flow）
 mod named_profiles; // 实例真实存储名称 / 启动元数据
 mod network_settings;
 mod offline_skin;
+mod onboarding;
 mod pack_export;
 mod pack_import;
 mod portable_bootstrap;
@@ -80,7 +83,7 @@ const VERSION_MANIFEST_URL: &str =
 /// 设置文件大小上限（256KB），防止前端写坏超大内容。
 const SETTINGS_MAX_BYTES: usize = 256 * 1024;
 
-/// 发送给前端的启动事件（前端通过 listen("launcher-event") 接收）
+/// 发送给前端的启动事件。
 #[derive(Debug, Clone, Serialize)]
 #[serde(
     tag = "type",
@@ -88,33 +91,39 @@ const SETTINGS_MAX_BYTES: usize = 256 * 1024;
     rename_all_fields = "camelCase"
 )]
 pub enum FrontendEvent {
-    /// 下载进度
+    Preparing {
+        version_id: String,
+        game_dir: String,
+    },
     Progress {
         downloaded: u64,
         total: u64,
-        /// 文件类别。序列化为 `fileType`，避免与事件判别字段 `type` 的解析冲突。
         file_type: String,
     },
-    /// 当前下载速度（字节/秒）
-    Speed { bps: f64 },
-    /// 阶段提示文案
-    Stage { message: String },
-    /// 游戏进程输出的一行日志
-    Log { line: String },
-    /// 游戏进程退出
-    Close { code: i32 },
-    /// 游戏进程已生成（准备阶段结束），前端据此收起启动中面板。
+    Speed {
+        bps: f64,
+    },
+    Stage {
+        message: String,
+    },
+    Log {
+        line: String,
+    },
+    Close {
+        code: i32,
+    },
     Started,
-    /// 用户取消启动：不当作错误，静默回到可启动状态。
     Cancelled,
-    /// 非致命问题；游戏继续启动，前端不得据此把 running 置为 false。
-    Warning { message: String },
-    /// 可恢复/可选能力失败
-    Error { message: String },
-    /// 退出后的最小崩溃分类；字段均由已脱敏的有界证据生成。
+    Warning {
+        message: String,
+    },
+    Error {
+        message: String,
+    },
     Diagnostic {
         category: String,
         title: String,
+        summary: String,
         message: String,
     },
 }
@@ -162,7 +171,7 @@ impl From<&LaunchEvent> for FrontendEvent {
     }
 }
 
-/// 所有进入 WebView 的动态文本都先经过同一脱敏与长度边界，日志文件与前端不双标。
+/// 动态文本共用脱敏与长度边界。
 fn redact_frontend_event(event: &mut FrontendEvent) {
     let redact = |value: &mut String| {
         *value = runtime_settings::bounded_log_line(value);
@@ -175,13 +184,16 @@ fn redact_frontend_event(event: &mut FrontendEvent) {
         FrontendEvent::Diagnostic {
             category,
             title,
+            summary,
             message,
         } => {
             redact(category);
             redact(title);
+            redact(summary);
             redact(message);
         }
-        FrontendEvent::Speed { .. }
+        FrontendEvent::Preparing { .. }
+        | FrontendEvent::Speed { .. }
         | FrontendEvent::Close { .. }
         | FrontendEvent::Started
         | FrontendEvent::Cancelled => {}
@@ -417,6 +429,44 @@ struct ResolvedLaunch {
 /// 取消令牌只覆盖游戏进程生成前的准备阶段，运行中的游戏另有生命周期。
 struct LaunchControl {
     token: CancellationToken,
+    launch_id: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScopedLaunchEvent<'a> {
+    launch_id: &'a str,
+    #[serde(flatten)]
+    event: FrontendEvent,
+}
+
+fn emit_launch_event(app: &AppHandle, launch_id: &str, mut event: FrontendEvent) {
+    redact_frontend_event(&mut event);
+    let _ = app.emit("launcher-event", ScopedLaunchEvent { launch_id, event });
+}
+
+fn validate_launch_id(value: Option<String>) -> Result<String, String> {
+    match value {
+        Some(value)
+            if !value.is_empty()
+                && value.len() <= 128
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')) =>
+        {
+            Ok(value)
+        }
+        Some(_) => Err("启动请求标识无效，请重新打开启动器后重试".into()),
+        None => Ok(store::random_token()),
+    }
+}
+
+fn cancel_launch_control(control: &LaunchControl, launch_id: Option<&str>) -> bool {
+    if launch_id.is_some_and(|id| id != control.launch_id) {
+        return false;
+    }
+    control.token.cancel();
+    true
 }
 
 static LAUNCH_CONTROL: LazyLock<Mutex<Option<Arc<LaunchControl>>>> =
@@ -426,19 +476,15 @@ fn launch_control_lock() -> std::sync::MutexGuard<'static, Option<Arc<LaunchCont
     LAUNCH_CONTROL.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// 取消正在进行的启动准备：中断下载 / 校验 / 加载器安装，并合上启动中面板。
+/// 取消准备任务；旧请求不得取消新一轮启动。
 #[tauri::command]
-fn launch_cancel(app: AppHandle) {
-    let control = launch_control_lock().clone();
-    let Some(control) = control else { return };
-    control.token.cancel();
-    let _ = app.emit("launcher-event", FrontendEvent::Cancelled);
+fn launch_cancel(launch_id: Option<String>) {
+    if let Some(control) = launch_control_lock().clone() {
+        cancel_launch_control(&control, launch_id.as_deref());
+    }
 }
 
-/// 启动参数既支持扁平形态（`versionId` / `username` / `memoryMb` / `source` /
-/// `gameDir`），也兼容旧的 `params: {...}` 对象形态；两者可同时传，扁平优先。
-///
-/// 说明：前端约定按 `versionId` / `username` / `memoryMb` / `source` 调用。
+/// 启动参数兼容扁平字段与旧的 params 对象。
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn launch_game(
@@ -451,42 +497,55 @@ async fn launch_game(
     source: Option<String>,
     game_dir: Option<String>,
     params: Option<LaunchParams>,
+    launch_id: Option<String>,
 ) -> Result<(), String> {
+    onboarding::require_accepted(&app)?;
+    let launch_id = validate_launch_id(launch_id)?;
     let p = params.unwrap_or_default();
-
     let version = version_id
         .or(p.version)
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| "缺少版本号（versionId）".to_string())?;
-
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or("缺少版本号（versionId）")?;
     let username = username.or(p.username).unwrap_or_default();
-
-    // 兼容旧调用仍接受 memoryMin，但不再据此生成隐藏的 -Xms。
-    let _legacy_memory_min = memory_min.or(p.memory_min);
+    let memory_min = memory_min.or(p.memory_min).unwrap_or_default();
     let memory_max = memory_max
         .or(p.memory_max)
-        .or_else(|| memory_mb.map(|m| format!("{m}M")))
-        .unwrap_or_else(|| "2G".to_string());
-
+        .or_else(|| memory_mb.map(|value| format!("{value}M")))
+        .unwrap_or_else(|| "2G".into());
     let game_dir = game_dir.or(p.game_dir);
     let transfer = network_settings::snapshot().transfer(source.or(p.source).as_deref())?;
-
-    let resolved = ResolvedLaunch {
-        version,
-        username,
-        memory_min: _legacy_memory_min.unwrap_or_default(),
-        memory_max,
-        game_dir,
-    };
-
-    // 把本次启动的取消令牌登记为全局当前启动，供 launch_cancel 使用。
-    // 准备阶段结束后立即注销：已在运行的游戏不受这个按钮影响。
     let control = Arc::new(LaunchControl {
         token: transfer.cancellation().clone(),
+        launch_id: launch_id.clone(),
     });
-    *launch_control_lock() = Some(control.clone());
-    let result = transfer.scope(run_launch(app.clone(), resolved)).await;
+    {
+        let mut current = launch_control_lock();
+        if current.is_some() {
+            return Err("另一次启动尚未结束，请稍候再试".into());
+        }
+        *current = Some(control.clone());
+    }
+    let resolved = ResolvedLaunch {
+        version: version.clone(),
+        username,
+        memory_min,
+        memory_max,
+        game_dir: game_dir.clone(),
+    };
+    if let Some(directory) = game_dir.as_ref() {
+        emit_launch_event(
+            &app,
+            &launch_id,
+            FrontendEvent::Preparing {
+                version_id: version.clone(),
+                game_dir: directory.clone(),
+            },
+        );
+    }
+    let result = transfer
+        .scope(run_launch_scoped(app.clone(), resolved, launch_id.clone()))
+        .await;
     {
         let mut current = launch_control_lock();
         if current
@@ -496,19 +555,23 @@ async fn launch_game(
             *current = None;
         }
     }
-
     match result {
         Ok(()) => Ok(()),
-        // 用户主动取消不是错误：前端已收到 Cancelled，不要再弹错误弹窗。
-        Err(_) if control.token.is_cancelled() => Ok(()),
-        Err(error) => Err(error),
+        Err(_) if control.token.is_cancelled() => {
+            emit_launch_event(&app, &launch_id, FrontendEvent::Cancelled);
+            Ok(())
+        }
+        Err(error) => {
+            error_report::record_launch_failure(&app, game_dir.as_deref(), &version, &error);
+            Err(runtime_settings::bounded_log_line(&error))
+        }
     }
 }
 
-fn emit_launch_warning(app: &AppHandle, log_path: &Path, message: String) {
+fn emit_launch_warning(app: &AppHandle, launch_id: &str, log_path: &Path, message: String) {
     let message = runtime_settings::bounded_log_line(&message);
     let _ = runtime_settings::append_launch_log(log_path, &format!("[警告] {message}"));
-    let _ = app.emit("launcher-event", FrontendEvent::Warning { message });
+    emit_launch_event(app, launch_id, FrontendEvent::Warning { message });
 }
 
 #[derive(Debug, Clone, Default)]
@@ -568,7 +631,7 @@ fn launch_version_context(base: &Path, version: &str) -> LaunchVersionContext {
 
 /// 启动准备阶段的取消检查。
 ///
-/// `run_launch` 在 `transfer.scope(...)` 内执行，任务局部上下文里就是本次启动的取消令牌。
+/// `run_launch_scoped` 在 `transfer.scope(...)` 内执行，任务局部上下文里就是本次启动的取消令牌。
 /// 若将来从其它入口调用（不在 scope 内），`current()` 会退化为一个新令牌，不会误报取消。
 fn ensure_launch_not_cancelled() -> Result<(), String> {
     let context = minecraft_java_rs_core::net::transfer::TransferContext::current();
@@ -580,7 +643,11 @@ fn ensure_launch_not_cancelled() -> Result<(), String> {
 }
 
 /// 下载（如需）并启动游戏，进度与日志通过 launcher-event 推送。
-async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
+async fn run_launch_scoped(
+    app: AppHandle,
+    p: ResolvedLaunch,
+    launch_id: String,
+) -> Result<(), String> {
     // 旧启动入口仍传 memoryMin；当前只保留兼容字段，不生成隐藏的 -Xms。
     let _legacy_memory_min = p.memory_min.as_str();
     named_profiles::validate_name(&p.version)?;
@@ -594,6 +661,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
     instances::reject_links(&base)?;
     std::fs::create_dir_all(&base).map_err(|e| format!("创建游戏目录失败：{e}"))?;
     let base = std::fs::canonicalize(base).map_err(|e| format!("解析游戏目录失败：{e}"))?;
+    let running = app_tasks::with_idle_directory(&base, || launch_state::begin(&base))?;
     let global: serde_json::Value =
         serde_json::from_str(&game::game_settings_get(app.clone())?).unwrap_or_default();
     let local = runtime_settings::read_local(&base, &p.version);
@@ -603,6 +671,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
     let directory = runtime_settings::game_directory(&base, &p.version, isolation);
     instances::reject_links(&directory)?;
     std::fs::create_dir_all(&directory).map_err(|e| format!("创建游戏工作目录失败：{e}"))?;
+    error_report::begin_session(&directory)?;
     let log_path = runtime_settings::start_launch_log(&directory);
     let (total_memory, available_memory) = runtime_settings::physical_memory_mb();
     let mod_count = memory_plan::count_mods_for_instance(&base, &p.version, &directory)?;
@@ -628,7 +697,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
         let scale_factor = window.scale_factor().ok()?;
         runtime_settings::logical_window_size(size.width, size.height, scale_factor)
     });
-    let running = app_tasks::with_idle_directory(&base, || launch_state::begin(&base))?;
+
     let mut options = build_options(&p, base.clone());
     named_profiles::apply_for_launch(&mut options, &base, &p.version)?;
     runtime_settings::apply(&mut options, &settings, launcher_size)?;
@@ -671,8 +740,9 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
         )
     };
     let _ = runtime_settings::append_launch_log(&log_path, &format!("[启动] {java_stage}"));
-    let _ = app.emit(
-        "launcher-event",
+    emit_launch_event(
+        &app,
+        &launch_id,
         FrontendEvent::Stage {
             message: java_stage,
         },
@@ -682,6 +752,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<LaunchEvent>(1024);
     let captured = Arc::new(Mutex::new(VecDeque::<String>::with_capacity(4000)));
     let emit_app = app.clone();
+    let emit_launch_id = launch_id.clone();
     let capture_log = log_path.clone();
     let capture_buffer = captured.clone();
     tauri::async_runtime::spawn(async move {
@@ -703,7 +774,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                     buffer.push_back(runtime_settings::bounded_log_line(&line));
                 }
             }
-            let _ = emit_app.emit("launcher-event", frontend);
+            emit_launch_event(&emit_app, &emit_launch_id, frontend);
         }
     });
     launcher
@@ -764,6 +835,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                 Err(error) => {
                     emit_launch_warning(
                         &app,
+                        &launch_id,
                         &log_path,
                         format!("{error}；本次 GC 回退为标准 G1，游戏将继续启动"),
                     );
@@ -792,6 +864,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
         Err(error) => {
             emit_launch_warning(
                 &app,
+                &launch_id,
                 &log_path,
                 format!("高性能 GPU 偏好未生效：{error}。游戏将继续启动"),
             );
@@ -819,8 +892,9 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
         match outcome {
             Ok(report) => match report.status {
                 memory_optimize::MemoryOptimizeStatus::Success => {
-                    let _ = app.emit(
-                        "launcher-event",
+                    emit_launch_event(
+                        &app,
+                        &launch_id,
                         FrontendEvent::Stage {
                             message: "已完成内存优化，正在启动游戏".into(),
                         },
@@ -830,6 +904,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                 // 若归到「未授权」会误导用户去改权限设置，实际只需要等下一轮。
                 memory_optimize::MemoryOptimizeStatus::Busy => emit_launch_warning(
                     &app,
+                    &launch_id,
                     &log_path,
                     "启动前内存优化跳过：另一次内存优化正在进行，本次跳过。游戏将继续启动".into(),
                 ),
@@ -839,6 +914,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                 | memory_optimize::MemoryOptimizeStatus::Skipped
                 | memory_optimize::MemoryOptimizeStatus::Failed => emit_launch_warning(
                     &app,
+                    &launch_id,
                     &log_path,
                     format!(
                         "启动前内存优化未执行：{}。游戏将继续启动",
@@ -851,6 +927,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
             },
             Err(error) => emit_launch_warning(
                 &app,
+                &launch_id,
                 &log_path,
                 format!("启动前内存优化线程异常：{error}。游戏将继续启动"),
             ),
@@ -871,13 +948,14 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
         if let Err(error) = runtime_settings::set_process_priority(pid, &settings.priority) {
             emit_launch_warning(
                 &app,
+                &launch_id,
                 &log_path,
                 format!("{error}。游戏将继续以当前优先级运行"),
             );
         }
     }
     // 进程已生成：准备阶段结束，前端收起启动中面板；此后的取消按钮不再可用。
-    let _ = app.emit("launcher-event", FrontendEvent::Started);
+    emit_launch_event(&app, &launch_id, FrontendEvent::Started);
     let diagnostic_version = version_context.minecraft_version.clone();
     let diagnostic_loader = version_context.loader.clone().unwrap_or_default();
     let diagnostic_optifine = diagnostic_loader
@@ -917,7 +995,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                             FrontendEvent::Error { message: format!("等待游戏进程失败：{error}") },
                         ),
                     };
-                    let _ = app.emit("launcher-event", event);
+                    emit_launch_event(&app, &launch_id, event);
                     if exit_code != Some(0) {
                         // 给 stdout/stderr 转发任务一个短暂排空窗口，再读取有界证据。
                         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -953,10 +1031,9 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                                 report.summary, report.advice
                             ),
                         );
-                        let _ = app.emit("launcher-event", FrontendEvent::Diagnostic {
-                            category,
-                            title,
-                            message: report.advice,
+                        let _ = error_report::store_diagnostic(&diagnostic_directory, &report);
+                        emit_launch_event(&app, &launch_id, FrontendEvent::Diagnostic {
+                            category, title, summary: report.summary, message: report.advice,
                         });
                     }
                     if visibility_applied {
@@ -990,6 +1067,7 @@ async fn run_launch(app: AppHandle, p: ResolvedLaunch) -> Result<(), String> {
                         if let Err(message) = runtime_settings::set_process_priority(pid, &settings.priority) {
                             emit_launch_warning(
                                 &app,
+                                &launch_id,
                                 &log_path,
                                 format!("{message}。游戏将继续以当前优先级运行"),
                             );
@@ -1148,6 +1226,7 @@ fn launch_from_startup_arguments(app: &AppHandle) {
         return;
     }
     let app = app.clone();
+    let launch_id = store::random_token();
     tauri::async_runtime::spawn(async move {
         let result = async {
             let (root, version) = request?.ok_or("启动脚本缺少实例参数")?;
@@ -1168,14 +1247,17 @@ fn launch_from_startup_arguments(app: &AppHandle) {
                 None,
                 Some(root),
                 None,
+                Some(launch_id.clone()),
             )
             .await
         }
         .await;
         if let Err(message) = result {
             use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-            let _ = app.emit(
-                "launcher-event",
+            let message = runtime_settings::bounded_log_line(&message);
+            emit_launch_event(
+                &app,
+                &launch_id,
                 FrontendEvent::Error {
                     message: message.clone(),
                 },
@@ -1316,7 +1398,6 @@ pub fn run() {
                     }
                 });
             }
-            launch_from_startup_arguments(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1329,6 +1410,12 @@ pub fn run() {
             window_close,
             settings_get,
             settings_set,
+            onboarding::onboarding_get,
+            onboarding::onboarding_accept_eula,
+            onboarding::onboarding_ack_changelog,
+            onboarding::onboarding_finish,
+            onboarding::onboarding_reject,
+            community_dependencies::community_dependency_resolve,
             portable_bootstrap::portable_bootstrap_status,
             portable_bootstrap::portable_bootstrap_start,
             set_download_source,
@@ -1359,6 +1446,7 @@ pub fn run() {
             game::game_settings_set,
             runtime_settings::game_runtime_info,
             runtime_settings::launch_log_open,
+            error_report::launch_error_report_export,
             runtime_settings::version_server_open_registration,
             // 主动内存优化（全进程工作集回收 / Windows 分页回收）
             memory_optimize::memory_optimize_capability,
@@ -1460,25 +1548,110 @@ mod tests {
     }
 
     #[test]
+    fn launch_identity_validation_is_bounded_and_unique() {
+        for id in ["launch-42", "launch_42", "ABC123", &"a".repeat(128)] {
+            assert_eq!(validate_launch_id(Some(id.into())).unwrap(), id);
+        }
+        for id in [
+            "",
+            "a b",
+            "a/b",
+            "a\\b",
+            "a.b",
+            "a\n",
+            "\u{00e9}",
+            &"a".repeat(129),
+        ] {
+            assert!(validate_launch_id(Some(id.into())).is_err());
+        }
+        let first = validate_launch_id(None).unwrap();
+        let second = validate_launch_id(None).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(validate_launch_id(Some(first.clone())).unwrap(), first);
+    }
+
+    #[test]
+    fn launch_identity_scopes_every_event_without_changing_wire_fields() {
+        let events = [
+            FrontendEvent::Preparing {
+                version_id: "1.21.1".into(),
+                game_dir: "C:/acceptance/game".into(),
+            },
+            FrontendEvent::Progress {
+                downloaded: 3,
+                total: 10,
+                file_type: "assets".into(),
+            },
+            FrontendEvent::Speed { bps: 1024.0 },
+            FrontendEvent::Stage {
+                message: "preparing".into(),
+            },
+            FrontendEvent::Log {
+                line: "complete log".into(),
+            },
+            FrontendEvent::Close { code: 1 },
+            FrontendEvent::Started,
+            FrontendEvent::Cancelled,
+            FrontendEvent::Warning {
+                message: "nonfatal".into(),
+            },
+            FrontendEvent::Error {
+                message: "failed".into(),
+            },
+            FrontendEvent::Diagnostic {
+                category: "memory".into(),
+                title: "Memory".into(),
+                summary: "OutOfMemoryError".into(),
+                message: "retry".into(),
+            },
+        ];
+        for event in events {
+            let expected = serde_json::to_value(&event).unwrap();
+            let scoped = serde_json::to_value(ScopedLaunchEvent {
+                launch_id: "launch-42",
+                event,
+            })
+            .unwrap();
+            assert_eq!(scoped["launchId"], "launch-42");
+            assert!(scoped.get("event").is_none());
+            assert!(scoped.get("launch_id").is_none());
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(&scoped[key], value, "{key}");
+            }
+        }
+    }
+
+    #[test]
+    fn launch_identity_rejects_cancel_from_previous_session() {
+        let control = LaunchControl {
+            token: CancellationToken::default(),
+            launch_id: "current-launch".into(),
+        };
+        assert!(!cancel_launch_control(&control, Some("previous-launch")));
+        assert!(!control.token.is_cancelled());
+        assert!(cancel_launch_control(&control, Some("current-launch")));
+        assert!(control.token.is_cancelled());
+        let legacy = LaunchControl {
+            token: CancellationToken::default(),
+            launch_id: "legacy-launch".into(),
+        };
+        assert!(cancel_launch_control(&legacy, None));
+        assert!(legacy.token.is_cancelled());
+    }
+
+    #[test]
     fn diagnostic_event_carries_structured_classification() {
         let ev = FrontendEvent::Diagnostic {
             category: "outOfMemory".into(),
             title: "内存不足".into(),
+            summary: "游戏可用内存不足".into(),
             message: "降低实例内存分配后重试".into(),
         };
         let value = serde_json::to_value(&ev).unwrap();
-        assert_eq!(
-            value.get("type").and_then(|v| v.as_str()),
-            Some("diagnostic")
-        );
-        assert_eq!(
-            value.get("category").and_then(|v| v.as_str()),
-            Some("outOfMemory")
-        );
-        assert_eq!(
-            value.get("title").and_then(|v| v.as_str()),
-            Some("内存不足")
-        );
+        assert_eq!(value["type"], "diagnostic");
+        assert_eq!(value["category"], "outOfMemory");
+        assert_eq!(value["title"], "内存不足");
+        assert_eq!(value["summary"], "游戏可用内存不足");
     }
 
     #[test]
@@ -1488,19 +1661,20 @@ mod tests {
             line: format!("client_secret={secret}"),
         };
         redact_frontend_event(&mut log);
-        let log = serde_json::to_value(log).unwrap();
-        let log = log["line"].as_str().unwrap();
-        assert!(!log.contains(secret));
-        assert!(log.contains("client_secret"));
-
+        assert!(
+            !serde_json::to_value(log).unwrap()["line"]
+                .as_str()
+                .unwrap()
+                .contains(secret)
+        );
         let mut diagnostic = FrontendEvent::Diagnostic {
             category: "unknown".into(),
             title: format!("clientSecret={secret}"),
+            summary: format!("apiKey={secret}"),
             message: format!("{{\"client-secret\":\"{secret}\"}}"),
         };
         redact_frontend_event(&mut diagnostic);
-        let diagnostic = serde_json::to_value(diagnostic).unwrap();
-        let rendered = diagnostic.to_string();
+        let rendered = serde_json::to_value(diagnostic).unwrap().to_string();
         assert!(!rendered.contains(secret));
         assert!(rendered.contains("***"));
     }
@@ -1732,24 +1906,27 @@ mod tests {
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), name);
         }
-        let install = include_str!("install.rs");
-        let compact: String = install.chars().filter(|ch| !ch.is_whitespace()).collect();
-        assert!(compact.contains("describe_kind(app_tasks::TaskKind::Version"));
+        // Source assertions must tolerate formatting without changing their contract.
+        let compact =
+            |source: &str| -> String { source.chars().filter(|ch| !ch.is_whitespace()).collect() };
+        let install = compact(include_str!("install.rs"));
+        assert!(install.contains("describe_kind(app_tasks::TaskKind::Version"));
         assert_eq!(
-            compact
+            install
                 .matches("describe_kind(app_tasks::TaskKind::Modpack")
                 .count(),
             2
         );
         assert!(
-            include_str!("resources.rs").contains("describe_kind(app_tasks::TaskKind::Resource")
+            compact(include_str!("resources.rs"))
+                .contains("describe_kind(app_tasks::TaskKind::Resource")
         );
         for source in [
             include_str!("modrinth.rs"),
             include_str!("curseforge.rs"),
             include_str!("community_save_as.rs"),
         ] {
-            assert!(source.contains("describe_kind(crate::app_tasks::TaskKind::Resource"));
+            assert!(compact(source).contains("describe_kind(crate::app_tasks::TaskKind::Resource"));
         }
     }
 

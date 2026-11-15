@@ -933,9 +933,9 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
             java.display()
         );
         let result = async {
-            tokio::time::timeout(Duration::from_secs(90), run_launch(app.handle().clone(), ResolvedLaunch {
+            tokio::time::timeout(Duration::from_secs(90), run_launch_scoped(app.handle().clone(), ResolvedLaunch {
                 version: version.into(), username: "PortableTest".into(), memory_min: "512M".into(), memory_max: "1G".into(), game_dir: Some(game_root.to_string_lossy().into())
-            })).await.map_err(|_| "production launch timeout")??;
+            }, store::random_token())).await.map_err(|_| "production launch timeout")??;
             let deadline = Instant::now() + Duration::from_secs(90);
             loop {
                 if closed.load(Ordering::Acquire) { return Err("游戏渲染前退出，请查看游戏日志".into()); }

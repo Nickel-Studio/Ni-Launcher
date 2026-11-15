@@ -33,6 +33,7 @@ html.nw-splash-hold .nw-shell {
 /* ---------------------------------------------------------------- Titlebar - */
 .nw-titlebar {
   position: relative;
+  isolation: isolate;
   z-index: var(--z-chrome);
   flex: 0 0 auto;
   height: var(--titlebar-h);
@@ -43,6 +44,18 @@ html.nw-splash-hold .nw-shell {
   backdrop-filter: blur(22px) saturate(1.25);
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   user-select: none;
+}
+.nw-titlebar[data-tinted="true"] {
+  background: var(--theme-chrome-bg, var(--chrome-bg));
+  color: var(--theme-chrome-text, var(--text));
+}
+.nw-titlebar__left,
+.nw-titlebar__center,
+.nw-titlebar__right {
+  z-index: 1;
+}
+.nw-titlebar__right {
+  position: relative;
 }
 
 /* ---- Left: brand wordmark (text only, no icon / no box) ------------------ */
@@ -450,4 +463,84 @@ html.nw-splash-hold .nw-shell {
 /* Home fills the gutter-inset content area without introducing a scrollbar. */
 .nw-content .home {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+}
+
+/* Pale theme ink is not a text color on light reading surfaces. */
+:root[data-rich-theme="true"]
+  :is(
+    .nw-pager__item[data-active="true"] .nw-pager__icon,
+    .nw-select__option svg,
+    .nw-iconbtn[data-active="true"],
+    .nw-tab__badge,
+    .nw-inline-notice[data-tone="info"] .nw-inline-notice__icon,
+    .nw-accountcard__check,
+    .nw-construction__eyebrow svg,
+    .st-nav__item.is-active,
+    .st-nav__item.is-active .st-nav__icon,
+    .mo-frontier__notice-icon
+  ) {
+  color: var(--accent-text, var(--accent));
+}
+.nw-titlebar[data-tinted="true"]
+  :is(
+    .nw-brand__text,
+    .nw-navtab:not([data-active="true"]),
+    .nw-winbtn:not(:hover)
+  ) {
+  color: var(--theme-chrome-text, var(--text));
+}
+:root[data-rich-theme="true"] .nw-btn--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+/* Indicators must remain visible even when custom ink matches a neutral surface. */
+:root[data-rich-theme="true"] .nw-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--accent-text, var(--accent)) 0%,
+    var(--accent-text, var(--accent)) var(--_p, 0%),
+    var(--fill-3) var(--_p, 0%),
+    var(--fill-3) 100%
+  );
+}
+:root[data-rich-theme="true"] .nw-slider::-webkit-slider-thumb {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .nw-slider::-moz-range-progress {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .nw-slider::-moz-range-thumb {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .st-preview__progress-fill {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .nw-switch[data-on="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .nw-switch[data-on="true"]:focus-visible {
+  box-shadow: inset 0 0 0 1.5px var(--accent-text, var(--accent)),
+    0 0 0 3px var(--accent-ring);
+}
+:root[data-rich-theme="true"] .nw-switch[data-on="true"] .nw-switch__knob {
+  background: var(--accent-fg);
+}
+:root[data-accent="custom"]
+  :is(
+    .nw-btn--primary,
+    .nw-navtab,
+    .nw-navtab__pill,
+    .nw-seg__item,
+    .nw-seg__pill,
+    .nw-check__box,
+    .st-preview__btn--accent,
+    .st-preview__chip--accent
+  ) {
+  transition-property: transform, width, opacity, box-shadow;
+}
+:root[data-theme-motion="paused"] {
+  --t-accent: 0ms;
+}
+:root[data-theme-motion="paused"] .nw-bg__image {
+  transition: none;
+  will-change: auto;
 }
