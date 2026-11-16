@@ -25,7 +25,7 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 
 ## 一枚简标，任意世界
 
->ps：Nickel Studios正在早期开发阶段，目前仍然正在等待微软批准Ni的Minecraft API访问权限，在此之前正版登录不可用，Curseforge搜索将在微软批准AppID后一并随其上线。
+>ps：Nickel Studio正在早期开发阶段，目前仍然正在等待微软批准Ni的Minecraft API访问权限，在此之前正版登录不可用，Curseforge搜索将在微软批准AppID后一并随其上线。
 
 **Nickel**，也叫 **Ni** 或 **镍**。从第一次启动原版，到整理一个装满 Mod 的实例，Ni 把账号、游戏、资源和下载收进同一个安静的界面。
 
