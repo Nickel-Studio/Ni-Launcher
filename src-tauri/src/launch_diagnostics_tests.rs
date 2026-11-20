@@ -352,7 +352,7 @@ fn quoted_redaction_respects_delimiters_escapes_and_line_boundaries() {
         ),
         (
             "password=\"probe'secret-tail\nnext=visible",
-            "password=\"***\nnext=visible",
+            "[日志含无法安全脱敏的敏感字段]",
         ),
         (
             r#"{"password":"probe\\","next":"visible"}"#,

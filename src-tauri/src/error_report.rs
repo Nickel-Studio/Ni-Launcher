@@ -519,6 +519,121 @@ mod tests {
     }
 
     #[test]
+    fn report_zip_uses_structured_keys_and_complete_multiline_value_boundaries() {
+        let root = TemporaryDirectory(std::env::temp_dir().join(format!(
+            "nickel-report-fields-{}",
+            crate::store::random_token()
+        )));
+        let files = [
+            "logs/latest.log",
+            "logs/debug.log",
+            "crash-reports/crash-fields.txt",
+        ];
+        for file in files {
+            fs::create_dir_all(root.0.join(file).parent().unwrap()).unwrap();
+        }
+        let cases = [
+            r#"{"pass\u0077ord":["zip-secret"],"next":"visible"}"#.to_owned(),
+            r#"{"apiKeys":["zip-secret"],"next":"visible"}"#.to_owned(),
+            r#"{"password":"zip-secret","api_key":"zip-secret","next":"visible"}"#.to_owned(),
+            r#"{"authorization":"Basic zip-secret","next":"visible"}"#.to_owned(),
+            "password=\"\nzip-secret\n\"\nnext=visible".into(),
+            "password=\"\"\"\nzip-secret\n\"\"\"\nnext=visible".into(),
+            "password='''\r\nzip-secret\\tail\r\n'''\r\nnext=visible".into(),
+            "password=\"\"\"\"zip-secret\"\"\"\"\nnext=visible".into(),
+            "password='zip-secret''suffix'\nnext=visible".into(),
+            "password: |\n  zip-secret\nnext: visible".into(),
+            "password: >-\r\n  zip-secret\r\nnext: visible".into(),
+            "auth:\n  password: |2+ # block\n    zip-secret\n  next: visible".into(),
+            "password:\n  - zip-secret\nnext: visible".into(),
+            "api_keys:\n  primary: zip-secret\nnext: visible".into(),
+            "password={primary=https://example.invalid/zip-secret}\nnext=visible".into(),
+            "--password \"zip-secret\" --next visible".into(),
+            "--accessToken [\"zip-secret\"]\nnext=visible".into(),
+            r#"{"\u0061pi_Keys":{"primary":"zip-secret"},"next":"visible"}"#.into(),
+            r#"{"passwords":["zip-secret"],"secrets":["zip-secret"],"next":"visible"}"#.into(),
+            "password: zip-secret\n  continuation\nnext: visible".into(),
+            "--password=zip-secret --next=visible".into(),
+            r#"{"message":"password=zip-secret","next":"visible"}"#.into(),
+        ];
+        for (index, raw) in cases.iter().enumerate() {
+            for file in files {
+                fs::write(root.0.join(file), raw).unwrap();
+            }
+            let zip = root.0.join(format!("fields-{index}.zip"));
+            assert!(
+                export_report(&root.0, &zip, raw).unwrap().complete,
+                "{index}"
+            );
+            for file in files.into_iter().chain(["failure.txt"]) {
+                let text = String::from_utf8(
+                    read_zip_entry(&zip, file, MAX_FILE_BYTES, &CancellationToken::new()).unwrap(),
+                )
+                .unwrap();
+                assert!(!text.contains("zip-secret"), "{index} {file}: {text}");
+                assert!(text.contains("visible"), "{index} {file}: {text}");
+                assert_eq!(redact_sensitive_text(&text), text, "{index}");
+                if raw.starts_with('{') {
+                    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    assert_eq!(json["next"], "visible");
+                }
+            }
+            if let Some(output) = std::env::var_os("NICKEL_REPORT_TEST_OUTPUT") {
+                let output = PathBuf::from(output);
+                fs::create_dir_all(&output).unwrap();
+                let target = output.join(format!("fields-{index}.zip"));
+                assert!(!target.exists());
+                fs::copy(&zip, target).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn reports_keep_non_assignment_diagnostics_and_reject_unterminated_values() {
+        let root = TemporaryDirectory(std::env::temp_dir().join(format!(
+            "nickel-report-syntax-{}",
+            crate::store::random_token()
+        )));
+        fs::create_dir_all(root.0.join("logs")).unwrap();
+        for (index, raw) in [
+            "SyntaxError: Unexpected token { in JSON at position 0\n    at JSON.parse (<anonymous>)\nnext=visible\n",
+            "Unexpected token [\naccessToken documentation\npassword confirmation failed\n",
+            "{\"passwordRequired\":true,\"tokenCount\":42,\"message\":\"password documentation\"}\n",
+        ].iter().enumerate() {
+            fs::write(root.0.join("logs/latest.log"), raw).unwrap();
+            let zip = root.0.join(format!("ordinary-{index}.zip"));
+            assert!(export_report(&root.0, &zip, raw).unwrap().complete);
+            for file in ["logs/latest.log", "failure.txt"] {
+                assert_eq!(read_zip_entry(&zip, file, MAX_FILE_BYTES, &CancellationToken::new()).unwrap(), raw.as_bytes());
+            }
+        }
+        for (index, raw) in [
+            "password=\"\nzip-secret\n".to_owned(),
+            "password='''\nzip-secret\n".into(),
+            "password=`zip-secret\n".into(),
+            "token={value:zip-secret".into(),
+            "--password [zip-secret".into(),
+            format!(
+                "password=\"\"\"\n{}\n\"\"\"",
+                "zip-secret\n".repeat(110_000)
+            ),
+            format!(
+                "password: |\n{}next: visible",
+                "  zip-secret\n".repeat(100_000)
+            ),
+        ]
+        .iter()
+        .enumerate()
+        {
+            fs::write(root.0.join("logs/latest.log"), raw).unwrap();
+            let zip = root.0.join(format!("unclosed-{index}.zip"));
+            assert!(export_report(&root.0, &zip, "test").is_err());
+            assert!(!zip.exists());
+            assert!(!redact_sensitive_text(raw).contains("zip-secret"));
+        }
+    }
+
+    #[test]
     fn malformed_or_over_budget_collections_never_publish_a_report_zip() {
         let root = TemporaryDirectory(std::env::temp_dir().join(format!(
             "nickel-report-reject-{}",

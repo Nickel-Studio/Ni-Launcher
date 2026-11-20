@@ -554,44 +554,6 @@ fn is_crash_report_name(name: &str) -> bool {
 // 脱敏
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TOKEN_KEYS: &[&str] = &[
-    "accessToken",
-    "access_token",
-    "access-token",
-    "clientToken",
-    "client_token",
-    "client-token",
-    "refreshToken",
-    "refresh_token",
-    "refresh-token",
-    "sessionToken",
-    "session_token",
-    "authToken",
-    "auth_token",
-    "authorization",
-    "token",
-];
-
-const FULL_KEYS: &[&str] = &[
-    "password",
-    "passwd",
-    "pwd",
-    "secret",
-    // OAuth 客户端密钥的常见 camelCase / snake_case / kebab-case / 紧凑写法。
-    "clientSecret",
-    "client_secret",
-    "client-secret",
-    "clientsecret",
-    "inviteCode",
-    "invite_code",
-    "invite-code",
-    "invitationCode",
-    "invitation_code",
-    "apiKey",
-    "api_key",
-    "x-api-key",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MaskKind {
     Full,
@@ -606,37 +568,49 @@ struct RedactionSpan {
     kind: MaskKind,
 }
 
-/// 对日志文本做保守脱敏：
-/// - accessToken / clientToken / refreshToken / Authorization 等保留首尾少量字符
-/// - password / secret / 邀请码 / API key 完全打码
-/// - `C:\Users\<name>`、`/Users/<name>`、`/home/<name>` 只遮蔽用户名段
-/// - URL 的 userinfo 只保留协议和主机
-///
-/// 返回值仍是可读日志，键名、路径层级和错误信息都会保留。
-pub fn redact_sensitive_text(text: &str) -> String {
-    redact_sensitive_text_checked(text).unwrap_or_else(|_| REDACTION_FAILURE.into())
-}
-
 const MAX_REDACTION_SPANS: usize = 262_144;
 const MAX_COLLECTION_BYTES: usize = 1024 * 1024;
 const MAX_COLLECTION_DEPTH: usize = 64;
+const MAX_KEY_BYTES: usize = 256;
 
-/// Complete reports must fail rather than silently dropping an unparseable field.
-/// Callers supply a size-bounded document, not independent lines of a collection.
-pub(crate) fn redact_sensitive_text_checked(text: &str) -> Result<String, String> {
-    // Line-oriented callers may already have replaced a collection's opening
-    // fragment. Its continuation cannot be identified safely without that key.
-    if text.contains(REDACTION_FAILURE) {
-        return Err("日志包含先前无法安全脱敏的片段，无法生成完整报告".into());
+#[derive(Debug)]
+enum ScanFailure {
+    Incomplete,
+    Invalid(&'static str),
+}
+impl ScanFailure {
+    fn message(&self) -> String {
+        match self {
+            Self::Incomplete => "日志敏感字段未闭合，无法安全生成完整报告".into(),
+            Self::Invalid(message) => (*message).into(),
+        }
     }
-    let mut spans = Vec::new();
-    collect_key_value_spans(text, &mut spans)?;
-    collect_user_path_spans(text, &mut spans)?;
-    collect_invite_path_spans(text, &mut spans)?;
-    collect_url_userinfo_spans(text, &mut spans)?;
-    Ok(apply_redaction_spans(text, spans))
 }
 
+/// Complete documents and streaming sessions share the same field boundaries.
+/// Uncertain value boundaries fail closed rather than releasing a continuation.
+pub fn redact_sensitive_text(text: &str) -> String {
+    redact_sensitive_text_checked(text).unwrap_or_else(|_| REDACTION_FAILURE.into())
+}
+pub(crate) fn redact_sensitive_text_checked(text: &str) -> Result<String, String> {
+    redact_document(text, true).map_err(|error| error.message())
+}
+fn redact_document(text: &str, final_input: bool) -> Result<String, ScanFailure> {
+    if text.contains(REDACTION_FAILURE) {
+        return Err(ScanFailure::Invalid(
+            "日志包含先前无法安全脱敏的片段，无法生成完整报告",
+        ));
+    }
+    let mut spans = Vec::new();
+    collect_key_value_spans(text, &mut spans, final_input)?;
+    collect_user_path_spans(text, &mut spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    collect_invite_path_spans(text, &mut spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    collect_url_userinfo_spans(text, &mut spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    Ok(apply_redaction_spans(text, spans))
+}
 fn push_redaction_span(spans: &mut Vec<RedactionSpan>, span: RedactionSpan) -> Result<(), String> {
     if spans.len() >= MAX_REDACTION_SPANS {
         return Err("日志敏感字段数量超过安全处理上限".into());
@@ -645,124 +619,33 @@ fn push_redaction_span(spans: &mut Vec<RedactionSpan>, span: RedactionSpan) -> R
     Ok(())
 }
 
-fn collect_key_value_spans(text: &str, spans: &mut Vec<RedactionSpan>) -> Result<(), String> {
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if index > 0 && is_key_byte(bytes[index - 1]) {
-            index += 1;
-            continue;
-        }
-        let matched = TOKEN_KEYS
-            .iter()
-            .map(|key| (*key, true))
-            .chain(FULL_KEYS.iter().map(|key| (*key, false)))
-            .find(|(key, _)| {
-                bytes
-                    .get(index..index + key.len())
-                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(key.as_bytes()))
-                    && key_boundary(bytes, index, key.len())
-            });
-        let Some((key, token)) = matched else {
-            index += 1;
-            continue;
-        };
-        let authorization = key.eq_ignore_ascii_case("authorization");
-        let kind = if token && !authorization {
-            MaskKind::Token
-        } else {
-            MaskKind::Full
-        };
-        index += key.len();
-        if let Some(span) = parse_key_value(
-            text,
-            index,
-            kind,
-            token && !key.eq_ignore_ascii_case("token"),
-            authorization,
-        )? {
-            // Scan in source order so keys inside a protected collection/string
-            // cannot truncate it or reinterpret literal contents as another field.
-            index = span.end;
-            push_redaction_span(spans, span)?;
-        }
+fn log_key_kind(key: &str) -> Option<MaskKind> {
+    if key.len() > MAX_KEY_BYTES {
+        return None;
     }
-    Ok(())
+    let folded: String = key
+        .bytes()
+        .filter(|b| !matches!(b, b'_' | b'-'))
+        .map(|b| (b as char).to_ascii_lowercase())
+        .collect();
+    match folded.as_str() {
+        "accesstoken" | "clienttoken" | "refreshtoken" | "sessiontoken" | "authtoken"
+        | "bearertoken" | "apitoken" | "token" => Some(MaskKind::Token),
+        "password" | "passwords" | "passwd" | "pwd" | "secret" | "secrets" | "clientsecret"
+        | "authorization" | "invitecode" | "invitationcode" | "apikey" | "apikeys" | "xapikey"
+        | "privatekey" | "secretkey" => Some(MaskKind::Full),
+        _ => None,
+    }
 }
-
-fn key_boundary(bytes: &[u8], start: usize, length: usize) -> bool {
-    let before_ok = start == 0 || !is_key_byte(bytes[start - 1]);
-    let after = start + length;
-    let after_ok = after >= bytes.len() || !is_key_byte(bytes[after]);
-    before_ok && after_ok
+fn key_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
 }
-fn is_key_byte(byte: u8) -> bool {
-    // 不把 `-` 算作 key 边界：日志里常见 `--accessToken <value>`。
-    byte.is_ascii_alphanumeric() || byte == b'_'
+fn skip_spaces(text: &str, mut index: usize) -> usize {
+    while matches!(text.as_bytes().get(index), Some(b' ' | b'\t')) {
+        index += 1;
+    }
+    index
 }
-
-fn parse_key_value(
-    text: &str,
-    after_key: usize,
-    kind: MaskKind,
-    allow_short_implicit: bool,
-    authorization: bool,
-) -> Result<Option<RedactionSpan>, String> {
-    let bytes = text.as_bytes();
-    let mut index = skip_spaces(text, after_key);
-    let mut quote = None;
-    if let Some(byte @ (b'"' | b'\'')) = bytes.get(index).copied() {
-        let after_quote = skip_field_whitespace(text, index + 1);
-        if matches!(bytes.get(after_quote), Some(b':' | b'=')) {
-            index = after_quote;
-        } else {
-            index += 1;
-            quote = Some(byte);
-        }
-    }
-    let had_separator = matches!(bytes.get(index), Some(b':' | b'='));
-    if had_separator {
-        index = skip_field_whitespace(text, index + 1);
-    }
-    if !had_separator && kind == MaskKind::Full && !allow_short_implicit {
-        return Ok(None);
-    }
-    if quote.is_none() && matches!(bytes.get(index), Some(b'[' | b'{')) {
-        let end = scan_collection_end(text, index)?;
-        return Ok(Some(RedactionSpan {
-            start: index,
-            end,
-            kind: MaskKind::Collection,
-        }));
-    }
-    if quote.is_none() {
-        if let Some(byte @ (b'"' | b'\'' | b'`')) = bytes.get(index).copied() {
-            index += 1;
-            quote = Some(byte);
-        }
-    }
-    index = skip_spaces(text, index);
-    let mut bearer_value = false;
-    if authorization && starts_with_bearer(&bytes[index..]) {
-        index = skip_spaces(text, index + "bearer".len());
-        bearer_value = true;
-    }
-    let start = index;
-    let end = if authorization && !bearer_value {
-        scan_line_end(text, start)
-    } else if let Some(quote) = quote {
-        scan_quoted_value_end(text, start, quote)
-    } else {
-        scan_value_end(text, start)
-    };
-    if end <= start
-        || (!had_separator && quote.is_none() && !allow_short_implicit && end - start < 8)
-    {
-        return Ok(None);
-    }
-    Ok(Some(RedactionSpan { start, end, kind }))
-}
-
 fn skip_field_whitespace(text: &str, mut index: usize) -> usize {
     while text
         .as_bytes()
@@ -773,116 +656,402 @@ fn skip_field_whitespace(text: &str, mut index: usize) -> usize {
     }
     index
 }
-
-fn scan_collection_end(text: &str, start: usize) -> Result<usize, String> {
-    // Logs may use JSON, flow YAML or Java-style maps. We only need the complete
-    // value boundary: mask the entire collection, never interpret/evaluate it.
-    let bytes = text.as_bytes();
-    let mut stack = Vec::new();
-    let mut quote = None;
-    let mut escaped = false;
-    let mut line_comment = false;
-    let mut block_comment = false;
-    let mut index = start;
-    while let Some(&byte) = bytes.get(index) {
-        if index - start >= MAX_COLLECTION_BYTES {
-            return Err("日志敏感集合超过安全处理大小".into());
-        }
-        if line_comment {
-            line_comment = !matches!(byte, b'\n' | b'\r');
-        } else if block_comment {
-            if bytes[index..].starts_with(b"*/") {
-                block_comment = false;
-                index += 1;
-            }
-        } else if let Some(delimiter) = quote {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == delimiter {
-                quote = None;
-            }
-        } else if bytes[index..].starts_with(b"//") || byte == b'#' {
-            line_comment = true;
-        } else if bytes[index..].starts_with(b"/*") {
-            block_comment = true;
-            index += 1;
-        } else {
-            match byte {
-                b'"' | b'\'' | b'`' => quote = Some(byte),
-                b'[' | b'{' => {
-                    if stack.len() >= MAX_COLLECTION_DEPTH {
-                        return Err("日志敏感集合嵌套超过安全处理深度".into());
-                    }
-                    stack.push(if byte == b'[' { b']' } else { b'}' });
-                }
-                b']' | b'}' => {
-                    if stack.pop() != Some(byte) {
-                        return Err("日志敏感集合括号不匹配，无法安全生成完整报告".into());
-                    }
-                    if stack.is_empty() {
-                        return Ok(index + 1);
-                    }
-                }
-                _ => {}
-            }
-        }
-        index += 1;
-    }
-    Err("日志敏感集合未闭合，无法安全生成完整报告".into())
-}
-
 fn scan_line_end(text: &str, start: usize) -> usize {
-    let bytes = text.as_bytes();
-    let mut index = start;
-    while let Some(byte) = bytes.get(index).copied() {
-        if byte == b'\n' || byte == b'\r' {
-            break;
-        }
-        index += 1;
-    }
-    index
+    text.as_bytes()[start..]
+        .iter()
+        .position(|b| matches!(b, b'\r' | b'\n'))
+        .map_or(text.len(), |n| start + n)
 }
 
-fn skip_spaces(text: &str, mut index: usize) -> usize {
+fn quoted_key(text: &str, start: usize) -> Option<(String, usize)> {
     let bytes = text.as_bytes();
-    while matches!(bytes.get(index), Some(b' ') | Some(b'\t')) {
-        index += 1;
-    }
-    index
-}
-
-fn starts_with_bearer(bytes: &[u8]) -> bool {
-    bytes.len() >= "bearer".len() && bytes[.."bearer".len()].eq_ignore_ascii_case(b"bearer")
-}
-
-fn scan_value_end(text: &str, start: usize) -> usize {
-    let bytes = text.as_bytes();
-    let mut index = start;
-    while let Some(byte) = bytes.get(index).copied() {
-        if byte.is_ascii_whitespace()
-            || matches!(
-                byte,
-                b'"' | b'\'' | b'`' | b',' | b';' | b'&' | b'}' | b']' | b')' | b'<' | b'>'
-            )
-        {
-            break;
-        }
-        index += 1;
-    }
-    index
-}
-
-fn scan_quoted_value_end(text: &str, start: usize, quote: u8) -> usize {
-    let bytes = text.as_bytes();
-    let mut index = start;
+    let delimiter = bytes[start];
     let mut escaped = false;
-    while let Some(byte) = bytes.get(index).copied() {
-        if byte == b'\n' || byte == b'\r' || (byte == quote && !escaped) {
-            break;
+    for end in start + 1..bytes.len().min(start + MAX_KEY_BYTES + 2) {
+        let byte = bytes[end];
+        if matches!(byte, b'\r' | b'\n') {
+            return None;
+        }
+        if byte == delimiter && !escaped {
+            let raw = &text[start..=end];
+            let key = if delimiter == b'"' {
+                serde_json::from_str::<String>(raw).ok()?
+            } else {
+                let inner = &text[start + 1..end];
+                serde_json::from_str::<String>(&format!(
+                    "\"{}\"",
+                    inner.replace("\\'", "'").replace('"', "\\\"")
+                ))
+                .ok()?
+            };
+            return Some((key, end + 1));
         }
         escaped = byte == b'\\' && !escaped;
+    }
+    None
+}
+
+fn collect_key_value_spans(
+    text: &str,
+    spans: &mut Vec<RedactionSpan>,
+    final_input: bool,
+) -> Result<(), ScanFailure> {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let key_start = index;
+        let (key, after_key, quoted) = if matches!(bytes[index], b'"' | b'\'') {
+            if let Some((key, end)) = quoted_key(text, index) {
+                (key, end, true)
+            } else {
+                index += 1;
+                continue;
+            }
+        } else if key_byte(bytes[index]) {
+            let start = index;
+            while index < bytes.len() && key_byte(bytes[index]) {
+                index += 1;
+            }
+            if index - start > MAX_KEY_BYTES {
+                continue;
+            }
+            (text[start..index].to_owned(), index, false)
+        } else {
+            index += 1;
+            continue;
+        };
+        let separator = skip_field_whitespace(text, after_key);
+        let explicit = matches!(bytes.get(separator), Some(b':' | b'='));
+        // A quoted diagnostic message can itself contain an assignment. Only
+        // consume it as an opaque key when its closing quote has a separator.
+        index = if quoted && !explicit {
+            key_start + 1
+        } else {
+            after_key
+        };
+        let cli = !quoted
+            && key.starts_with("--")
+            && key.len() > 2
+            && (key_start == 0 || bytes[key_start - 1].is_ascii_whitespace());
+        let Some(kind) = log_key_kind(key.trim_start_matches('-')) else {
+            continue;
+        };
+        if !explicit && !cli {
+            if !final_input
+                && separator == text.len()
+                && (quoted || text[..key_start].trim().is_empty())
+            {
+                return Err(ScanFailure::Incomplete);
+            }
+            continue;
+        }
+        if explicit && matches!(bytes.get(separator + 1), Some(b'=' | b'>')) {
+            continue;
+        }
+        let start = if explicit {
+            skip_field_whitespace(text, separator + 1)
+        } else {
+            skip_spaces(text, after_key)
+        };
+        if start == text.len() {
+            if !final_input {
+                return Err(ScanFailure::Incomplete);
+            }
+            continue;
+        }
+        let block_value = explicit
+            && bytes[separator] == b':'
+            && !matches!(
+                bytes[start],
+                b'[' | b'{' | b'"' | b'\'' | b'`' | b'|' | b'>'
+            )
+            && (text[separator + 1..start].contains('\n')
+                && line_indent(text, start) > line_indent(text, key_start)
+                || yaml_field_start(text, key_start));
+        let (span, consumed) = if block_value {
+            let end = scan_indented_end(
+                text,
+                key_start,
+                start,
+                scan_line_end(text, start),
+                final_input,
+            )?;
+            (
+                RedactionSpan {
+                    start,
+                    end,
+                    kind: MaskKind::Collection,
+                },
+                end,
+            )
+        } else {
+            scan_sensitive_value(
+                text,
+                key_start,
+                start,
+                kind,
+                key.trim_start_matches('-')
+                    .eq_ignore_ascii_case("authorization"),
+                final_input,
+            )?
+        };
+        index = consumed.max(start + 1);
+        if span.end > span.start {
+            push_redaction_span(spans, span)
+                .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+        }
+    }
+    Ok(())
+}
+
+fn yaml_field_start(text: &str, key_start: usize) -> bool {
+    let line_start = text[..key_start].rfind('\n').map_or(0, |n| n + 1);
+    matches!(text[line_start..key_start].trim(), "" | "-")
+}
+
+fn scan_sensitive_value(
+    text: &str,
+    key_start: usize,
+    start: usize,
+    kind: MaskKind,
+    authorization: bool,
+    final_input: bool,
+) -> Result<(RedactionSpan, usize), ScanFailure> {
+    let bytes = text.as_bytes();
+    if matches!(bytes[start], b'[' | b'{') {
+        let end = scan_collection_end(text, start)?;
+        return Ok((
+            RedactionSpan {
+                start,
+                end,
+                kind: MaskKind::Collection,
+            },
+            end,
+        ));
+    }
+    if matches!(bytes[start], b'"' | b'\'' | b'`') {
+        let width = if bytes[start] != b'`'
+            && bytes
+                .get(start..start + 3)
+                .is_some_and(|s| s.iter().all(|b| *b == bytes[start]))
+        {
+            3
+        } else {
+            1
+        };
+        let (inner_end, end) = scan_quote_end(text, start, width)?;
+        if width == 3 || text[start..end].contains(['\n', '\r']) {
+            return Ok((
+                RedactionSpan {
+                    start,
+                    end,
+                    kind: MaskKind::Collection,
+                },
+                end,
+            ));
+        }
+        return Ok((
+            RedactionSpan {
+                start: start + 1,
+                end: inner_end,
+                kind,
+            },
+            end,
+        ));
+    }
+    if matches!(bytes[start], b'|' | b'>') {
+        let line_end = scan_line_end(text, start);
+        let header = text[start + 1..line_end]
+            .split('#')
+            .next()
+            .unwrap_or("")
+            .trim();
+        if header
+            .bytes()
+            .all(|b| matches!(b, b'+' | b'-' | b'1'..=b'9'))
+        {
+            let end = scan_indented_end(text, key_start, start, line_end, final_input)?;
+            return Ok((
+                RedactionSpan {
+                    start,
+                    end,
+                    kind: MaskKind::Collection,
+                },
+                end,
+            ));
+        }
+    }
+    let end = if authorization
+        && text[start..]
+            .get(..7)
+            .is_some_and(|s| s.eq_ignore_ascii_case("bearer "))
+    {
+        scan_value_end(text, skip_spaces(text, start + 7))
+    } else if authorization {
+        scan_line_end(text, start)
+    } else {
+        scan_value_end(text, start)
+    };
+    Ok((RedactionSpan { start, end, kind }, end))
+}
+
+fn line_indent(text: &str, position: usize) -> usize {
+    let start = text[..position].rfind('\n').map_or(0, |n| n + 1);
+    text.as_bytes()[start..]
+        .iter()
+        .take_while(|b| matches!(b, b' ' | b'\t'))
+        .count()
+}
+
+fn scan_indented_end(
+    text: &str,
+    key_start: usize,
+    value_start: usize,
+    first_line_end: usize,
+    final_input: bool,
+) -> Result<usize, ScanFailure> {
+    if first_line_end - value_start > MAX_COLLECTION_BYTES {
+        return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+    }
+    let bytes = text.as_bytes();
+    let indent = line_indent(text, key_start);
+    let mut cursor = first_line_end;
+    let mut value_end = first_line_end;
+    while cursor < bytes.len() {
+        while matches!(bytes.get(cursor), Some(b'\r' | b'\n')) {
+            cursor += 1;
+        }
+        if cursor == bytes.len() {
+            break;
+        }
+        let end = scan_line_end(text, cursor);
+        let content = skip_spaces(text, cursor);
+        if content < end && content - cursor <= indent {
+            return Ok(value_end);
+        }
+        if end - value_start > MAX_COLLECTION_BYTES {
+            return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+        }
+        value_end = end;
+        cursor = end;
+    }
+    if !final_input {
+        return Err(ScanFailure::Incomplete);
+    }
+    Ok(value_end)
+}
+
+fn scan_quote_end(text: &str, start: usize, width: usize) -> Result<(usize, usize), ScanFailure> {
+    let bytes = text.as_bytes();
+    let quote = bytes[start];
+    let mut index = start + width;
+    let mut escaped = false;
+    while index < bytes.len() {
+        if index - start >= MAX_COLLECTION_BYTES {
+            return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+        }
+        if !escaped
+            && bytes[index] == quote
+            && bytes
+                .get(index..index + width)
+                .is_some_and(|s| s.iter().all(|b| *b == quote))
+        {
+            let mut end = index + width;
+            if width == 3 {
+                while end < bytes.len() && bytes[end] == quote {
+                    end += 1;
+                    if end - start > MAX_COLLECTION_BYTES {
+                        return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+                    }
+                }
+            } else if quote == b'\'' && bytes.get(end) == Some(&quote) {
+                index = end + 1;
+                continue;
+            }
+            if end - start > MAX_COLLECTION_BYTES {
+                return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+            }
+            return Ok((index, end));
+        }
+        escaped = bytes[index] == b'\\' && !escaped && !(quote == b'\'' && width == 3);
+        index += 1;
+    }
+    Err(ScanFailure::Incomplete)
+}
+
+fn scan_collection_end(text: &str, start: usize) -> Result<usize, ScanFailure> {
+    let bytes = text.as_bytes();
+    let mut stack = Vec::new();
+    let mut index = start;
+    while index < bytes.len() {
+        if index - start >= MAX_COLLECTION_BYTES {
+            return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
+        }
+        let byte = bytes[index];
+        if matches!(byte, b'"' | b'\'' | b'`') {
+            let width = if byte != b'`'
+                && bytes
+                    .get(index..index + 3)
+                    .is_some_and(|s| s.iter().all(|b| *b == byte))
+            {
+                3
+            } else {
+                1
+            };
+            index = scan_quote_end(text, index, width)?.1;
+            if index - start > MAX_COLLECTION_BYTES {
+                return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
+            }
+            continue;
+        }
+        // Comment markers are only comments at token boundaries; URLs and
+        // unquoted map values may contain // or # as ordinary data.
+        let comment_boundary = index == start
+            || bytes[index - 1].is_ascii_whitespace()
+            || matches!(bytes[index - 1], b'[' | b'{' | b',');
+        if comment_boundary && (byte == b'#' || bytes[index..].starts_with(b"//")) {
+            index = scan_line_end(text, index);
+            continue;
+        }
+        if comment_boundary && bytes[index..].starts_with(b"/*") {
+            let end = text[index + 2..]
+                .find("*/")
+                .ok_or(ScanFailure::Incomplete)?;
+            index += end + 4;
+            if index - start > MAX_COLLECTION_BYTES {
+                return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
+            }
+            continue;
+        }
+        match byte {
+            b'[' | b'{' => {
+                if stack.len() >= MAX_COLLECTION_DEPTH {
+                    return Err(ScanFailure::Invalid("日志敏感集合嵌套超过安全处理深度"));
+                }
+                stack.push(if byte == b'[' { b']' } else { b'}' });
+            }
+            b']' | b'}' => {
+                if stack.pop() != Some(byte) {
+                    return Err(ScanFailure::Invalid(
+                        "日志敏感集合括号不匹配，无法安全生成完整报告",
+                    ));
+                }
+                if stack.is_empty() {
+                    return Ok(index + 1);
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    Err(ScanFailure::Incomplete)
+}
+fn scan_value_end(text: &str, start: usize) -> usize {
+    let mut index = start;
+    while let Some(byte) = text.as_bytes().get(index).copied() {
+        if byte.is_ascii_whitespace() || b"\"'`,;&}])<>".contains(&byte) {
+            break;
+        }
         index += 1;
     }
     index
