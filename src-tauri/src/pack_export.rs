@@ -374,6 +374,20 @@ fn credential_key(key: &str) -> bool {
     )
 }
 
+fn environment_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn environment_placeholder(value: &str) -> bool {
+    // Only a complete variable reference is non-secret; defaults and literal
+    // prefixes/suffixes are data, even when an application expands placeholders.
+    value.strip_prefix("${").and_then(|v| v.strip_suffix('}'))
+        .or_else(|| value.strip_prefix('%').and_then(|v| v.strip_suffix('%')))
+        .is_some_and(environment_name)
+}
+
 fn credential_value(text: &str) -> bool {
     let value = text.trim();
     let folded: String = value
@@ -406,12 +420,7 @@ fn credential_value(text: &str) -> bool {
                 | "<password>"
         )
         || value.bytes().all(|character| character == b'*')
-        || (value.contains("${") && value.contains('}'))
-        || (value.starts_with('%') && value.ends_with('%'))
-        || folded.starts_with("process.env.")
-        || folded.starts_with("system.getenv(")
-        || folded.starts_with("os.getenv(")
-        || folded.starts_with("getenv(")
+        || environment_placeholder(value)
     {
         return false;
     }
@@ -481,150 +490,164 @@ fn embedded_credentials(text: &str) -> bool {
 enum CredentialToken {
     Text { value: String, quoted: bool },
     Assignment,
+    Field,
     Open(u8),
     Close(u8),
+    End,
+    Invalid,
     Other,
+}
+
+fn decode_script_string(inner: &str) -> Option<String> {
+    let mut chars = inner.chars().peekable();
+    let mut result = String::new();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        let escaped = chars.next()?;
+        let decoded = match escaped {
+            '\n' => continue,
+            '\r' => {
+                if chars.peek() == Some(&'\n') { chars.next(); }
+                continue;
+            }
+            'n' => '\n', 'r' => '\r', 't' => '\t', 'b' => '\u{8}', 'f' => '\u{c}', 'v' => '\u{b}',
+            'x' | 'u' => {
+                let braced = escaped == 'u' && chars.peek() == Some(&'{');
+                let mut hex = String::new();
+                if braced {
+                    chars.next();
+                    loop {
+                        let digit = chars.next()?;
+                        if digit == '}' { break; }
+                        if hex.len() >= 6 || !digit.is_ascii_hexdigit() { return None; }
+                        hex.push(digit);
+                    }
+                } else {
+                    for _ in 0..if escaped == 'x' { 2 } else { 4 } {
+                        let digit = chars.next()?;
+                        if !digit.is_ascii_hexdigit() { return None; }
+                        hex.push(digit);
+                    }
+                }
+                let mut code = u32::from_str_radix(&hex, 16).ok()?;
+                if (0xd800..=0xdbff).contains(&code) {
+                    if chars.next()? != '\\' || chars.next()? != 'u' { return None; }
+                    let low: String = chars.by_ref().take(4).collect();
+                    if low.len() != 4 { return None; }
+                    let low = u32::from_str_radix(&low, 16).ok()?;
+                    if !(0xdc00..=0xdfff).contains(&low) { return None; }
+                    code = 0x10000 + ((code - 0xd800) << 10) + low - 0xdc00;
+                }
+                char::from_u32(code)?
+            }
+            '0'..='7' => {
+                let mut code = escaped.to_digit(8)?;
+                for _ in 0..if escaped <= '3' { 2 } else { 1 } {
+                    let Some(digit @ '0'..='7') = chars.peek().copied() else { break; };
+                    chars.next();
+                    code = code * 8 + digit.to_digit(8)?;
+                }
+                char::from_u32(code)?
+            }
+            other => other,
+        };
+        result.push(decoded);
+    }
+    Some(result)
 }
 
 fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
     let bytes = text.as_bytes();
     loop {
-        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) {
-            *offset += 1;
-        }
+        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) { *offset += 1; }
         let rest = text.get(*offset..)?;
         if rest.starts_with('#') || rest.starts_with("//") || rest.starts_with("--") {
             *offset += rest.find('\n').unwrap_or(rest.len());
         } else if rest.starts_with("/*") {
             *offset += rest.find("*/").map_or(rest.len(), |end| end + 2);
-        } else {
-            break;
-        }
+        } else { break; }
     }
     let first = *bytes.get(*offset)?;
     let start = *offset;
     *offset += 1;
     match first {
         b'$' if bytes.get(*offset) == Some(&b'{') => {
-            // Treat an unquoted environment placeholder as one value.
-            let rest = &text[*offset..];
-            if let Some(end) = rest.find('}') {
-                if !rest[..end].contains(['\n', '\r']) {
-                    *offset += end + 1;
-                    return Some(CredentialToken::Text {
-                        value: text[start..*offset].to_owned(),
-                        quoted: false,
-                    });
-                }
-            }
-            Some(CredentialToken::Text {
-                value: "$".into(),
-                quoted: false,
-            })
+            if let Some(end) = text[*offset..].find('}') {
+                *offset += end + 1;
+                Some(CredentialToken::Text { value: text[start..*offset].into(), quoted: false })
+            } else { Some(CredentialToken::Invalid) }
         }
         b'"' | b'\'' | b'`' => {
             let mut escaped = false;
-            while let Some(&character) = bytes.get(*offset) {
+            while let Some(&ch) = bytes.get(*offset) {
                 *offset += 1;
-                if escaped {
-                    escaped = false;
-                } else if character == b'\\' {
-                    escaped = true;
-                } else if character == first {
-                    let raw = &text[start..*offset];
-                    let inner = &raw[1..raw.len() - 1];
-                    let encoded = if first == b'"' {
-                        raw.to_owned()
-                    } else {
-                        format!("\"{}\"", inner.replace("\\'", "'").replace('"', "\\\""))
-                    };
-                    let value = serde_json::from_str::<String>(&encoded)
-                        .unwrap_or_else(|_| inner.to_owned());
-                    return Some(CredentialToken::Text {
-                        value,
-                        quoted: true,
+                if escaped { escaped = false; }
+                else if ch == b'\\' { escaped = true; }
+                else if ch == first {
+                    return Some(match decode_script_string(&text[start + 1..*offset - 1]) {
+                        Some(value) => CredentialToken::Text { value, quoted: true },
+                        None => CredentialToken::Invalid,
                     });
                 }
             }
-            Some(CredentialToken::Other)
+            Some(CredentialToken::Invalid)
         }
-        b'=' if matches!(bytes.get(*offset), Some(b'=' | b'>')) => {
-            *offset += 1;
-            Some(CredentialToken::Other)
-        }
-        b'=' | b':' => Some(CredentialToken::Assignment),
-        b'{' | b'[' => Some(CredentialToken::Open(first)),
-        b'}' | b']' => Some(CredentialToken::Close(first)),
-        b'(' | b')' | b',' | b';' => Some(CredentialToken::Other),
-        _ => {
-            while bytes.get(*offset).is_some_and(|character| {
-                !character.is_ascii_whitespace()
-                    && !matches!(
-                        character,
-                        b'"' | b'\''
-                            | b'`'
-                            | b'='
-                            | b':'
-                            | b'{'
-                            | b'}'
-                            | b'['
-                            | b']'
-                            | b'('
-                            | b')'
-                            | b','
-                            | b';'
-                    )
-            }) {
+        b':' => Some(CredentialToken::Field),
+        b'=' | b'!' | b'?' | b'|' | b'&' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'<' | b'>' => {
+            while bytes.get(*offset).is_some_and(|ch| matches!(ch, b'=' | b'?' | b'|' | b'&' | b'<' | b'>' | b'*')) {
                 *offset += 1;
             }
+            let operator = &text[start..*offset];
+            Some(if matches!(operator, "=" | "??=" | "||=" | "&&=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=") {
+                CredentialToken::Assignment
+            } else { CredentialToken::Other })
+        }
+        b'{' | b'[' | b'(' => Some(CredentialToken::Open(first)),
+        b'}' | b']' | b')' => Some(CredentialToken::Close(first)),
+        b',' | b';' => Some(CredentialToken::End),
+        _ => {
+            while bytes.get(*offset).is_some_and(|ch| !ch.is_ascii_whitespace()
+                && !b"\"'`=:{}[](),;?!|&+*/%^<>".contains(ch)) { *offset += 1; }
             let raw = &text[start..*offset];
-            let value = if raw.contains("\\u") {
-                serde_json::from_str::<String>(&format!("\"{raw}\""))
-                    .unwrap_or_else(|_| raw.to_owned())
-            } else {
-                raw.to_owned()
-            };
-            Some(CredentialToken::Text {
-                value,
-                quoted: false,
+            Some(match decode_script_string(raw) {
+                Some(value) => CredentialToken::Text { value, quoted: false },
+                None => CredentialToken::Invalid,
             })
         }
     }
 }
 
-fn credential_assignment_value(
-    token: CredentialToken,
-    text: &str,
-    offset: &mut usize,
-    script: bool,
-    depth: usize,
-) -> bool {
+fn credential_assignment_value(token: CredentialToken, text: &str, offset: &mut usize, script: bool, depth: usize) -> bool {
     match token {
+        CredentialToken::Invalid => true,
         CredentialToken::Text { value, quoted } => {
             let mut after = *offset;
-            if matches!(
-                credential_token(text, &mut after),
-                Some(CredentialToken::Assignment)
-            ) {
-                // Object keys (or the next YAML field after a null value) are not values.
+            if matches!(credential_token(text, &mut after), Some(CredentialToken::Field | CredentialToken::Assignment)) {
                 return false;
             }
-            (quoted || !script || value.parse::<u64>().is_ok()) && credential_value(&value)
+            // An environment lookup's variable name is not a secret literal.
+            if script && !quoted && matches!(value.as_str(), "System.getenv" | "os.getenv" | "getenv") {
+                after = *offset;
+                if matches!(credential_token(text, &mut after), Some(CredentialToken::Open(b'('))) {
+                    if let Some(CredentialToken::Text { value: name, quoted: true }) = credential_token(text, &mut after) {
+                        if environment_name(&name) && matches!(credential_token(text, &mut after), Some(CredentialToken::Close(b')'))) {
+                            *offset = after;
+                            return false;
+                        }
+                    }
+                }
+            }
+            (quoted || !script || value.parse::<f64>().is_ok()) && credential_value(&value)
         }
         CredentialToken::Open(open) => {
-            // Keep the sensitive-field context across nested collections. Reject
-            // malformed or excessively nested values rather than skipping them.
-            if depth >= 64 {
-                return true;
-            }
-            let close = if open == b'[' { b']' } else { b'}' };
+            if depth >= 64 { return true; }
+            let close = match open { b'[' => b']', b'(' => b')', _ => b'}' };
             while let Some(token) = credential_token(text, offset) {
-                if let CredentialToken::Close(end) = token {
-                    return end != close;
-                }
-                if credential_assignment_value(token, text, offset, script, depth + 1) {
-                    return true;
-                }
+                if let CredentialToken::Close(end) = token { return end != close; }
+                if credential_assignment_value(token, text, offset, script, depth + 1) { return true; }
             }
             true
         }
@@ -638,35 +661,23 @@ fn credential_text(text: &str, script: bool) -> bool {
     while let Some(token) = credential_token(text, &mut offset) {
         let indexed = after_bracket;
         after_bracket = matches!(token, CredentialToken::Open(b'['));
-        let CredentialToken::Text { value, quoted } = token else {
-            continue;
-        };
-        if quoted && embedded_credentials(&value) {
-            return true;
-        }
-        if !credential_key(&value) {
-            continue;
-        }
+        if matches!(token, CredentialToken::Invalid) { return true; }
+        let CredentialToken::Text { value, quoted } = token else { continue; };
+        if quoted && embedded_credentials(&value) { return true; }
+        if !credential_key(&value) { continue; }
         let mut next = offset;
         let mut operator = credential_token(text, &mut next);
-        // Only a literal subscript followed by an assignment is a write. Reads,
-        // comparisons and computed subscripts must not become credential values.
         if script && quoted && indexed && matches!(operator, Some(CredentialToken::Close(b']'))) {
             operator = credential_token(text, &mut next);
-            // A ternary expression can follow a read with ':', not a write.
-            if !matches!(operator, Some(CredentialToken::Assignment))
-                || text.as_bytes().get(next.saturating_sub(1)) != Some(&b'=')
-            {
-                continue;
-            }
+            if !matches!(operator, Some(CredentialToken::Assignment)) { continue; }
         }
-        if !matches!(operator, Some(CredentialToken::Assignment)) {
-            continue;
-        }
-        if let Some(token) = credential_token(text, &mut next) {
-            if credential_assignment_value(token, text, &mut next, script, 0) {
-                return true;
-            }
+        if !matches!(operator, Some(CredentialToken::Assignment | CredentialToken::Field)) { continue; }
+        while let Some(token) = credential_token(text, &mut next) {
+            if matches!(token, CredentialToken::End | CredentialToken::Close(_)) { break; }
+            if credential_assignment_value(token, text, &mut next, script, 0) { return true; }
+            if !script { break; }
+            // A new statement without a semicolon is not part of this RHS.
+            if text.as_bytes().get(next).is_some_and(|ch| matches!(ch, b'\r' | b'\n')) { break; }
         }
     }
     false

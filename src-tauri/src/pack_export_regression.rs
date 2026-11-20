@@ -968,6 +968,49 @@ fn literal_script_subscript_writes_reject_secrets_but_reads_and_comparisons_expo
 }
 
 #[test]
+fn script_literal_writes_use_bounded_expression_and_escape_rules() {
+    for operator in ["=", "??=", "||=", "&&=", "+="] {
+        for key in [r#""password""#, r#""pass\x77ord""#, r#"'pass\u{77}ord'"#, r#"'pass\167ord'"#] {
+            for value in ["'archive-secret'", "(('archive-secret'))", "process.env.PASSWORD || 'archive-secret'", "[({value:'archive-secret'})]"] {
+                assert_policy_archive("kubejs/server_scripts/service.js", &format!("settings[{key}] {operator} {value};"), false);
+            }
+        }
+    }
+    for text in [
+        "settings['password'] = (process.env.PASSWORD);",
+        "settings['password'] ??= ('${PASSWORD}');",
+        "settings['password'] = System.getenv('PASSWORD');",
+        "settings['password'] = ['', null, {primary: '%PASSWORD%'}];",
+        "settings['password'] === ('example');",
+        "settings['password'] !== ('example');",
+        "const x = ok ? settings['password'] : 'example';",
+        "const documentation = 'password = not executed';",
+    ] { assert_policy_archive("kubejs/server_scripts/service.js", text, true); }
+    for text in ["settings.password = ('unterminated", "settings.password = ([)]"] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, false);
+    }
+    assert_policy_archive("kubejs/server_scripts/service.js", &format!("settings.password={}''{};", "(".repeat(65), ")".repeat(65)), false);
+}
+
+#[test]
+fn only_complete_valid_environment_placeholders_are_exempt_in_all_formats() {
+    for (value, allowed) in [
+        ("${PASSWORD}", true), ("%PASSWORD%", true), ("${_PASSWORD2}", true),
+        ("archive-secret${}", false), ("archive-secret-${USER}", false),
+        ("${PASSWORD:-archive-secret}", false), ("${}", false), ("${1PASSWORD}", false),
+        ("%PASSWORD%archive-secret", false), ("%archive-secret%", false),
+        ("process.env.PASSWORD + archive-secret", false),
+    ] {
+        let literal = serde_json::to_string(value).unwrap();
+        for (path, source) in [
+            ("config/service.toml", format!("password = {literal}")),
+            ("config/service.json", format!("{{\"password\":{literal}}}")),
+            ("kubejs/server_scripts/service.js", format!("settings['password'] = ({literal});")),
+        ] { assert_policy_archive(path, &source, allowed); }
+    }
+}
+
+#[test]
 fn credential_collections_keep_empty_placeholder_and_description_values_safe() {
     for text in [
         "api_keys = []",
