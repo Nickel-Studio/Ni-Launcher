@@ -38,7 +38,7 @@ import {
 import {
   setVersionFocus,
   useVersionFocus,
-} from "../components/version/vsettings/focus";
+} from "../lib/instances";
 import {
   describeError,
   detectJava,

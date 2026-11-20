@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { PRODUCT_NAME } from "../../../lib/brand";
 import { isTauri, type SourcePolicy } from "../../../lib/settings";
 import { startManagedDownload } from "../../download/store";
 
@@ -41,7 +40,7 @@ export function exportDisplayGroup(
 }
 export type ExportFormat = "mrpack" | "portable";
 export interface ExportFile {
-  // New previews contain selection tokens, not recursively expanded file lists.
+  // Previews contain selection tokens, not recursively expanded file lists.
   path: string;
   sourcePath: string;
   displayName: string;
@@ -98,7 +97,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function stringList(value: unknown, label: string): string[] {
-  if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string"))
     throw new Error(`${label}格式无法识别，请重新读取`);
   return [...value] as string[];
@@ -293,90 +291,50 @@ function validSelection(value: string): boolean {
   );
 }
 
-export type ExportSelection = ReadonlyMap<string, readonly string[]>;
-export type ExportCheckState = "checked" | "mixed" | "unchecked";
+export type ExportSelection = ReadonlySet<string>;
+export type ExportCheckState = "checked" | "unchecked";
 
 export function exportCheckState(
   file: ExportFile,
   selection: ExportSelection
 ): ExportCheckState {
-  const paths = selection.get(file.path);
-  if (!paths?.length) return "unchecked";
-  return paths.length === 1 && paths[0] === file.path ? "checked" : "mixed";
+  return selection.has(file.path) ? "checked" : "unchecked";
 }
 
-export function defaultExportSelection(
-  preview: ExportPreview
-): Map<string, readonly string[]> {
-  return new Map(
-    preview.files
-      .filter((file) => file.selected)
-      .map((file) => [file.path, [file.path]])
-  );
+export function defaultExportSelection(preview: ExportPreview): Set<string> {
+  return new Set(preview.files.filter((file) => file.selected).map((file) => file.path));
 }
 
 export function matchExportSelection(
   preview: ExportPreview,
   paths: readonly string[]
-): {
-  selection: Map<string, readonly string[]>;
-  missing: number;
-  legacy: number;
-} {
-  const exact = new Map(preview.files.map((file) => [file.path, file]));
-  const directories = new Map(
-    preview.files
-      .filter((file) => file.kind === "directory")
-      .map((file) => [`${file.group}/${file.sourcePath}`, file])
-  );
-  const buckets = new Map<string, Set<string>>();
+): { selection: Set<string>; missing: number } {
+  const available = new Set(preview.files.map((file) => file.path));
+  const selection = new Set<string>();
   let missing = 0;
-  let legacy = 0;
   for (const path of paths) {
     if (!validSelection(path)) throw new Error("导出配置含不允许的选择路径");
-    let entry = exact.get(path);
-    if (!entry && !path.startsWith("@dir/")) {
-      const group = fileGroup(path);
-      let ancestor = path;
-      while (!entry && ancestor.includes("/")) {
-        ancestor = ancestor.slice(0, ancestor.lastIndexOf("/"));
-        entry = directories.get(`${group}/${ancestor}`);
-      }
-    }
-    if (!entry) {
-      missing += 1;
-      continue;
-    }
-    const bucket = buckets.get(entry.path) ?? new Set<string>();
-    if (!bucket.has(entry.path)) {
-      if (path === entry.path) bucket.clear();
-      bucket.add(path);
-    }
-    buckets.set(entry.path, bucket);
-    if (path !== entry.path) legacy += 1;
+    if (available.has(path)) selection.add(path);
+    else missing += 1;
   }
-  return {
-    selection: new Map([...buckets].map(([key, values]) => [key, [...values]])),
-    missing,
-    legacy,
-  };
+  return { selection, missing };
 }
 
 export function toggleExportSelection(
   previous: ExportSelection,
   entries: readonly string[],
   checked: boolean
-): Map<string, readonly string[]> {
-  const next = new Map(previous);
+): Set<string> {
+  const next = new Set(previous);
   for (const entry of entries) {
-    if (checked) next.set(entry, [entry]);
+    if (checked) next.add(entry);
     else next.delete(entry);
   }
   return next;
 }
 
 export function serializeExportSelection(selection: ExportSelection): string[] {
-  return [...new Set([...selection.values()].flat())];
+  return [...selection];
 }
 
 export function normalizeExportPreview(raw: unknown): ExportPreview {
@@ -397,13 +355,9 @@ export function normalizeExportPreview(raw: unknown): ExportPreview {
   const seen = new Set<string>();
   const files = value.files.map((item: unknown): ExportFile => {
     const file = asRecord(item);
-    const kind = file.kind === undefined ? "file" : file.kind;
-    const sourcePath =
-      file.sourcePath === undefined ? file.path : file.sourcePath;
-    const displayName =
-      file.displayName === undefined && typeof sourcePath === "string"
-        ? sourcePath.split("/").pop()
-        : file.displayName;
+    const kind = file.kind;
+    const sourcePath = file.sourcePath;
+    const displayName = file.displayName;
     const sizeBytes = file.sizeBytes;
     if (
       typeof file.path !== "string" ||
@@ -443,15 +397,7 @@ export function normalizeExportPreview(raw: unknown): ExportPreview {
       selected: file.selected,
     };
   });
-  const launcher =
-    value.launcher === undefined
-      ? {
-          available: false,
-          detail: `请更新 ${PRODUCT_NAME} 后重新读取启动器打包信息`,
-          os: "",
-          arch: "",
-        }
-      : asRecord(value.launcher);
+  const launcher = asRecord(value.launcher);
   if (
     typeof launcher.available !== "boolean" ||
     typeof launcher.detail !== "string" ||
@@ -466,7 +412,6 @@ export function normalizeExportPreview(raw: unknown): ExportPreview {
     "未迁移实例设置"
   );
   const instanceSettingsError =
-    value.instanceSettingsError === undefined ||
     value.instanceSettingsError === null
       ? null
       : typeof value.instanceSettingsError === "string"
@@ -495,17 +440,7 @@ export function normalizeExportPreview(raw: unknown): ExportPreview {
 
 export function normalizeExportConfig(raw: unknown): ExportConfig {
   const config = asRecord(raw);
-  const format = config.format === undefined ? "mrpack" : config.format;
-  const includeLauncher =
-    config.includeLauncher === undefined ? false : config.includeLauncher;
-  const includePersonalization =
-    config.includePersonalization === undefined
-      ? false
-      : config.includePersonalization;
-  const bundleResources =
-    config.bundleResources === undefined ? false : config.bundleResources;
-  const modrinthOnly =
-    config.modrinthOnly === undefined ? false : config.modrinthOnly;
+  const { format, includeLauncher, includePersonalization, bundleResources, modrinthOnly } = config;
   if (
     typeof config.name !== "string" ||
     typeof config.version !== "string" ||

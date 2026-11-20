@@ -66,7 +66,6 @@ pub struct VersionSettings {
     pub jvm_args: Option<String>,
     pub game_args: Option<String>,
     pub pre_launch_command: Option<String>,
-    pub no_mod_updates: Option<bool>,
     pub disable_mod_updates: Option<bool>,
     pub disable_file_check: Option<bool>,
     pub disable_wrapper: Option<bool>,
@@ -102,7 +101,6 @@ impl Default for VersionSettings {
             jvm_args: None,
             game_args: None,
             pre_launch_command: None,
-            no_mod_updates: None,
             disable_mod_updates: None,
             disable_file_check: None,
             disable_wrapper: None,
@@ -128,7 +126,7 @@ fn merge_settings(defaults: serde_json::Value, stored: serde_json::Value) -> ser
     for (key, value) in src {
         let inherits = value.is_null() || value.as_str() == Some(MEMORY_GLOBAL);
         let accepted = match key.as_str() {
-            "versionIsolation" | "noModUpdates" | "disableModUpdates" | "disableFileCheck"
+            "versionIsolation" | "disableModUpdates" | "disableFileCheck"
             | "disableWrapper" | "disableLwjglAgent"
             | "highPerformanceGpu" | "offlineSkinSlim" => inherits || value.is_boolean(),
             "windowTitle" | "customInfo" | "javaPath" | "launcherVisibility"
@@ -1327,14 +1325,12 @@ mod tests {
     }
 
     #[test]
-    fn old_default_gc_migrates_to_custom_and_invalid_types_are_dropped() {
+    fn invalid_setting_types_are_dropped() {
         let stored = serde_json::json!({
-            "memoryManagement": "default",
             "windowWidth": "wide",
             "serverLogin": false,
         });
         let merged = normalize_memory(merge_settings(default_settings_value(), stored));
-        assert_eq!(merged["memoryManagement"], MEMORY_CUSTOM);
         assert!(merged["windowWidth"].is_null());
         assert!(merged["serverLogin"].is_null());
     }

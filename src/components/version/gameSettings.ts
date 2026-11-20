@@ -25,9 +25,7 @@ export interface GameSettings extends Record<string, unknown> {
     | "generational-zgc"
     | "g1"
     | "g1-tuned"
-    | "custom"
-    | "serial"
-    | "parallel";
+    | "custom";
   highPerformanceGpu: boolean;
   disableWrapper: boolean;
   disableLwjglAgent: boolean;
@@ -121,15 +119,11 @@ export function normalizeGameSettings(input: unknown): GameSettings {
     // 保留已保存值，超物理内存时由后端给出可执行错误，不在前端静默截断。
     memoryMb: positiveInteger(raw.memoryMb, DEFAULT_GAME_SETTINGS.memoryMb),
     memoryManagement:
-      raw.memoryManagement === "default"
-        ? "custom"
-        : raw.memoryManagement === "auto-zgc" ||
-          raw.memoryManagement === "generational-zgc" ||
-          raw.memoryManagement === "g1" ||
-          raw.memoryManagement === "g1-tuned" ||
-          raw.memoryManagement === "custom" ||
-          raw.memoryManagement === "serial" ||
-          raw.memoryManagement === "parallel"
+      raw.memoryManagement === "auto-zgc" ||
+      raw.memoryManagement === "generational-zgc" ||
+      raw.memoryManagement === "g1" ||
+      raw.memoryManagement === "g1-tuned" ||
+      raw.memoryManagement === "custom"
         ? raw.memoryManagement
         : "g1-tuned",
     highPerformanceGpu: raw.highPerformanceGpu === true,

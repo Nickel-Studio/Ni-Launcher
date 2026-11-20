@@ -293,14 +293,6 @@ fn settings_set(app: AppHandle, json: String) -> Result<(), String> {
 // 3. 下载源切换
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 兼容旧入口：official/bmclapi 同时设置后续列表与文件默认值，不修改社区 API。
-#[tauri::command]
-fn set_download_source(source: String) -> Result<(), String> {
-    network_settings::set_legacy_source(&source)?;
-    minecraft_java_rs_core::mirror::set_download_source(&source);
-    Ok(())
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. 版本列表 / 默认目录
 // ─────────────────────────────────────────────────────────────────────────────
@@ -424,24 +416,20 @@ fn emit_launch_event(app: &AppHandle, launch_id: &str, mut event: FrontendEvent)
     let _ = app.emit("launcher-event", ScopedLaunchEvent { launch_id, event });
 }
 
-fn validate_launch_id(value: Option<String>) -> Result<String, String> {
-    match value {
-        Some(value)
-            if !value.is_empty()
-                && value.len() <= 128
-                && value
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')) =>
-        {
-            Ok(value)
-        }
-        Some(_) => Err("启动请求标识无效，请重新打开启动器后重试".into()),
-        None => Ok(store::random_token()),
+fn validate_launch_id(value: String) -> Result<String, String> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("启动请求标识无效，请重新打开启动器后重试".into());
     }
+    Ok(value)
 }
 
-fn cancel_launch_control(control: &LaunchControl, launch_id: Option<&str>) -> bool {
-    if launch_id.is_some_and(|id| id != control.launch_id) {
+fn cancel_launch_control(control: &LaunchControl, launch_id: &str) -> bool {
+    if launch_id != control.launch_id {
         return false;
     }
     control.token.cancel();
@@ -457,9 +445,9 @@ fn launch_control_lock() -> std::sync::MutexGuard<'static, Option<Arc<LaunchCont
 
 /// 取消准备任务；旧请求不得取消新一轮启动。
 #[tauri::command]
-fn launch_cancel(launch_id: Option<String>) {
+fn launch_cancel(launch_id: String) {
     if let Some(control) = launch_control_lock().clone() {
-        cancel_launch_control(&control, launch_id.as_deref());
+        cancel_launch_control(&control, &launch_id);
     }
 }
 
@@ -472,7 +460,7 @@ async fn launch_game(
     memory_mb: Option<u64>,
     source: Option<String>,
     game_dir: Option<String>,
-    launch_id: Option<String>,
+    launch_id: String,
 ) -> Result<(), String> {
     onboarding::require_accepted(&app)?;
     let launch_id = validate_launch_id(launch_id)?;
@@ -1136,7 +1124,7 @@ fn launch_from_startup_arguments(app: &AppHandle) {
                 );
             }
             launch_game(
-                app.clone(), Some(version), None, None, None, Some(root), Some(launch_id.clone()),
+                app.clone(), Some(version), None, None, None, Some(root), launch_id.clone(),
             )
             .await
         }
@@ -1284,7 +1272,6 @@ pub fn run() {
             community_dependencies::community_dependency_resolve,
             portable_bootstrap::portable_bootstrap_status,
             portable_bootstrap::portable_bootstrap_start,
-            set_download_source,
             // 账号存储
             accounts::accounts_list,
             accounts::accounts_upsert,
@@ -1350,7 +1337,6 @@ pub fn run() {
             loader_catalog::list_loaders,
             loader_catalog::list_loader_provider,
             loader_catalog::preload_loader_catalog,
-            installer_download::save_loader_installer,
             installer_download::save_loader_installer_managed,
             install::java_detect,
             install::java_resolve,
@@ -1404,14 +1390,14 @@ mod tests {
             value.get("fileType").and_then(|v| v.as_str()),
             Some("assets")
         );
-        // 关键：不存在 `kind` 字段，避免前端 eventKind 解析时优先取到业务字段。
+        // File categories must not add a competing event discriminator.
         assert!(value.get("kind").is_none());
     }
 
     #[test]
-    fn launch_identity_validation_is_bounded_and_unique() {
+    fn launch_identity_validation_is_bounded() {
         for id in ["launch-42", "launch_42", "ABC123", &"a".repeat(128)] {
-            assert_eq!(validate_launch_id(Some(id.into())).unwrap(), id);
+            assert_eq!(validate_launch_id(id.into()).unwrap(), id);
         }
         for id in [
             "",
@@ -1423,12 +1409,8 @@ mod tests {
             "\u{00e9}",
             &"a".repeat(129),
         ] {
-            assert!(validate_launch_id(Some(id.into())).is_err());
+            assert!(validate_launch_id(id.into()).is_err());
         }
-        let first = validate_launch_id(None).unwrap();
-        let second = validate_launch_id(None).unwrap();
-        assert_ne!(first, second);
-        assert_eq!(validate_launch_id(Some(first.clone())).unwrap(), first);
     }
 
     #[test]
@@ -1488,16 +1470,11 @@ mod tests {
             token: CancellationToken::default(),
             launch_id: "current-launch".into(),
         };
-        assert!(!cancel_launch_control(&control, Some("previous-launch")));
+        assert!(!cancel_launch_control(&control, "previous-launch"));
+        assert!(!cancel_launch_control(&control, ""));
         assert!(!control.token.is_cancelled());
-        assert!(cancel_launch_control(&control, Some("current-launch")));
+        assert!(cancel_launch_control(&control, "current-launch"));
         assert!(control.token.is_cancelled());
-        let legacy = LaunchControl {
-            token: CancellationToken::default(),
-            launch_id: "legacy-launch".into(),
-        };
-        assert!(cancel_launch_control(&legacy, None));
-        assert!(legacy.token.is_cancelled());
     }
 
     #[test]

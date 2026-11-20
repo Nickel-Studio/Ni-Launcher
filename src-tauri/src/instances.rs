@@ -1,7 +1,7 @@
 //! 实例注册表与本地版本、资源扫描。
 //!
 //! 注册表按有界 JSON 保存，缺失或损坏时回退空列表。
-//! 程序旁目录、便携标记与旧配置优先级统一由 app_paths 决定。
+//! 程序旁目录、便携标记与系统配置目录的优先级统一由 app_paths 决定。
 //! 扫描不得发起网络请求；目录身份用于启动与管理，展示名不得替代真实 MC 版本。
 
 use std::path::{Path, PathBuf};
@@ -109,7 +109,7 @@ fn root_identity(value: &str) -> String {
     value.strip_prefix("//?/").unwrap_or(&value).trim_end_matches('/').to_owned()
 }
 
-/// 保存列表的先后顺序代表添加先后；迁移时不伪造历史时间。
+/// 保存列表的先后顺序代表添加先后；默认目录置首，其余目录保持添加顺序。
 fn ordered_roots(incoming: &[String], previous: &[String], default: Option<&str>) -> Vec<String> {
     let mut unique = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -1480,10 +1480,10 @@ mod tests {
     }
 
     #[test]
-    fn root_addition_order_survives_activation_removal_and_legacy_migration() {
+    fn root_addition_order_survives_activation_and_removal() {
         let values = |items: &[&str]| items.iter().map(|value| value.to_string()).collect::<Vec<_>>();
-        let legacy = values(&["Z:/old", "C:/default", "A:/new"]);
-        let initial = ordered_roots(&legacy, &[], Some("C:/default"));
+        let roots = values(&["Z:/old", "C:/default", "A:/new"]);
+        let initial = ordered_roots(&roots, &[], Some("C:/default"));
         assert_eq!(initial, values(&["C:/default", "Z:/old", "A:/new"]));
         let requested = values(&["B:/latest", "A:/new", "C:/default", "Z:/old"]);
         let appended = ordered_roots(&requested, &initial, Some("C:/default"));
@@ -1635,7 +1635,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_labels_roundtrip_without_changing_legacy_empty_shape() {
+    fn registry_labels_roundtrip_and_omit_empty_labels() {
         let mut registry = Registry::default();
         assert_eq!(registry_to_text(&registry), EMPTY_REGISTRY);
         registry.labels.insert("C:/mc".into(), "Survival".into());

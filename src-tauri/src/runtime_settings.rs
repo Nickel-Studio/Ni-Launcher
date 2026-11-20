@@ -112,11 +112,9 @@ pub fn split_arguments(raw: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-/// 旧 `default` 的一次性迁移：它过去仍会过滤并追加 G1，已不再等于“不指定”。
 pub fn normalize_memory_management(value: &str) -> Result<String, String> {
     let mode = match value.trim() {
         "" => "g1-tuned",
-        "default" => "custom",
         other => other,
     };
     choice(
@@ -127,8 +125,6 @@ pub fn normalize_memory_management(value: &str) -> Result<String, String> {
             "g1",
             "g1-tuned",
             "custom",
-            "serial",
-            "parallel",
         ],
         "内存管理",
     )
@@ -165,8 +161,6 @@ pub fn gc_arguments(
         args.push("-XX:+UseCompactObjectHeaders".into());
     }
     match mode.as_str() {
-        "serial" => args.push("-XX:+UseSerialGC".into()),
-        "parallel" => args.push("-XX:+UseParallelGC".into()),
         _ if use_zgc => {
             args.push("-XX:+UseZGC".into());
             if (21..=22).contains(&java_major) {
@@ -321,12 +315,7 @@ pub fn resolve_with_memory(
         )?,
         server_name,
         auth_server: text(global, local, "authServer", ""),
-        server_address: text(
-            global,
-            local,
-            "serverAddress",
-            &text(global, local, "autoJoinServer", ""),
-        ),
+        server_address: text(global, local, "serverAddress", ""),
     })
 }
 
@@ -711,7 +700,7 @@ pub fn bounded_log_line(line: &str) -> String {
     }
 }
 
-/// 旧调用点继续以文件路径追加；存储、脱敏、轮转由 `launch_log_store` 统一负责。
+/// Derive the instance from its log path; the store owns redaction and rotation.
 pub fn append_launch_log(path: &Path, line: &str) -> Result<(), String> {
     let base = path
         .parent()
@@ -1032,8 +1021,6 @@ mod tests {
         assert!(args("g1", 21, Some(17_763)).contains(&"-XX:+UseG1GC".into()));
         assert!(args("g1-tuned", 8, Some(17_763)).contains(&"-XX:+ParallelRefProcEnabled".into()));
         assert!(args("g1-tuned", 21, Some(17_763)).contains(&"-XX:MaxHeapFreeRatio=40".into()));
-        assert!(args("serial", 21, Some(17_763)).contains(&"-XX:+UseSerialGC".into()));
-        assert!(args("parallel", 21, Some(17_763)).contains(&"-XX:+UseParallelGC".into()));
         assert!(args("g1", 24, Some(17_763)).contains(&"-XX:+UseCompactObjectHeaders".into()));
         assert!(
             args("g1", 23, Some(17_763))
@@ -1121,8 +1108,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_gc_values_migrate_without_changing_g1() {
-        assert_eq!(normalize_memory_management("default").unwrap(), "custom");
+    fn memory_management_validates_current_modes() {
         assert_eq!(normalize_memory_management("").unwrap(), "g1-tuned");
         assert_eq!(normalize_memory_management("g1").unwrap(), "g1");
         assert_eq!(normalize_memory_management("auto-zgc").unwrap(), "auto-zgc");
@@ -1155,7 +1141,7 @@ mod tests {
             "javaPath": "global-java", "windowTitle": "global-title",
             "jvmArgs": "-Dglobal=1", "gameArgs": "--demo",
             "preLaunchCommand": "echo ready", "serverAddress": "server.example",
-            "autoJoinServer": "legacy.example", "versionIsolation": true
+            "versionIsolation": true
         });
         let local = serde_json::json!({
             "javaPath": "", "windowTitle": "", "jvmArgs": "", "gameArgs": "",

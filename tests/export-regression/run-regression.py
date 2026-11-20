@@ -82,7 +82,7 @@ with sync_playwright() as playwright:
         expect(warning).to_have_count(0)
         checks.append("Resource warning appears and disappears with its switch")
 
-        old_paths = ["screenshots/one.png", "config/jei/world/private/bookmarks.ini", "saves/Selected/level.dat", "journeymap/data/sp/world/map.dat"]
+        selected_paths = ["@dir/screenshots/screenshots", "@dir/jeiPersonal/config/jei/world", "@dir/saves/saves/Selected", "@dir/maps/journeymap"]
         def load_config(paths, bundle_resources, format="mrpack", launcher=False, personalization=False):
             page.evaluate("config => { window.__exportRegression.loadedConfig = config; }", {
                 "name": "Saved Fixture", "version": "2.0", "files": paths,
@@ -100,36 +100,25 @@ with sync_playwright() as playwright:
             expect(page.get_by_role("button", name="保存配置", exact=True)).to_be_enabled()
             return page.evaluate("window.__exportRegression.savedConfigs.at(-1)")
 
-        load_config(old_paths, True)
+        load_config(selected_paths, True)
         expect(warning).to_be_visible()
-        for label in ("截图", "JEI 个人数据", "单人游戏存档", "已绘制的个人地图"):
-            expect(page.get_by_role("checkbox", name="导出" + label, exact=True)).to_have_attribute("aria-checked", "mixed")
-        check("Loading old files does not mount recursive lists", page.locator(".vst-export__file").count() == 0)
+        for label in ("截图", "JEI 个人数据", "已绘制的个人地图"):
+            expect(page.get_by_role("checkbox", name="导出" + label, exact=True)).to_have_attribute("aria-checked", "true")
+        expect(page.get_by_role("checkbox", name="导出单人游戏存档", exact=True)).to_have_attribute("aria-checked", "mixed")
+        check("Loading selections does not mount recursive lists", page.locator(".vst-export__file").count() == 0)
         saved = save_config()
-        check("Saving legacy partial selections preserves exact individual files", sorted(saved["files"]) == sorted(old_paths))
+        check("Saved selections preserve directory identities", sorted(saved["files"]) == sorted(selected_paths))
         check("Saving configs omits request identity and preview metadata", set(saved) == {"name", "version", "files", "bundleResources", "modrinthOnly", "format", "includeLauncher", "includePersonalization"})
-        checks.append("Saved bundleResources true immediately synchronizes the inline notice")
-
         page.get_by_role("checkbox", name="导出截图", exact=True).click()
-        expect(page.get_by_role("checkbox", name="导出截图", exact=True)).to_have_attribute("aria-checked", "true")
-        saved = save_config()
-        check("Explicitly checking a partial directory replaces only its legacy files", "@dir/screenshots/screenshots" in saved["files"] and "screenshots/one.png" not in saved["files"] and all(path in saved["files"] for path in old_paths[1:]))
-        load_config(old_paths, False)
+        expect(page.get_by_role("checkbox", name="导出截图", exact=True)).to_have_attribute("aria-checked", "false")
+        check("Clearing screenshots leaves other selections intact", sorted(save_config()["files"]) == sorted(selected_paths[1:]))
+        load_config(selected_paths, False)
         expect(warning).to_have_count(0)
-        checks.append("Loading a saved bundleResources false hides the notice")
-
-        disabled_paths = ["mods/disabled-fixture.jar.disabled", "mods/nested/deeper.jar.disabled"]
+        checks.append("Loading saved bundleResources false hides the notice")
+        disabled_paths = ["mods/disabled-fixture.jar.disabled", "@dir/disabledMods/mods/nested"]
         load_config(disabled_paths, False)
         expect(page.get_by_role("checkbox", name="导出Mod", exact=True)).to_have_attribute("aria-checked", "mixed")
-        check("Legacy disabled Mod files retain exact paths in the shared category", save_config()["files"] == disabled_paths)
-        load_config(["@dir/disabledMods/mods/nested"], False)
-        check("Existing disabled directory tokens round-trip without namespace changes", save_config()["files"] == ["@dir/disabledMods/mods/nested"])
-
-        many = [f"screenshots/{index}.png" for index in range(10_000)]
-        load_config(many, False)
-        expect(page.get_by_role("checkbox", name="导出截图", exact=True)).to_have_attribute("aria-checked", "mixed")
-        check("Ten thousand legacy screenshot files remain a single UI bucket", page.locator(".vst-export__file").count() == 0 and "已选 1 项" in page.locator(".vst-export__footer").inner_text())
-        check("Ten thousand legacy files survive configuration round-trip", save_config()["files"] == many)
+        check("Disabled Mod selections retain file and directory identities", save_config()["files"] == disabled_paths)
 
         load_config(["@dir/resourcepacks/resourcepacks/Pack-0"], True, "portable", True, True)
         expect(page.get_by_role("switch", name="附带 Nickel 启动器", exact=True)).to_have_attribute("aria-checked", "true")

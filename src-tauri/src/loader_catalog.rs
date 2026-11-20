@@ -83,7 +83,7 @@ pub struct LoaderBuild {
     pub recommended: bool,
     pub download_url: String,
     pub changelog_url: String,
-    /// 目录、另存与自动安装共用的解析结果；旧客户端缺少该字段时保持 `None`。
+    /// 目录、另存与自动安装共用的解析结果；不可用的构建不提供 artifact。
     pub artifact: Option<ResolvedLoaderArtifact>,
     pub capability: LoaderCapability,
 }
@@ -235,8 +235,8 @@ pub fn valid_version(value: &str) -> bool {
 pub fn source_policy(source: Option<&str>) -> Result<SourcePolicy, String> {
     match source.map(str::trim) {
         None => Ok(TransferContext::current().list_policy()),
-        Some("official" | "official_first") => Ok(SourcePolicy::OfficialFirst),
-        Some("bmclapi" | "mirror_first") => Ok(SourcePolicy::MirrorFirst),
+        Some("official_first") => Ok(SourcePolicy::OfficialFirst),
+        Some("mirror_first") => Ok(SourcePolicy::MirrorFirst),
         Some("official_auto") => Ok(SourcePolicy::OfficialAuto),
         _ => Err("源策略无效，请重新选择版本列表源".into()),
     }

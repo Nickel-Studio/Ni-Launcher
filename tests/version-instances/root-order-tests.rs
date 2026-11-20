@@ -6,7 +6,7 @@ fn values(items: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn stable_legacy_migration_never_sorts_names() {
+fn root_normalization_never_sorts_names() {
     let initial = values(&["X:/order/z-old", "X:/order/default", "X:/order/a-new"]);
     let expected = values(&["X:/order/default", "X:/order/z-old", "X:/order/a-new"]);
     assert_eq!(ordered_roots(&initial, &[], Some("X:/order/default")), expected);

@@ -98,7 +98,7 @@ test("palette, labels and persisted whitelist share the exact twelve-entry order
   assert.equal(settings.normalizeSettings({ accent: "fortyTwo" }).accent, "fortyTwo");
 });
 
-test("legacy accent values remain identical, including light monochrome inversion", () => {
+test("CSS accents retain stylesheet ownership, including light monochrome inversion", () => {
   assert.deepEqual(expectedOrder.slice(0, 6).map((accent) => theme.THEME_COLORS[accent]), ["#f2f4f5", "#3ecf8e", "#5a97e8", "#9b8cf0", "#e0aa4c", "#ea6f8b"]);
   assert.equal(theme.rgbToHex(theme.accentColor("mono", theme.DEFAULT_CUSTOM_THEME, "light")), "#14171a");
   for (const accent of expectedOrder.slice(0, 6)) {

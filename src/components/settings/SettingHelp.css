@@ -1,4 +1,0 @@
-/* 兼容旧调用：标签只是普通文本，说明由 SettingRow 的 help 在控件悬浮时展示。 */
-.st-setting-help {
-  font: inherit;
-}

@@ -725,8 +725,7 @@ fn select_update(current: &Value, versions: &[Value], hash: &str, compatibility:
     Ok(Some(ModUpdate { filename: filename.into(), url: url.into(), sha1: sha1.into() }))
 }
 fn updates_disabled(global: &Value, local: &Value) -> bool {
-    let setting = |value: &Value| value.get("disableModUpdates").and_then(Value::as_bool)
-        .or_else(|| value.get("noModUpdates").and_then(Value::as_bool));
+    let setting = |value: &Value| value.get("disableModUpdates").and_then(Value::as_bool);
     setting(local).or_else(|| setting(global)).unwrap_or(false)
 }
 
@@ -867,14 +866,14 @@ pub async fn version_mod_meta(
     dir: String,
     version_id: String,
     path: String,
-    physical_paths: Option<Vec<String>>,
+    physical_paths: Vec<String>,
 ) -> Result<Option<ModMeta>, String> {
     let root = PathBuf::from(&dir);
     let resource = runtime_settings::resource_directory(&app, &root, &version_id)?;
     let folder = instance_paths::for_instance(&root, &version_id, &resource)?;
     let loader_hint = instance_loader_hint(&dir, &version_id);
     let task = tokio::task::spawn_blocking(move || {
-        read_mod_meta(&folder, Path::new(&path), physical_paths.as_deref(), loader_hint.as_deref())
+        read_mod_meta(&folder, Path::new(&path), &physical_paths, loader_hint.as_deref())
     });
     tokio::time::timeout(Duration::from_secs(MOD_META_TIMEOUT_SECS), task)
         .await
@@ -937,54 +936,31 @@ fn validated_mod_path(folder: &Path, path: &Path) -> Result<PathBuf, String> {
     Ok(file)
 }
 
-/// 从逻辑分组重建物理文件列表；与列表阶段使用同一套 base/state 规则。
-fn group_mod_files(group: &ModGroup) -> Vec<ModFile> {
-    let mut files = Vec::new();
-    let mut append = |paths: &[PathBuf], state: ModState| {
-        for path in paths {
-            let Some(filename) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else { continue };
-            files.push(ModFile { path: path.clone(), filename, base: group.base.clone(), state });
-        }
-    };
-    append(&group.enabled, ModState::Enabled);
-    append(&group.disabled, ModState::Disabled);
-    append(&group.old, ModState::Old);
-    files
-}
-
 /// 单条真实元数据：复用 infer_mod / mod_metadata / mod_icon_entry，不复制解析逻辑。
 /// 没有清单或清单无法解析时返回 Ok(None)，由前端保留文件名占位。
 fn read_mod_meta(
     folder: &Path,
     path: &Path,
-    physical_paths: Option<&[String]>,
+    physical_paths: &[String],
     loader: Option<&str>,
 ) -> Result<Option<ModMeta>, String> {
     let primary = validated_mod_path(folder, path)?;
     let primary_name = primary.file_name().and_then(|name| name.to_str()).ok_or("Mod 文件名无效")?;
     let (primary_base, _) = split_mod_name(primary_name).ok_or("请选择有效的 Mod 文件")?;
     let base_key = primary_base.to_lowercase();
-    let mut files: Vec<ModFile> = match physical_paths {
-        Some(raw_paths) => {
-            if raw_paths.is_empty() { return Ok(None); }
-            // 逐条容忍失效副本：一个 .disabled 文件消失不应让整条元数据失败。
-            let mut files = Vec::with_capacity(raw_paths.len());
-            for raw in raw_paths {
-                let Ok(validated) = selected_paths(folder, std::slice::from_ref(raw)) else { continue; };
-                for file in validated {
-                    let Some(filename) = file.file_name().and_then(|name| name.to_str()).map(str::to_owned) else { continue; };
-                    let Some((base, state)) = split_mod_name(&filename) else { continue; };
-                    if base.to_lowercase() != base_key { continue; }
-                    if files.iter().any(|existing: &ModFile| existing.path == file) { continue; }
-                    files.push(ModFile { path: file, filename, base, state });
-                }
-            }
-            files
+    if physical_paths.is_empty() { return Ok(None); }
+    let mut files = Vec::with_capacity(physical_paths.len());
+    // A stale sibling must not hide metadata from the surviving primary file.
+    for raw in physical_paths {
+        let Ok(validated) = selected_paths(folder, std::slice::from_ref(raw)) else { continue; };
+        for file in validated {
+            let Some(filename) = file.file_name().and_then(|name| name.to_str()).map(str::to_owned) else { continue; };
+            let Some((base, state)) = split_mod_name(&filename) else { continue; };
+            if base.to_lowercase() != base_key { continue; }
+            if files.iter().any(|existing: &ModFile| existing.path == file) { continue; }
+            files.push(ModFile { path: file, filename, base, state });
         }
-        // 未提供 physicalPaths 时按 base 重新分组，避免前端旧调用依赖列表快照。
-        None => group_mod_files(&collect_mod_group(&primary)?),
-    };
-    // 物理副本全部失效时仍保留主文件，至少让当前行拿到真实元数据。
+    }
     if !files.iter().any(|file| file.path == primary) {
         let (base, state) = split_mod_name(primary_name).ok_or("请选择有效的 Mod 文件")?;
         files.push(ModFile { path: primary.clone(), filename: primary_name.to_owned(), base, state });
@@ -1810,16 +1786,13 @@ mod tests {
     }
 
     #[test]
-    fn disabled_updates_respect_explicit_false_and_legacy_key() {
+    fn disabled_updates_respect_inheritance_and_explicit_false() {
         use serde_json::json;
-        for global in [json!({"disableModUpdates":true}), json!({"noModUpdates":true})] {
-            assert!(updates_disabled(&global, &json!({})));
-            assert!(updates_disabled(&global, &json!({"disableModUpdates":null,"noModUpdates":null})));
-            assert!(!updates_disabled(&global, &json!({"noModUpdates":false})));
-            assert!(!updates_disabled(&global, &json!({"disableModUpdates":false,"noModUpdates":true})));
-        }
-        assert!(updates_disabled(&json!({"disableModUpdates":false}), &json!({"noModUpdates":true})));
-        assert!(!updates_disabled(&json!({"disableModUpdates":false,"noModUpdates":true}), &json!({})));
+        let global = json!({"disableModUpdates":true});
+        assert!(updates_disabled(&global, &json!({})));
+        assert!(updates_disabled(&global, &json!({"disableModUpdates":null})));
+        assert!(!updates_disabled(&global, &json!({"disableModUpdates":false})));
+        assert!(updates_disabled(&json!({"disableModUpdates":false}), &json!({"disableModUpdates":true})));
         assert!(!updates_disabled(&json!({}), &json!({})));
     }
 
@@ -1976,7 +1949,7 @@ mod tests {
         let list = scan_local_list(&mods).unwrap();
         let foo = list.iter().find(|entry| entry.path.ends_with("foo.jar")).unwrap();
 
-        let meta = read_mod_meta(&mods, Path::new(&foo.path), Some(&foo.physical_paths), None)
+        let meta = read_mod_meta(&mods, Path::new(&foo.path), &foo.physical_paths, None)
             .unwrap()
             .expect("必须读到清单");
         assert_eq!(meta.name, "Foo Display");
@@ -1985,24 +1958,23 @@ mod tests {
         assert_eq!(meta.tags, vec!["Magic", "Utility"]);
         assert!(meta.duplicate_group.as_deref().unwrap().starts_with("id:foo"));
 
-        // 未提供 physicalPaths 时按 base 重新分组，同样能读到启用副本。
-        assert!(read_mod_meta(&mods, Path::new(&foo.path), None, None).unwrap().is_some());
+        assert!(read_mod_meta(&mods, Path::new(&foo.path), &[], None).unwrap().is_none());
 
         // 列表快照中的 .disabled 副本消失后，主文件仍应返回真实元数据。
         std::fs::remove_file(mods.join("foo.jar.disabled")).unwrap();
-        let stale = read_mod_meta(&mods, Path::new(&foo.path), Some(&foo.physical_paths), None)
+        let stale = read_mod_meta(&mods, Path::new(&foo.path), &foo.physical_paths, None)
             .unwrap()
             .expect("失效副本不应拖垮主文件元数据");
         assert_eq!(stale.name, "Foo Display");
 
         let outside = root.join("outside.jar");
         write_mod(&outside, "outside", "Outside", "1.0.0", &[]);
-        assert!(read_mod_meta(&mods, &outside, None, None).is_err());
-        assert!(read_mod_meta(&mods, Path::new("relative.jar"), None, None).is_err());
+        assert!(read_mod_meta(&mods, &outside, &[], None).is_err());
+        assert!(read_mod_meta(&mods, Path::new("relative.jar"), &[], None).is_err());
         std::fs::write(mods.join("notes.txt"), b"x").unwrap();
-        assert!(read_mod_meta(&mods, &mods.join("notes.txt"), None, None).is_err());
+        assert!(read_mod_meta(&mods, &mods.join("notes.txt"), &[], None).is_err());
         std::fs::write(mods.join("plain.jar"), b"plain").unwrap();
-        assert!(read_mod_meta(&mods, &mods.join("plain.jar"), None, None).unwrap().is_none());
+        assert!(read_mod_meta(&mods, &mods.join("plain.jar"), &[mods.join("plain.jar").to_string_lossy().into_owned()], None).unwrap().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -2073,7 +2045,7 @@ mod tests {
         let meta_started = std::time::Instant::now();
         let mut loaded = 0;
         for entry in entries.iter().take(10) {
-            let meta = read_mod_meta(&folder, Path::new(&entry.path), Some(&entry.physical_paths), None)
+            let meta = read_mod_meta(&folder, Path::new(&entry.path), &entry.physical_paths, None)
                 .unwrap_or(None);
             if meta.is_some() { loaded += 1; }
         }
@@ -2094,7 +2066,7 @@ mod tests {
                                 read_mod_meta(
                                     folder,
                                     Path::new(&entry.path),
-                                    Some(&entry.physical_paths),
+                                    &entry.physical_paths,
                                     None,
                                 )
                                 .unwrap_or(None)

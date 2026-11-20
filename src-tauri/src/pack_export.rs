@@ -11,10 +11,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use minecraft_java_rs_core::net::transfer::{CancellationToken, TransferContext};
-use minecraft_java_rs_core::utils::archive::{ArchiveLimits, write_zip_files};
-use minecraft_java_rs_core::utils::hash::{HashAlgorithm, get_file_hash_cancellable};
+use minecraft_java_rs_core::utils::archive::{write_zip_files, ArchiveLimits};
+use minecraft_java_rs_core::utils::hash::{get_file_hash_cancellable, HashAlgorithm};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
@@ -90,15 +90,10 @@ pub struct ExportConfig {
     pub name: String,
     pub version: String,
     pub files: Vec<String>,
-    #[serde(default)]
     pub bundle_resources: bool,
-    #[serde(default)]
     pub modrinth_only: bool,
-    #[serde(default)]
     pub format: ExportFormat,
-    #[serde(default)]
     pub include_launcher: bool,
-    #[serde(default)]
     pub include_personalization: bool,
 }
 
@@ -110,15 +105,10 @@ pub struct PackExportRequest {
     pub name: String,
     pub version: String,
     pub files: Vec<String>,
-    #[serde(default)]
     pub bundle_resources: bool,
-    #[serde(default)]
     pub modrinth_only: bool,
-    #[serde(default)]
     pub format: ExportFormat,
-    #[serde(default)]
     pub include_launcher: bool,
-    #[serde(default)]
     pub include_personalization: bool,
 }
 
@@ -1395,13 +1385,11 @@ mod tests {
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
         assert_eq!(instance.preview.name, "显示名称不等于目录");
-        assert!(
-            instance
-                .preview
-                .files
-                .iter()
-                .all(|file| !file.path.contains("accounts"))
-        );
+        assert!(instance
+            .preview
+            .files
+            .iter()
+            .all(|file| !file.path.contains("accounts")));
         assert!(
             !instance
                 .preview
@@ -1633,21 +1621,17 @@ mod tests {
         let mut files = Vec::new();
         let mut total = 0;
         collect_files(&root, &lite, &mut files, &mut total).unwrap();
-        assert!(
-            files
-                .iter()
-                .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods")
-        );
+        assert!(files
+            .iter()
+            .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods"));
         assert!(files.iter().any(|file| {
             file.path == "mods/1.12.2/legacy.litemod.old"
                 && file.group == "disabledMods"
                 && !file.selected
         }));
-        assert!(
-            files
-                .iter()
-                .all(|file| !file.path.starts_with("mods/ignored"))
-        );
+        assert!(files
+            .iter()
+            .all(|file| !file.path.starts_with("mods/ignored")));
         assert_eq!(
             content_directory(&root, "mods", "forge", "1.20.1"),
             root.join("mods")
@@ -1693,27 +1677,21 @@ mod tests {
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
-        assert!(
-            instance
-                .preview
-                .instance_settings
-                .iter()
-                .any(|field| field == "窗口标题")
-        );
-        assert!(
-            instance
-                .preview
-                .instance_settings
-                .iter()
-                .any(|field| field == "内存上限")
-        );
-        assert!(
-            instance
-                .preview
-                .instance_settings
-                .iter()
-                .all(|field| field != "Java 路径")
-        );
+        assert!(instance
+            .preview
+            .instance_settings
+            .iter()
+            .any(|field| field == "窗口标题"));
+        assert!(instance
+            .preview
+            .instance_settings
+            .iter()
+            .any(|field| field == "内存上限"));
+        assert!(instance
+            .preview
+            .instance_settings
+            .iter()
+            .all(|field| field != "Java 路径"));
         for relative in ["XaeroWaypoints", "XaeroWorldMap"] {
             assert!(instance.preview.files.iter().any(|file| {
                 file.path == format!("@dir/maps/{relative}")
@@ -1724,13 +1702,11 @@ mod tests {
                     && file.size_bytes.is_none()
             }));
         }
-        assert!(
-            instance
-                .preview
-                .files
-                .iter()
-                .all(|file| file.path != "nickel.settings.json")
-        );
+        assert!(instance
+            .preview
+            .files
+            .iter()
+            .all(|file| file.path != "nickel.settings.json"));
         let selections: Vec<_> = instance
             .preview
             .files
@@ -1806,23 +1782,6 @@ mod tests {
             };
             assert!(validate_config(&config).is_err());
         }
-    }
-
-    #[test]
-    fn old_export_config_and_request_keep_mrpack_defaults() {
-        let old = json!({ "name": "旧配置", "version": "1", "files": ["mods/local.jar"] });
-        let config: ExportConfig = serde_json::from_value(old.clone()).unwrap();
-        assert_eq!(config.format, ExportFormat::Mrpack);
-        assert!(!config.include_launcher && !config.include_personalization);
-        validate_config(&config).unwrap();
-        let mut request = old;
-        request["dir"] = json!("fixture-root");
-        request["versionId"] = json!("fixture-instance");
-        let decoded: PackExportRequest = serde_json::from_value(request.clone()).unwrap();
-        assert_eq!(decoded.format, ExportFormat::Mrpack);
-        assert!(!decoded.include_launcher && !decoded.include_personalization);
-        request["accessToken"] = json!("not-allowed");
-        assert!(serde_json::from_value::<PackExportRequest>(request).is_err());
     }
 
     #[test]
@@ -1957,7 +1916,7 @@ mod tests {
     }
 
     #[test]
-    fn shader_options_are_separate_from_resources_and_keep_old_path_configs() {
+    fn shader_options_are_separate_from_resources() {
         use minecraft_java_rs_core::net::transfer::CancellationToken;
         use minecraft_java_rs_core::utils::archive::extract_zip_subtrees;
 
@@ -1995,24 +1954,24 @@ mod tests {
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
             std::fs::write(file, "quality=high").unwrap();
         }
-        let old: ExportConfig = serde_json::from_value(json!({
-            "name": "光影设置", "version": "1", "files": settings,
-        }))
-        .unwrap();
-        validate_config(&old).unwrap();
-        assert_eq!(old.files, settings);
+        let config = ExportConfig {
+            name: "光影设置".into(),
+            version: "1".into(),
+            files: settings.iter().map(|path| (*path).into()).collect(),
+            ..Default::default()
+        };
+        validate_config(&config).unwrap();
+        assert_eq!(config.files, settings);
         let mut files = Vec::new();
         let mut size = 0;
-        for path in &old.files {
+        for path in &config.files {
             collect_files(&fixture.0, &fixture.0.join(path), &mut files, &mut size).unwrap();
         }
-        assert!(
-            files
-                .iter()
-                .all(|file| file.group == "shaderOptions" && file.selected)
-        );
+        assert!(files
+            .iter()
+            .all(|file| file.group == "shaderOptions" && file.selected));
         let preview = ExportPreview {
-            name: old.name.clone(),
+            name: config.name.clone(),
             minecraft_version: "1.20.1".into(),
             loader: None,
             files,
@@ -2021,7 +1980,7 @@ mod tests {
             instance_settings_omitted: vec![],
             instance_settings_error: None,
         };
-        let entries = old
+        let entries = config
             .files
             .iter()
             .map(|path| (format!("overrides/{path}"), path.clone()))
@@ -2034,7 +1993,7 @@ mod tests {
             &entries,
             &[(
                 "modrinth.index.json".into(),
-                manifest(&preview, &old, &[]).unwrap(),
+                manifest(&preview, &config, &[]).unwrap(),
             )],
             &ArchiveLimits::default(),
             &cancel,

@@ -523,10 +523,10 @@ async function runRegression(): Promise<void> {
     );
     await waitFor(() => !launchButton.disabled, "Home 启动按钮可用");
     launchButton.click();
-    // R7 起启动失败收敛为 LaunchErrorDialog（Modal portal 到 body），不再是行内通知。
+    // The failure reason and recovery advice occupy separate elements.
     const homeError = await waitFor(
       () =>
-        document.querySelector<HTMLElement>(".ni-modal .launch-error__message"),
+        document.querySelector<HTMLElement>(".ni-modal .launch-error__reason"),
       "Home 启动错误弹窗"
     );
     expect(
@@ -534,10 +534,10 @@ async function runRegression(): Promise<void> {
       homeError.textContent?.includes("Java 运行时") === true
     );
     expect(
-      "Home 弹窗标题为启动失败",
+      "Home 弹窗标题说明游戏未能启动",
       document
         .querySelector(".ni-modal__title")
-        ?.textContent?.includes("启动失败") === true
+        ?.textContent?.includes("游戏没能顺利启动") === true
     );
     expect(
       "Home 不再渲染字符图标",

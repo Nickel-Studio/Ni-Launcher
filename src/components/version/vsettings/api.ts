@@ -77,7 +77,6 @@ export interface VersionSettings extends Record<string, unknown> {
   jvmArgs: string | null;
   gameArgs: string | null;
   preLaunchCommand: string | null;
-  noModUpdates: boolean | null;
   disableModUpdates: boolean | null;
   disableFileCheck: boolean | null;
   disableWrapper: boolean | null;
@@ -196,7 +195,6 @@ export const DEFAULT_SETTINGS: VersionSettings = {
   jvmArgs: null,
   gameArgs: null,
   preLaunchCommand: null,
-  noModUpdates: null,
   disableModUpdates: null,
   disableFileCheck: null,
   disableWrapper: null,
@@ -287,8 +285,6 @@ const MEMORY_MANAGEMENT_VALUES = [
   "g1",
   "g1-tuned",
   "custom",
-  "serial",
-  "parallel",
 ] as const;
 const OFFLINE_SKIN_VALUES = [
   "random",
@@ -349,10 +345,7 @@ export function normalizeSettings(raw: unknown): VersionSettings {
     windowHeight: settingNumber(record.windowHeight),
     memoryMode,
     memoryMb,
-    memoryManagement:
-      record.memoryManagement === "default"
-        ? "custom"
-        : oneOf(record.memoryManagement, MEMORY_MANAGEMENT_VALUES),
+    memoryManagement: oneOf(record.memoryManagement, MEMORY_MANAGEMENT_VALUES),
     highPerformanceGpu: settingBoolean(record.highPerformanceGpu),
     offlineSkin: oneOf(record.offlineSkin, OFFLINE_SKIN_VALUES),
     offlineSkinName: settingString(record.offlineSkinName),
@@ -368,15 +361,10 @@ export function normalizeSettings(raw: unknown): VersionSettings {
     authServer: settingString(record.authServer),
     serverRegistration: settingString(record.serverRegistration),
     serverName: settingString(record.serverName),
-    serverAddress: settingString(
-      record.serverAddress === undefined
-        ? record.autoJoinServer
-        : record.serverAddress
-    ),
+    serverAddress: settingString(record.serverAddress),
     jvmArgs: settingString(record.jvmArgs),
     gameArgs: settingString(record.gameArgs),
     preLaunchCommand: settingString(record.preLaunchCommand),
-    noModUpdates: settingBoolean(record.noModUpdates),
     disableModUpdates: settingBoolean(record.disableModUpdates),
     disableFileCheck: settingBoolean(record.disableFileCheck),
     disableWrapper: settingBoolean(record.disableWrapper),

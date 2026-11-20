@@ -130,22 +130,6 @@ export async function preloadLoaderCatalog(
   });
 }
 
-/** 独立保存官方安装器；取消原生保存对话框返回 null。 */
-export async function saveLoaderInstaller(
-  mcVersion: string,
-  loader: string,
-  loaderVersion: string,
-  source: DownloadSource
-): Promise<string | null> {
-  if (!isTauri()) throw new Error("未连接到启动器后端");
-  return invoke<string | null>("save_loader_installer", {
-    mcVersion,
-    loader,
-    loaderVersion,
-    source,
-  });
-}
-
 /** UI 专用入口：返回 taskId，取消保存对话框返回 null。 */
 export async function saveLoaderInstallerManaged(
   args: import("./types").InstallerDownloadArgs
@@ -179,12 +163,6 @@ export async function listTaskSnapshots(): Promise<
 > {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   return parseTaskSnapshots(await invoke<unknown>("app_tasks_snapshot"));
-}
-
-/** 切换下载源（`set_download_source`）：影响后续安装使用的镜像。 */
-export async function setDownloadSource(source: DownloadSource): Promise<void> {
-  if (!isTauri()) throw new Error("未连接到启动器后端");
-  await invoke("set_download_source", { source });
 }
 
 /**

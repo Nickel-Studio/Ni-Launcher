@@ -5,10 +5,10 @@ use std::io::Read;
 use std::path::Path;
 
 use minecraft_java_rs_core::net::transfer::CancellationToken;
-use minecraft_java_rs_core::utils::archive::{ArchiveLimits, read_zip_entry};
+use minecraft_java_rs_core::utils::archive::{read_zip_entry, ArchiveLimits};
 use serde_json::Value;
 
-use super::{ExportEntryKind, ExportFile, modpacks};
+use super::{modpacks, ExportEntryKind, ExportFile};
 
 const DIRECTORY_PREFIX: &str = "@dir/";
 const METADATA_MAX_BYTES: u64 = 128 * 1024;
@@ -716,10 +716,6 @@ pub(super) fn selected_files(
         .iter()
         .map(|entry| (entry.path.as_str(), entry))
         .collect();
-    let directories: Vec<_> = preview
-        .iter()
-        .filter(|entry| entry.kind == ExportEntryKind::Directory)
-        .collect();
     let mut discovery = Discovery {
         files: Vec::new(),
         seen: HashMap::new(),
@@ -754,19 +750,14 @@ pub(super) fn selected_files(
                 let (group, _) = group_for(relative).ok_or("导出文件分类无效")?;
                 let allowed = available
                     .get(relative)
-                    .is_some_and(|entry| entry.kind == ExportEntryKind::File)
-                    || directories.iter().any(|entry| {
-                        entry.group == group
-                            && within(relative, &entry.source_path)
-                            && relative != entry.source_path
-                    });
+                    .is_some_and(|entry| entry.kind == ExportEntryKind::File);
                 if !allowed {
                     return Err(format!("文件已变化，请刷新导出列表：{relative}"));
                 }
                 let meta = metadata(root, &root.join(relative))?
                     .ok_or_else(|| format!("文件已变化：{relative}"))?;
                 if !meta.is_file() {
-                    return Err(format!("旧配置必须选择文件，不能隐式选择目录：{relative}"));
+                    return Err(format!("文件选择不能隐式选择目录：{relative}"));
                 }
                 discovery.visit(root, &root.join(relative), group, cancel, 0)?;
             }

@@ -16,33 +16,14 @@ import { isTauri, type SourcePolicy } from "../../lib/settings";
 /** 后端 `launcher-event` 的原始 payload（字段做宽松兜底）。 */
 type RawPayload = Record<string, unknown>;
 
-/** 忽略缺失值和非有限数；数字字符串也可参与进度计算。 */
-function pickNumber(payload: RawPayload, keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() !== "") {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return undefined;
+function eventNumber(payload: RawPayload, key: string): number | undefined {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-/** 数字型状态码转为文本，其余非文本值视为缺失。 */
-function pickString(payload: RawPayload, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const v = payload[key];
-    if (typeof v === "string") return v;
-    if (typeof v === "number") return String(v);
-  }
-  return undefined;
-}
-
-/** 归一化事件类型：兼容 `kind` 与旧版 `type`，并做大小写兜底。 */
-function eventKind(payload: RawPayload): string {
-  const raw = pickString(payload, ["kind", "type", "event"]) ?? "";
-  return raw.toLowerCase();
+function eventString(payload: RawPayload, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 export interface LaunchProgress {
@@ -99,7 +80,7 @@ export interface UseLauncher extends LauncherState {
  *
  * 界面只消费准备阶段的进度与失败信息：运行日志由后端落盘，
  * 前端不再保留第二份日志缓冲，避免出现与磁盘不一致的重复记录。
- * 所有字段解析均做兼容兜底，缺字段不崩溃。
+ * 只处理当前线格式中有启动身份的事件，缺字段不崩溃。
  */
 function useLaunchController(): UseLauncher {
   const [state, setState] = useState<Omit<LauncherState, "percent">>({
@@ -125,7 +106,6 @@ function useLaunchController(): UseLauncher {
     issued: false,
     generation: 0,
     launchId: "",
-    scoped: false,
   });
 
   useEffect(() => {
@@ -138,30 +118,23 @@ function useLaunchController(): UseLauncher {
     const unlistenPromise = listen<RawPayload>("launcher-event", (event) => {
       if (disposed) return;
       const payload = (event?.payload ?? {}) as RawPayload;
-      const kind = eventKind(payload);
-      const launchId = pickString(payload, ["launchId"]);
-      if (launchId) {
-        if (
-          lifecycle.current.launchId &&
-          lifecycle.current.launchId !== launchId
-        )
-          return;
-        if (!lifecycle.current.launchId) {
-          if (kind !== "preparing" && kind !== "started") return;
-          lifecycle.current.launchId = launchId;
-          lifecycle.current.active = true;
-          lifecycle.current.preparing = true;
-          lifecycle.current.issued = true;
-        }
-        lifecycle.current.scoped = true;
-      } else if (lifecycle.current.scoped) {
+      const kind = eventString(payload, "type");
+      const launchId = eventString(payload, "launchId");
+      if (!launchId) return;
+      if (lifecycle.current.launchId && lifecycle.current.launchId !== launchId)
         return;
+      if (!lifecycle.current.launchId) {
+        if (kind !== "preparing" && kind !== "started") return;
+        lifecycle.current.launchId = launchId;
+        lifecycle.current.active = true;
+        lifecycle.current.preparing = true;
+        lifecycle.current.issued = true;
       }
 
       switch (kind) {
         case "preparing": {
-          const versionId = pickString(payload, ["versionId"]);
-          const gameDir = pickString(payload, ["gameDir"]);
+          const versionId = eventString(payload, "versionId");
+          const gameDir = eventString(payload, "gameDir");
           lifecycle.current.active = true;
           lifecycle.current.preparing = true;
           lifecycle.current.cancelling = false;
@@ -182,28 +155,14 @@ function useLaunchController(): UseLauncher {
           }));
           break;
         }
-        case "progress":
-        case "download":
-        case "downloading": {
+        case "progress": {
           if (!lifecycle.current.preparing) break;
           const downloaded =
-            pickNumber(payload, [
-              "downloaded",
-              "done",
-              "current",
-              "bytes",
-              "completed",
-            ]) ?? 0;
+            eventNumber(payload, "downloaded") ?? 0;
           const total =
-            pickNumber(payload, ["total", "size", "expected", "full"]) ?? 0;
+            eventNumber(payload, "total") ?? 0;
           const stage =
-            pickString(payload, [
-              "kind2",
-              "fileType",
-              "stage",
-              "name",
-              "file",
-            ]) ?? "";
+            eventString(payload, "fileType") ?? "";
           setState((prev) =>
             prev.starting
               ? { ...prev, progress: { downloaded, total, stage } }
@@ -211,26 +170,19 @@ function useLaunchController(): UseLauncher {
           );
           break;
         }
-        case "speed":
-        case "download-speed": {
+        case "speed": {
           if (!lifecycle.current.preparing) break;
           const bps =
-            pickNumber(payload, [
-              "bps",
-              "bytesPerSecond",
-              "bytesPerSec",
-              "speed",
-            ]) ?? null;
+            eventNumber(payload, "bps") ?? null;
           setState((prev) =>
             prev.starting ? { ...prev, speedBps: bps } : prev
           );
           break;
         }
-        case "stage":
-        case "status": {
+        case "stage": {
           if (!lifecycle.current.preparing) break;
           const message =
-            pickString(payload, ["message", "stage", "text", "label"]) ?? "";
+            eventString(payload, "message") ?? "";
           setState((prev) =>
             prev.starting ? { ...prev, stage: message } : prev
           );
@@ -251,8 +203,7 @@ function useLaunchController(): UseLauncher {
           }));
           break;
         }
-        case "cancelled":
-        case "canceled": {
+        case "cancelled": {
           if (!lifecycle.current.preparing) break;
           lifecycle.current.active = false;
           lifecycle.current.preparing = false;
@@ -272,15 +223,12 @@ function useLaunchController(): UseLauncher {
           }));
           break;
         }
-        case "exit":
-        case "close":
-        case "closed":
-        case "finished": {
+        case "close": {
           lifecycle.current.active = false;
           lifecycle.current.preparing = false;
           lifecycle.current.cancelling = false;
           lifecycle.current.issued = false;
-          const code = pickNumber(payload, ["code", "exitCode", "status"]);
+          const code = eventNumber(payload, "code");
           setState((prev) => ({
             ...prev,
             running: false,
@@ -294,35 +242,33 @@ function useLaunchController(): UseLauncher {
           break;
         }
         case "diagnostic": {
-          const title = pickString(payload, ["title", "label"]) ?? "启动诊断";
+          const title = eventString(payload, "title") ?? "启动诊断";
           const message =
-            pickString(payload, ["message", "advice", "detail"]) ??
+            eventString(payload, "message") ??
             "未能确定具体原因。";
-          const summary = pickString(payload, ["summary", "reason"]) ?? title;
+          const summary = eventString(payload, "summary") ?? title;
           const category =
-            pickString(payload, ["category", "kind2"]) ?? "unknown";
+            eventString(payload, "category") ?? "unknown";
           setState((prev) => ({
             ...prev,
             diagnostic: { category, title, summary, message },
           }));
           break;
         }
-        case "warning":
-        case "warn": {
+        case "warning": {
           const message =
-            pickString(payload, ["message", "reason", "detail"]) ??
+            eventString(payload, "message") ??
             "启动项未生效";
           setState((prev) => ({ ...prev, warning: message }));
           break;
         }
-        case "error":
-        case "failed": {
+        case "error": {
           lifecycle.current.active = false;
           lifecycle.current.preparing = false;
           lifecycle.current.cancelling = false;
           lifecycle.current.issued = false;
           const message =
-            pickString(payload, ["message", "error", "reason"]) ?? "未知错误";
+            eventString(payload, "message") ?? "未知错误";
           setState((prev) => ({
             ...prev,
             error: message,
@@ -357,7 +303,6 @@ function useLaunchController(): UseLauncher {
     const generation = ++lifecycle.current.generation;
     const launchId = crypto.randomUUID();
     lifecycle.current.launchId = launchId;
-    lifecycle.current.scoped = false;
     lifecycle.current.active = true;
     lifecycle.current.preparing = true;
     lifecycle.current.cancelling = false;

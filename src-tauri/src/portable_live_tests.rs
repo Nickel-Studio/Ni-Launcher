@@ -711,8 +711,8 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
         let global = json!({"disableFileCheck":true,"disableWrapper":true,"disableLwjglAgent":true,"jvmArgs":"-Dglobal=1"});
         for input in [
             json!({}),
-            json!({"disableFileCheck":null,"disableWrapper":null,"disableLwjglAgent":null,"noModUpdates":null}),
-            json!({"disableFileCheck":"global","disableWrapper":"global","disableLwjglAgent":"global","noModUpdates":"global"}),
+            json!({"disableFileCheck":null,"disableWrapper":null,"disableLwjglAgent":null,"disableModUpdates":null}),
+            json!({"disableFileCheck":"global","disableWrapper":"global","disableLwjglAgent":"global","disableModUpdates":"global"}),
         ] {
             version_settings::version_settings_set(dir.clone(), id.into(), input.to_string())?;
             let local = runtime_settings::read_local(&root, id);
@@ -722,9 +722,9 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
                     && resolved.disable_wrapper
                     && resolved.disable_lwjgl_agent
             );
-            assert!(local["noModUpdates"].is_null() || local["noModUpdates"] == "global");
+            assert!(local["disableModUpdates"].is_null() || local["disableModUpdates"] == "global");
         }
-        let explicit = json!({"disableFileCheck":false,"disableWrapper":false,"disableLwjglAgent":false,"noModUpdates":false,"jvmArgs":"","preLaunchCommand":""});
+        let explicit = json!({"disableFileCheck":false,"disableWrapper":false,"disableLwjglAgent":false,"disableModUpdates":false,"jvmArgs":"","preLaunchCommand":""});
         version_settings::version_settings_set(dir.clone(), id.into(), explicit.to_string())?;
         let before_cancel = std::fs::read(&settings_file).unwrap();
         let mut draft = read_json(&settings_file)?;
@@ -878,7 +878,7 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
         let mut settings = json!({"memoryMode":"custom","memoryMb":1024,
             "versionIsolation":true,"disableWrapper":true,"disableLwjglAgent":true,
             "offlineSkin":if custom_skin.is_some() { "custom" } else { "steve" },
-            "offlineSkinPath":custom_skin,"offlineSkinSlim":false,"memoryManagement":"default",
+            "offlineSkinPath":custom_skin,"offlineSkinSlim":false,"memoryManagement":"custom",
             "windowMode":"custom","windowWidth":854,"windowHeight":480});
         if native {
             settings["windowTitle"] = json!("Nickel native acceptance");

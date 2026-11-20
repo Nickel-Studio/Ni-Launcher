@@ -36,7 +36,6 @@ const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("jvmArgs", "JVM 参数"),
     ("gameArgs", "游戏参数"),
     ("disableModUpdates", "禁止 Mod 更新"),
-    ("noModUpdates", "禁止 Mod 更新（旧字段）"),
     ("disableFileCheck", "跳过文件检查"),
     ("disableWrapper", "禁用 Java 包装器"),
     ("disableLwjglAgent", "禁用 LWJGL Agent"),
@@ -61,8 +60,6 @@ const MEMORY_MANAGEMENT_VALUES: &[&str] = &[
     "g1",
     "g1-tuned",
     "custom",
-    "serial",
-    "parallel",
 ];
 const VISIBILITY_VALUES: &[&str] = &["keep", "hide", "hide-close", "close", "minimize"];
 const WINDOW_MODE_VALUES: &[&str] = &[
@@ -149,7 +146,7 @@ fn valid_field(key: &str, value: &Value) -> bool {
     }
     match key {
         "versionIsolation" | "highPerformanceGpu"
-        | "disableModUpdates" | "noModUpdates" | "disableFileCheck"
+        | "disableModUpdates" | "disableFileCheck"
         | "disableWrapper" | "disableLwjglAgent" => value.is_boolean(),
         "windowTitle" | "customInfo" | "jvmArgs" | "gameArgs" => valid_text(value, MAX_TEXT_BYTES),
         "launcherVisibility" => valid_choice(value, VISIBILITY_VALUES),

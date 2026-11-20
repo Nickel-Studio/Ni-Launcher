@@ -79,52 +79,6 @@ html.ni-splash-hold .ni-shell {
   line-height: 1;
   color: var(--text);
 }
-/* sparse, low-opacity star specks — brand motif, not an icon */
-.ni-sparkles {
-  position: absolute;
-  inset: -6px;
-  pointer-events: none;
-}
-.ni-sparkles__dot {
-  position: absolute;
-  border-radius: 50%;
-  background: var(--sparkle);
-  opacity: 0.5;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: ni-twinkle 4.2s var(--ease) infinite;
-}
-.ni-sparkles__dot--a {
-  top: 4px;
-  left: -12px;
-  width: 3px;
-  height: 3px;
-}
-.ni-sparkles__dot--b {
-  bottom: 2px;
-  right: -10px;
-  width: 2px;
-  height: 2px;
-  animation-delay: 1.4s;
-}
-.ni-sparkles__dot--c {
-  top: -3px;
-  right: 32%;
-  width: 2px;
-  height: 2px;
-  animation-delay: 2.6s;
-}
-@keyframes ni-twinkle {
-  0%,
-  100% {
-    opacity: 0.18;
-    transform: scale(0.85);
-  }
-  50% {
-    opacity: 0.62;
-    transform: scale(1);
-  }
-}
-
 /* ---- Centre: route tabs (absolutely centred) ----------------------------- */
 .ni-titlebar__center {
   position: absolute;
@@ -404,40 +358,6 @@ html.ni-splash-hold .ni-shell {
   justify-content: center;
 }
 
-/* ------------------------------------------------------------ Brand mark --- */
-.ni-brandmark {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: var(--mark-size, 72px);
-  height: var(--mark-size, 72px);
-}
-.ni-brandmark__glow {
-  position: absolute;
-  inset: -16%;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-soft), transparent 64%);
-  opacity: 0.85;
-  pointer-events: none;
-}
-/* 「黑与白」讲究干净的黑白对比，不留大面积光晕（光晕属于彩色主题的氛围）。 */
-:root[data-accent="mono"] .ni-brandmark__glow {
-  opacity: 0.3;
-}
-.ni-brandmark__img {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  border-radius: 26%;
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.5));
-}
-.ni-brandmark .ni-sparkles {
-  inset: -18%;
-}
-
 @media (prefers-reduced-motion: reduce) {
   #ni-splash,
   .ni-shell,
@@ -453,9 +373,6 @@ html.ni-splash-hold .ni-shell {
   .ni-navtab,
   .ni-navtab svg {
     transition: none;
-  }
-  .ni-sparkles__dot {
-    animation: none;
   }
 }
 

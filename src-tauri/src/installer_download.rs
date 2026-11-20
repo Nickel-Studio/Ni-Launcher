@@ -174,35 +174,6 @@ async fn choose_installer(
     }))
 }
 
-/// 旧入口仍等待文件保存完成并返回路径，不能将其返回值改为 taskId。
-#[tauri::command]
-pub async fn save_loader_installer(
-    app: AppHandle,
-    mc_version: String,
-    loader: String,
-    loader_version: String,
-    source: Option<String>,
-) -> Result<Option<String>, String> {
-    let network = network_settings::snapshot();
-    let context = network.transfer(source.as_deref())?;
-    let Some(choice) =
-        choose_installer(&app, &mc_version, &loader, &loader_version, &network).await?
-    else {
-        return Ok(None);
-    };
-    download_installer_to(
-        choice.target,
-        choice.candidates,
-        choice.loader,
-        choice.hashes,
-        choice.expected_size,
-        &context,
-        None,
-    )
-    .await
-    .map(Some)
-}
-
 fn schedule_installer(
     app: &AppHandle,
     choice: Option<InstallerChoice>,
@@ -795,7 +766,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(128);
         let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
         let result = tokio::time::timeout(Duration::from_secs(INSTALLER_TIMEOUT_SECS), async {
-            let catalog = loader_catalog::build_catalog("1.20.1", Some("official")).await;
+            let catalog = loader_catalog::build_catalog("1.20.1", Some("official_first")).await;
             let params = crate::ResolvedLaunch {
                 version: "1.20.1".into(),
                 username: "Player".into(),

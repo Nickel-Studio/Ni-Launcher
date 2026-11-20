@@ -34,6 +34,10 @@ def calls(page, command):
 
 
 def event(page, payload):
+    if "launchId" not in payload:
+        launches = calls(page, "launch_game")
+        if launches:
+            payload = {**payload, "launchId": launches[-1]["payload"]["launchId"]}
     page.evaluate("payload => window.__launchFixture.event(payload)", payload)
     page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
 
@@ -213,8 +217,8 @@ def main():
             page.evaluate("() => { window.__launchFixture.launch(); window.__launchFixture.launch(); window.__launchFixture.launch(); }")
             page.wait_for_function("window.__launchFixture.snapshot().state.starting")
             check("hook: same-turn launch only invokes once", len(calls(page, "launch_game")) == 1)
-            event(page, {"type": "progress", "downloaded": "30", "total": "100", "fileType": "Libraries"})
-            check("hook: string number progress", state(page)["percent"] == 30)
+            event(page, {"type": "progress", "downloaded": 30, "total": 100, "fileType": "Libraries"})
+            check("hook: numeric progress", state(page)["percent"] == 30)
             event(page, {"type": "started"})
             check("hook: started closes preparation", state(page)["running"] and not state(page)["starting"] and state(page)["progress"] is None)
             page.evaluate("window.__launchFixture.launch()")
@@ -232,12 +236,12 @@ def main():
         def numeric(page, output):
             launch(page)
             for payload, expected in [({"downloaded": 200, "total": 100}, 100), ({"downloaded": -20, "total": 100}, 0), ({"downloaded": "Infinity", "total": ""}, None), ({"downloaded": "", "total": "NaN"}, None)]:
-                event(page, {"kind": "download", **payload})
+                event(page, {"type": "progress", **payload})
                 check("hook: progress percent is finite and bounded", state(page)["percent"] == expected, state(page))
             event(page, {"type": "speed", "bps": "Infinity"})
             check("hook: nonfinite speed ignored", state(page)["speedBps"] is None)
-            event(page, {"kind": "status", "text": "Ready"})
-            check("hook: legacy stage aliases", state(page)["stage"] == "Ready")
+            event(page, {"type": "stage", "message": "Ready"})
+            check("hook: stage wire contract", state(page)["stage"] == "Ready")
 
         run_case("hook-numeric-boundaries", {"mode": "hook"}, numeric)
 

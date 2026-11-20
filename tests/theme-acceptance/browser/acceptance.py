@@ -211,19 +211,19 @@ class Acceptance:
         page.wait_for_load_state("networkidle")
         page.wait_for_function("document.documentElement.dataset.fixtureReady === 'true'")
         self.check("palette selection persists through reload", page.evaluate("window.__themeAcceptance.settings.accent") == "custom")
-        legacy = {
+        css_accents = {
             "mono": ("#f2f4f5", "#d8dcdd", "#0e1011"), "emerald": ("#3ecf8e", "#2bb87b", "#05170f"),
             "blue": ("#5a97e8", "#3f7fd0", "#04101f"), "violet": ("#9b8cf0", "#7c68e0", "#120a2a"),
             "amber": ("#e0aa4c", "#c08f2f", "#1d1403"), "rose": ("#ea6f8b", "#d35070", "#2a0712"),
         }
         for mode in ("dark", "light"):
-            for accent, expected in legacy.items():
+            for accent, expected in css_accents.items():
                 self.patch(page, {"accent": accent, "themeMode": mode})
                 tokens = page.evaluate(COLORS)["tokens"]
                 expected = ("#14171a", "#2b2f31", "#f5f6f7") if mode == "light" and accent == "mono" else expected
                 measured = [rgba(tokens[key])[:3] for key in ("--accent", "--accent-strong", "--accent-fg")]
-                self.check("legacy CSS tokens unchanged " + mode + "/" + accent, measured == [rgba(color)[:3] for color in expected], {"actual": measured, "expected": expected})
-                self.check("legacy has no new SVG artwork " + mode + "/" + accent, page.locator(".ni-theme-artwork").count() == 0)
+                self.check("CSS accent token values " + mode + "/" + accent, measured == [rgba(color)[:3] for color in expected], {"actual": measured, "expected": expected})
+                self.check("CSS accents do not use SVG artwork " + mode + "/" + accent, page.locator(".ni-theme-artwork").count() == 0)
 
     def custom(self):
         page = self.new_page({"accent": "custom", "themeMode": "dark"})

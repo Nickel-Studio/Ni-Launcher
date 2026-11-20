@@ -923,13 +923,6 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
   ) {
     javaOptions.push({ value: settings.javaPath, label: settings.javaPath });
   }
-  // 旧配置可能仍保存已从界面移除的串行 / 并行 GC：保留一个只读选项展示当前值，
-  // 避免 Select 无匹配项时显示空值；改选其他项后就不再提供这两个值。
-  const legacyMemoryManagement =
-    settings.memoryManagement === "serial" ||
-    settings.memoryManagement === "parallel"
-      ? settings.memoryManagement
-      : null;
   const memoryManagementOptions = [
     {
       value: "global",
@@ -940,18 +933,6 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
       }）`,
     },
     ...MEMORY_MANAGEMENT_OPTIONS,
-    ...(legacyMemoryManagement
-      ? [
-          {
-            value: legacyMemoryManagement,
-            label:
-              legacyMemoryManagement === "serial"
-                ? "串行 GC（旧设置）"
-                : "并行 GC（旧设置）",
-            disabled: true,
-          },
-        ]
-      : []),
   ];
 
   return (
@@ -1182,7 +1163,7 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             value={modUpdatesSetting(settings)}
             globalValue={modUpdatesSetting(global) ?? false}
             onChange={(value) =>
-              patch({ disableModUpdates: value, noModUpdates: value })
+              patch({ disableModUpdates: value })
             }
           />
         </Row>

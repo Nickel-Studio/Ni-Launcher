@@ -263,7 +263,7 @@ const RUNTIME_PROPERTIES = [
   "--theme-chrome-text",
   "--theme-decoration-opacity",
 ] as const;
-const LEGACY_ACCENTS: readonly Accent[] = ACCENT_IDS.slice(0, 6);
+const CSS_ACCENTS: readonly Accent[] = ACCENT_IDS.slice(0, 6);
 
 // The clock paints CSS only; hiding the document pauses it without notifying React.
 export function startThemeRuntime(
@@ -300,7 +300,7 @@ export function startThemeRuntime(
 
   root.dataset.accent = options.accent;
   root.dataset.titlebarTint = String(options.titlebarTint);
-  root.dataset.richTheme = String(!LEGACY_ACCENTS.includes(options.accent));
+  root.dataset.richTheme = String(!CSS_ACCENTS.includes(options.accent));
 
   const paint = () => {
     const mode: ResolvedThemeMode =
@@ -331,7 +331,7 @@ export function startThemeRuntime(
     );
     for (const [key, value] of Object.entries(tokens)) {
       if (
-        LEGACY_ACCENTS.includes(options.accent) &&
+        CSS_ACCENTS.includes(options.accent) &&
         key.startsWith("--accent") &&
         key !== "--accent-text"
       )

@@ -116,8 +116,8 @@ def ordering_flow(c):
     c.open()
     roots = [DEFAULT, OLDER, YOUNGER]
     names = [DEFAULT_NAME, "Oldest", "Younger"]
-    c.checkpoint("legacy migration", roots, names, "Younger")
-    c.persisted("legacy migration writes once", roots, YOUNGER)
+    c.checkpoint("registry normalization", roots, names, "Younger")
+    c.persisted("registry normalization writes once", roots, YOUNGER)
     c.select("Oldest")
     c.checkpoint("activate older without reordering", roots, names, "Oldest")
     c.persisted("activation preserves disk order", roots, OLDER)
@@ -218,7 +218,7 @@ def versions_flow(c):
     c.open()
     roots = [DEFAULT, OLDER, YOUNGER]
     names = [DEFAULT_NAME, "Oldest", "Younger"]
-    c.checkpoint("real Versions page legacy sidebar", roots, names, "Younger")
+    c.checkpoint("real Versions page sidebar", roots, names, "Younger")
     c.select("Oldest")
     c.checkpoint("real Versions sidebar activation", roots, names, "Oldest")
     c.add(LATEST, full_page=True)
@@ -308,16 +308,6 @@ def no_default_flow(c):
     c.persisted("without default persistence", roots, LATEST)
 
 
-def legacy_objects_flow(c):
-    c.open()
-    roots = [DEFAULT, OLDER, YOUNGER]
-    names = [DEFAULT_NAME, "Oldest", "Younger"]
-    c.checkpoint("legacy object roots migrate without reordering", roots, names, "Younger")
-    c.persisted("legacy object roots persist as strings", roots, YOUNGER)
-    c.page.reload(wait_until="networkidle")
-    c.checkpoint("legacy object roots restart", roots, names, "Younger")
-
-
 def delayed_activation_flow(c):
     c.open()
     c.checkpoint("delayed activation initial", [DEFAULT, OLDER, YOUNGER], [DEFAULT_NAME, "Oldest", "Younger"], "Younger")
@@ -400,7 +390,7 @@ def main():
     unc_roots = ["//server/share/z-old", "//server/share/default", "//server/share/a-new", "\\\\?\\UNC\\SERVER\\SHARE\\Z-OLD\\", "\\\\?\\UNC\\SERVER\\SHARE\\DEFAULT\\"]
     cases = [
         ("helper-properties", seed(), helper_flow),
-        ("legacy-lifecycle", seed(), ordering_flow),
+        ("registry-lifecycle", seed(), ordering_flow),
         ("path-alias-migration", seed(aliases, game=OLDER.upper().replace("/", "\\") + "\\", default=DEFAULT.lower().replace("/", "\\") + "\\"), alias_flow),
         ("direct-alias-actions", seed(), activation_alias),
         ("portable-effective-roots", seed([OLDER, MISSING, YOUNGER, PORTABLE.upper().replace("/", "\\") + "\\"], game=PORTABLE, default=PORTABLE, portable=True, validDirs=[OLDER, YOUNGER, LATEST, PORTABLE.upper().replace("/", "\\") + "\\"]), portable_flow),
@@ -409,7 +399,6 @@ def main():
         ("unregistered-active", seed(game=LATEST), missing_active_flow),
         ("default-alias-readdition", seed(), default_readdition_flow),
         ("missing-default-metadata", seed([OLDER, YOUNGER], default=""), no_default_flow),
-        ("legacy-object-roots", seed([{"dir": OLDER + "/"}, DEFAULT, {"dir": YOUNGER}, OLDER.upper().replace("/", "\\") + "\\", "", None], game=YOUNGER), legacy_objects_flow),
         ("delayed-activation-keeps-additions", seed(), delayed_activation_flow),
         ("delayed-alias-alignment-keeps-additions", seed(), delayed_alias_alignment_flow),
         ("extended-unc-alias-lifecycle", seed(unc_roots, game="\\\\?\\UNC\\server\\share\\z-old\\", default="\\\\?\\unc\\SERVER\\SHARE\\DEFAULT\\"), extended_unc_flow),
@@ -436,7 +425,7 @@ def main():
                     action(case)
                     case.check("browser console has no errors", console_errors, [])
                     result["final"] = case.snapshot()
-                    if name == "legacy-lifecycle":
+                    if name == "registry-lifecycle":
                         storage = context.storage_state()
                         context.close()
                         context = browser.new_context(viewport={"width": 1180, "height": 900}, reduced_motion="reduce", storage_state=storage)

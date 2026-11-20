@@ -270,14 +270,11 @@ export async function actOnVersionMods(
   );
 }
 
-/** 同一层优先使用新字段；null 表示继续继承，而不是关闭。 */
+/** null 表示继续继承，而不是关闭。 */
 export function modUpdatesSetting(
   record: Record<string, unknown>
 ): boolean | null {
-  for (const key of ["disableModUpdates", "noModUpdates"]) {
-    if (typeof record[key] === "boolean") return record[key];
-  }
-  return null;
+  return typeof record.disableModUpdates === "boolean" ? record.disableModUpdates : null;
 }
 
 /** 设置页与 Mod 操作使用同一读取规则；本地 false 必须能覆盖全局 true。 */

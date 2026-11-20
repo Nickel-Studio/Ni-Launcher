@@ -55,7 +55,6 @@ const SETTINGS = {
   backgroundBlur: 0,
   backgroundOpacity: 0.5,
   privacyMode: false,
-  downloadSource: "official",
   versionListSource: "official_auto",
   fileDownloadSource: "official_auto",
   communityApiSource: "official_auto",

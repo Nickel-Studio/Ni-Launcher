@@ -27,7 +27,6 @@ export type { Accent, CustomTheme, ThemeDecoration } from "./theme";
  * 注意：明暗模式 **不是「主题」** —— 项目说的「主题」指下面的 Accent（颜色主题）。
  */
 export type ThemeMode = "system" | "light" | "dark";
-export type DownloadSource = "official" | "bmclapi";
 export type SourcePolicy = "mirror_first" | "official_auto" | "official_first";
 export const SOURCE_POLICIES: readonly SourcePolicy[] = [
   "mirror_first",
@@ -71,8 +70,6 @@ export interface AppSettings {
   backgroundBlur: number;
   backgroundOpacity: number;
   privacyMode: boolean;
-  /** 仅供旧调用者兼容；新入口分别使用三项策略。 */
-  downloadSource: DownloadSource;
   versionListSource: SourcePolicy;
   fileDownloadSource: SourcePolicy;
   communityApiSource: SourcePolicy;
@@ -99,7 +96,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backgroundBlur: 0,
   backgroundOpacity: 0.5,
   privacyMode: false,
-  downloadSource: "official",
   versionListSource: "official_auto",
   fileDownloadSource: "official_auto",
   communityApiSource: "official_auto",
@@ -129,7 +125,6 @@ const STORAGE_KEY = "nickel.settings";
 
 const THEME_MODES: readonly ThemeMode[] = ["system", "light", "dark"];
 const ACCENTS: readonly Accent[] = ACCENT_IDS;
-const SOURCES: readonly DownloadSource[] = ["official", "bmclapi"];
 const ACCOUNT_TYPES: readonly AppSettings["accountType"][] = [
   "microsoft",
   "littleskin",
@@ -226,14 +221,6 @@ export function normalizeSettings(input: unknown): AppSettings {
   out.customTheme = normalizeCustomTheme(raw.customTheme);
   out.titlebarTint =
     typeof raw.titlebarTint === "boolean" ? raw.titlebarTint : false;
-  if (SOURCES.includes(raw.downloadSource as DownloadSource))
-    out.downloadSource = raw.downloadSource as DownloadSource;
-  const migrated: SourcePolicy =
-    raw.downloadSource === "bmclapi"
-      ? "mirror_first"
-      : raw.downloadSource === "official"
-      ? "official_first"
-      : "official_auto";
   for (const key of [
     "versionListSource",
     "fileDownloadSource",
@@ -241,11 +228,9 @@ export function normalizeSettings(input: unknown): AppSettings {
   ] as const) {
     out[key] = SOURCE_POLICIES.includes(raw[key] as SourcePolicy)
       ? (raw[key] as SourcePolicy)
-      : key === "communityApiSource"
-      ? "official_auto"
-      : migrated;
+      : DEFAULT_SETTINGS[key];
   }
-  // 镜像基址由应用固定；旧配置保留键形状，但不继续采用自定义地址。
+  // 镜像基址由服务常量提供，不接受配置文件覆盖。
   Object.assign(out, COMMUNITY_MIRRORS);
   out.maxDownloadThreads = Math.round(
     clampNumber(

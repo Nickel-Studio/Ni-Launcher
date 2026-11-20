@@ -1102,9 +1102,12 @@ async function runDetailChecks(): Promise<void> {
   );
   if (placeholder) {
     const placeholderHeight = placeholder.getBoundingClientRect().height;
+    const style = getComputedStyle(placeholder);
+    const reservedHeight = ["--pd-row-height", "--space-7", "--space-1"]
+      .reduce((total, token) => total + parseFloat(style.getPropertyValue(token)), 0);
     expect(
-      "懒挂载占位高度 = 行高",
-      placeholderHeight >= 40 && placeholderHeight <= 46,
+      "懒挂载占位保留版本行和依赖入口高度",
+      Math.abs(placeholderHeight - reservedHeight) <= 1,
       `${placeholderHeight}`
     );
   }

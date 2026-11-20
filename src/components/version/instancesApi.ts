@@ -71,8 +71,7 @@ function trimSeparators(dir: string): string {
 
 /**
  * 归一化 `instances_get` 返回值。
- * `roots` 按契约是字符串数组；同时容忍 `{ dir }` 对象写法与重复项，
- * 避免一份残缺/历史数据导致整个实例列表丢失。
+ * `roots` 只接受字符串路径；无效条目和重复项不会丢弃其余有效目录。
  */
 export function normalizeRegistry(raw: unknown): InstanceRegistry {
   const data = toData(raw);
@@ -83,12 +82,7 @@ export function normalizeRegistry(raw: unknown): InstanceRegistry {
   const seen = new Set<string>();
   const rawRoots = Array.isArray(record.roots) ? record.roots : [];
   for (const item of rawRoots) {
-    const candidate =
-      typeof item === "string"
-        ? item
-        : item && typeof item === "object"
-        ? String((item as Record<string, unknown>).dir ?? "")
-        : "";
+    const candidate = typeof item === "string" ? item : "";
     const dir = trimSeparators(candidate.trim());
     if (!dir || seen.has(dir)) continue;
     seen.add(dir);

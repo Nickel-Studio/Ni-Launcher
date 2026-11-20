@@ -135,9 +135,7 @@ function FileGroup({
               </span>
             </span>
             <span className="vst-export__size">
-              {mixed
-                ? "旧配置部分选择"
-                : files[0].kind === "directory"
+              {files[0].kind === "directory"
                 ? "整体选择"
                 : formatBytes(files[0].sizeBytes ?? 0)}
             </span>
@@ -156,24 +154,16 @@ function FileGroup({
                     className="vst-export__file"
                     role="checkbox"
                     aria-label={`导出${file.displayName}`}
-                    aria-checked={
-                      state === "mixed" ? "mixed" : state === "checked"
-                    }
+                    aria-checked={state === "checked"}
                     disabled={disabled}
                     onClick={() => onToggle([file.path], state !== "checked")}
                   >
                     <span className="vst-export__item-check" aria-hidden="true">
-                      {state === "checked" ? (
-                        <IconCheck />
-                      ) : state === "mixed" ? (
-                        <IconMinus />
-                      ) : null}
+                      {state === "checked" ? <IconCheck /> : null}
                     </span>
                     <span className="vst-export__path">{file.displayName}</span>
                     <span className="vst-export__size">
-                      {state === "mixed"
-                        ? "旧配置部分选择"
-                        : file.kind === "directory"
+                      {file.kind === "directory"
                         ? "整个包 / 目录"
                         : formatBytes(file.sizeBytes ?? 0)}
                     </span>
@@ -219,7 +209,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
   const [format, setFormat] = useState<ExportFormat>("mrpack");
   const [includeLauncher, setIncludeLauncher] = useState(false);
   const [includePersonalization, setIncludePersonalization] = useState(false);
-  const [selected, setSelected] = useState<ExportSelection>(() => new Map());
+  const [selected, setSelected] = useState<ExportSelection>(() => new Set());
   const [bundleResources, setBundleResources] = useState(false);
   const [modrinthOnly, setModrinthOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -272,8 +262,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
     [preview, selected]
   );
   const unknownSize = selectedFiles.some(
-    (file) =>
-      file.sizeBytes === null || exportCheckState(file, selected) === "mixed"
+    (file) => file.sizeBytes === null
   );
   const exportTask = center.tasks.find(
     (task) => task.task?.taskId === exportTaskId
@@ -321,9 +310,6 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
             "已读取导出配置",
             matched.missing
               ? `当前实例缺少 ${matched.missing} 个选择项目，请重新检查。`
-              : "",
-            matched.legacy
-              ? "旧配置的具体文件选择已保留；部分选择显示为半选，勾选整个目录才会扩大范围。"
               : "",
           ]
             .filter(Boolean)

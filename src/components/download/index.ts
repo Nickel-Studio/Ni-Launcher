@@ -5,7 +5,6 @@ export { BackToTopBubble, type BackToTopBubbleProps } from "./BackToTopBubble";
 export {
   closeDownloadDetail,
   openDownloadDetail,
-  useDownloadDetailOpen,
 } from "./route";
 export {
   cancelDownload,
@@ -23,7 +22,6 @@ export {
   listLoaders,
   listRemoteVersions,
   loadInstanceFilter,
-  setDownloadSource,
   type InstallArgs,
 } from "./ipc";
 export { describeInstallError, extractMcVersion } from "./parse";

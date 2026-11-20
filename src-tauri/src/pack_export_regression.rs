@@ -224,13 +224,11 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
             .count(),
         1
     );
-    assert!(
-        instance
-            .preview
-            .files
-            .iter()
-            .all(|entry| entry.kind == ExportEntryKind::Directory && entry.size_bytes.is_none())
-    );
+    assert!(instance
+        .preview
+        .files
+        .iter()
+        .all(|entry| entry.kind == ExportEntryKind::Directory && entry.size_bytes.is_none()));
     assert_eq!(
         instance
             .preview
@@ -258,11 +256,9 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
         &CancellationToken::new(),
     )
     .unwrap();
-    assert!(
-        default_files
-            .iter()
-            .all(|file| !file.path.starts_with("saves/"))
-    );
+    assert!(default_files
+        .iter()
+        .all(|file| !file.path.starts_with("saves/")));
     // The former 4803 count omitted two world-owned files; full selection is 4805.
     for format in [ExportFormat::Mrpack, ExportFormat::Portable] {
         let name = if format == ExportFormat::Mrpack {
@@ -288,16 +284,12 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
         .unwrap();
         assert_eq!(copied, 4805);
         assert_eq!(snapshot.files.len(), 4805);
-        assert!(
-            snapshot
-                .files
-                .contains(&"saves/Selected/playerdata/player.dat".into())
-        );
-        assert!(
-            snapshot
-                .files
-                .contains(&"saves/Selected/stats/player.json".into())
-        );
+        assert!(snapshot
+            .files
+            .contains(&"saves/Selected/playerdata/player.dat".into()));
+        assert!(snapshot
+            .files
+            .contains(&"saves/Selected/stats/player.json".into()));
         assert!(!snapshot.files.iter().any(|path| path.contains("Other")
             || path.starts_with("journeymap/")
             || path.contains("jei/world")
@@ -465,90 +457,11 @@ fn new_content_categories_separate_configuration_from_personal_data() {
 }
 
 #[test]
-fn legacy_personal_files_remain_exact_and_directory_tokens_cannot_escape_scopes() {
+fn directory_tokens_cannot_escape_scopes() {
     let fixture = Fixture::new();
-    for path in [
-        "config/jei/world/one/bookmarks.ini",
-        "config/jei/world/two/bookmarks.ini",
-        "screenshots/one.png",
-        "screenshots/two.png",
-        "saves/World/level.dat",
-        "saves/World/region/one.mca",
-        "saves/World/playerdata/one.dat",
-        "saves/World/playerdata/two.dat",
-        "saves/World/stats/one.json",
-        "journeymap/data/sp/one.dat",
-        "journeymap/data/sp/two.dat",
-    ] {
-        fixture.put(path, format!("personal content: {path}"));
-    }
-    let legacy: Vec<String> = [
-        "config/jei/world/one/bookmarks.ini",
-        "screenshots/one.png",
-        "saves/World/level.dat",
-        "saves/World/playerdata/one.dat",
-        "journeymap/data/sp/one.dat",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect();
-    let old: ExportConfig =
-        serde_json::from_value(json!({ "name": "Old", "version": "1", "files": legacy })).unwrap();
-    validate_config(&old).unwrap();
+    fixture.put("screenshots/one.png", b"image");
+    fixture.put("saves/World/level.dat", b"world");
     let cancel = CancellationToken::new();
-    for (name, files, expected) in [
-        ("legacy-exact", old.files.clone(), old.files.clone()),
-        (
-            "legacy-mixed",
-            old.files
-                .iter()
-                .cloned()
-                .chain(["@dir/screenshots/screenshots".into()])
-                .collect(),
-            old.files
-                .iter()
-                .cloned()
-                .chain(["screenshots/two.png".into()])
-                .collect(),
-        ),
-    ] {
-        let workspace = fixture.0.join(name);
-        std::fs::create_dir(&workspace).unwrap();
-        let request = fixture.request(ExportFormat::Mrpack, files);
-        let snapshot = snapshot_instance(
-            fixture.instance(),
-            &request,
-            &workspace,
-            &cancel,
-            |_, _, _| {},
-        )
-        .unwrap();
-        assert_eq!(
-            snapshot.files.iter().cloned().collect::<HashSet<_>>(),
-            expected.into_iter().collect::<HashSet<_>>()
-        );
-        for unselected in [
-            "saves/World/region/one.mca",
-            "saves/World/playerdata/two.dat",
-            "saves/World/stats/one.json",
-            "config/jei/world/two/bookmarks.ini",
-            "journeymap/data/sp/two.dat",
-        ] {
-            assert!(!snapshot.root.join(unselected).exists(), "{unselected}");
-        }
-        let archive = workspace.join("payload.mrpack");
-        write_snapshot_payload(
-            &snapshot,
-            &archive,
-            manifest(&snapshot.preview, &config(&request), &[]).unwrap(),
-            &HashSet::new(),
-            &cancel,
-            |_, _, _| {},
-        )
-        .unwrap();
-        assert_payload_bytes(&fixture, &snapshot, &archive, &workspace.join("imported"));
-        fixture.record_archive(name, &snapshot, &request, &archive, None);
-    }
     for value in [
         "@dir/config/config/jei/world",
         "@dir/jeiPersonal/config",
@@ -564,28 +477,24 @@ fn legacy_personal_files_remain_exact_and_directory_tokens_cannot_escape_scopes(
         assert!(content::parse_selection(value).is_err(), "{value}");
     }
     let preview = fixture.instance().preview;
-    assert!(
-        content::selected_files(
-            &fixture.0,
-            &preview.files,
-            &["@dir/saves/saves/Other".into()],
-            &cancel
-        )
-        .is_err()
-    );
+    assert!(content::selected_files(
+        &fixture.0,
+        &preview.files,
+        &["@dir/saves/saves/Other".into()],
+        &cancel
+    )
+    .is_err());
     assert!(
         content::selected_files(&fixture.0, &preview.files, &["screenshots".into()], &cancel)
             .is_err()
     );
-    assert!(
-        content::selected_files(
-            &fixture.0,
-            &preview.files,
-            &["screenshots/one.png".into(), "screenshots/ONE.png".into()],
-            &cancel
-        )
-        .is_err()
-    );
+    assert!(content::selected_files(
+        &fixture.0,
+        &preview.files,
+        &["screenshots/one.png".into(), "screenshots/ONE.png".into()],
+        &cancel
+    )
+    .is_err());
 }
 
 #[test]
@@ -785,10 +694,11 @@ fn cancelled_and_credential_bearing_directory_snapshots_are_not_exportable() {
         assert!(error.contains(relative));
         assert!(!error.contains("private-value"));
     }
+    let fixture = Fixture::new();
     fixture.put("scripts/host.zs", b"folder=C:/Users/private/game");
     let host_stage = fixture.0.join("host-standard");
     std::fs::create_dir(&host_stage).unwrap();
-    let host_request = fixture.request(ExportFormat::Mrpack, vec!["scripts/host.zs".into()]);
+    let host_request = fixture.request(ExportFormat::Mrpack, vec!["@dir/packData/scripts".into()]);
     let standard = snapshot_instance(
         fixture.instance(),
         &host_request,
@@ -865,7 +775,12 @@ fn credential_collections_are_rejected_before_either_snapshot_format() {
         {
             let workspace = fixture.0.join(format!("collection-stage-{index}"));
             std::fs::create_dir(&workspace).unwrap();
-            let request = fixture.request(format, vec![relative.into()]);
+            let token = if relative.starts_with("config/") {
+                "@dir/config/config"
+            } else {
+                "@dir/packData/scripts"
+            };
+            let request = fixture.request(format, vec![token.into()]);
             let error = snapshot_instance(
                 fixture.instance(),
                 &request,
@@ -949,15 +864,13 @@ fn symlinks_inside_selected_directories_are_rejected_at_export_time() {
             return;
         }
     }
-    assert!(
-        content::selected_files(
-            &fixture.0,
-            &preview.files,
-            &["@dir/config/config".into()],
-            &CancellationToken::new()
-        )
-        .is_err()
-    );
+    assert!(content::selected_files(
+        &fixture.0,
+        &preview.files,
+        &["@dir/config/config".into()],
+        &CancellationToken::new()
+    )
+    .is_err());
 }
 
 #[test]
@@ -1075,13 +988,11 @@ fn explicitly_selected_world_preserves_inventory_statistics_and_mod_data() {
     fixture.put("saves/Other/stats/player.json", b"{}");
     let instance = fixture.instance();
     assert_eq!(instance.preview.files.len(), 2);
-    assert!(
-        instance
-            .preview
-            .files
-            .iter()
-            .all(|entry| entry.group == "saves" && !entry.selected)
-    );
+    assert!(instance
+        .preview
+        .files
+        .iter()
+        .all(|entry| entry.group == "saves" && !entry.selected));
     let defaults = content::selected_files(
         &fixture.0,
         &instance.preview.files,
@@ -1109,12 +1020,10 @@ fn explicitly_selected_world_preserves_inventory_statistics_and_mod_data() {
         )
         .unwrap();
         assert_eq!(snapshot.files.len(), expected.len());
-        assert!(
-            snapshot
-                .files
-                .iter()
-                .all(|path| path.starts_with(&format!("{world}/")))
-        );
+        assert!(snapshot
+            .files
+            .iter()
+            .all(|path| path.starts_with(&format!("{world}/"))));
         for relative in expected {
             assert!(snapshot.files.contains(&format!("{world}/{relative}")));
         }
@@ -1235,11 +1144,9 @@ fn portable_zip_wraps_the_real_thousand_file_snapshot_and_preserves_world_bytes(
     let cancelled = CancellationToken::new();
     cancelled.cancel();
     let cancelled_zip = workspace.join("cancelled.zip");
-    assert!(
-        portable
-            .write(&cancelled_zip, &cancelled, |_, _, _| {})
-            .is_err()
-    );
+    assert!(portable
+        .write(&cancelled_zip, &cancelled, |_, _, _| {})
+        .is_err());
     assert!(!cancelled_zip.exists());
     fixture.record_archive(
         "portable-outer",

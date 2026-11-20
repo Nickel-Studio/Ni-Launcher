@@ -62,7 +62,6 @@ const VERSION_SETTINGS_FIXTURE = {
   jvmArgs: null,
   gameArgs: null,
   preLaunchCommand: "",
-  noModUpdates: null,
   disableModUpdates: null,
   disableFileCheck: false,
   disableWrapper: null,
