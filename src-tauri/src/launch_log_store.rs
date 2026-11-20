@@ -1149,8 +1149,18 @@ fn collect_key_value_spans(
             }
             continue;
         }
+        let authorization = key
+            .trim_start_matches('-')
+            .eq_ignore_ascii_case("authorization");
+        // Inline Bearer headers can precede another field; YAML scalar continuations cannot.
+        let inline_bearer = authorization
+            && text[start..]
+                .get(..7)
+                .is_some_and(|value| value.eq_ignore_ascii_case("bearer "))
+            && inline_field_follows(text, scan_value_end(text, skip_spaces(text, start + 7)));
         let block_value = explicit
             && bytes[separator] == b':'
+            && !inline_bearer
             && !matches!(
                 bytes[start],
                 b'[' | b'{' | b'"' | b'\'' | b'`' | b'|' | b'>'
@@ -1182,8 +1192,7 @@ fn collect_key_value_spans(
                 key_start,
                 start,
                 kind,
-                key.trim_start_matches('-')
-                    .eq_ignore_ascii_case("authorization"),
+                authorization,
                 final_input,
             )
         };
@@ -1207,6 +1216,27 @@ fn yaml_field_start(text: &str, key_start: usize) -> bool {
     let line_start = text[..key_start].rfind('\n').map_or(0, |n| n + 1);
     matches!(text[line_start..key_start].trim(), "" | "-")
 }
+
+fn inline_field_follows(text: &str, start: usize) -> bool {
+    let start = skip_spaces(text, start);
+    let line_end = scan_line_end(text, start);
+    let mut end = start;
+    while end < line_end && key_byte(text.as_bytes()[end]) {
+        end += 1;
+    }
+    if end == start || end - start > MAX_KEY_BYTES {
+        return false;
+    }
+    let separator = skip_spaces(text, end);
+    let key = &text[start..end];
+    (matches!(text.as_bytes().get(separator), Some(b':' | b'='))
+        && !matches!(text.as_bytes().get(separator + 1), Some(b'=' | b'>')))
+        || (key.starts_with("--")
+            && log_key_kind(key.trim_start_matches('-')).is_some()
+            && separator > end
+            && separator < line_end)
+}
+
 
 fn scan_sensitive_value(
     text: &str,

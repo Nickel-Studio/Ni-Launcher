@@ -895,6 +895,13 @@ mod tests {
         }
         assert!(redacted.contains("accessToken"));
         assert!(redacted.contains("***"));
+        assert!(!redacted.contains(launch_log_store::REDACTION_FAILURE));
+        let yaml = "Authorization: Bearer abc123\n  continuation-secret\nnext: visible\n";
+        let redacted_yaml = launch_log_store::redact_sensitive_text(yaml);
+        assert!(!redacted_yaml.contains("abc123"));
+        assert!(!redacted_yaml.contains("continuation-secret"));
+        assert!(redacted_yaml.contains("next: visible"));
+        assert!(!redacted_yaml.contains(launch_log_store::REDACTION_FAILURE));
     }
 
     #[test]
