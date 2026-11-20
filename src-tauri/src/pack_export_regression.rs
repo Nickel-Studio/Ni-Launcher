@@ -838,8 +838,14 @@ fn assert_policy_archive(relative: &str, text: &str, allowed: bool) {
                 .err()
                 .unwrap_or_else(|| panic!("accepted {relative}: {text}"));
             assert!(error.contains(relative), "{error}");
-            assert!(!error.contains("archive-secret"), "{error}");
+            assert!(
+                !error.contains("archive-secret") && !error.contains("round03-secret"),
+                "{error}"
+            );
             assert!(!archive.exists());
+            fixture.put(&format!("policy-rejection-{index}.json"), serde_json::to_vec_pretty(&json!({
+                "relative":relative,"requestFormat":request.format,"error":error,"archiveAbsent":true,
+            })).unwrap());
             continue;
         }
         let snapshot = result.unwrap_or_else(|error| panic!("{relative}: {text}: {error}"));
@@ -870,6 +876,195 @@ fn assert_policy_archive(relative: &str, text: &str, allowed: bool) {
             None,
         );
     }
+}
+
+#[test]
+fn yaml_block_and_flow_values_retain_sensitive_parent_context_in_both_formats() {
+    for text in [
+        "api_keys:\n  - round03-secret\nquality: high\n",
+        "api_keys:\n  primary: round03-secret\nquality: high\n",
+        "service:\n  api_keys:\n    - primary: archive-secret\nquality: high\n",
+        "service:\n  api_keys:\n    primary:\n      - []\n      - {secondary: archive-secret}\nquality: high\n",
+        "api_keys: [{primary: archive-secret}]\nquality: high\n",
+        "password: |\n  archive-secret\nquality: high\n",
+        "password: >-\n  archive-secret\nquality: high\n",
+        "api_keys:\n  primary: '${PASSWORD:-archive-secret}'\nquality: high\n",
+        "api_keys:\n  primary: 12345\nquality: high\n",
+        "api_keys: []\n---\napi_keys:\n  - archive-secret\n",
+        "api_keys: []\napi_keys: {primary: archive-secret}\n",
+    ] {
+        assert_eq!(yaml_has_credentials(text), Ok(true), "{text}");
+        for extension in ["yaml", "yml"] {
+            assert_policy_archive(&format!("config/service.{extension}"), text, false);
+        }
+    }
+    for text in [
+        "api_keys:\nquality: high\n",
+        "api_keys: []\nquality: high\n",
+        "api_keys: {}\nquality: high\n",
+        "api_keys:\n  primary: []\n  secondary: {}\nquality: high\n",
+        "api_keys:\n  - null\n  - ~\n  - false\n  - true\n  - ''\nquality: high\n",
+        "api_keys:\n  primary: '${PASSWORD}'\n  other: '%API_KEY%'\n  empty: '***'\nquality: high\n",
+        "api_keys:\n  - primary: [placeholder, 'YOUR_API_KEY_HERE']\n  - {secondary: []}\nquality: high\n",
+        "api_keys: {primary: ['', '${API_KEY}', '***', null, false]}\nquality: high\n",
+        "password: >-\n  ${PASSWORD}\nquality: high\n",
+        "description: |\n  password = example\nquality: high\n",
+        "api_keys: [] # example is a comment\nquality: high\n",
+        "quality: high\nprofiles:\n  - primary: ordinary-data\n",
+    ] {
+        assert_eq!(yaml_has_credentials(text), Ok(false), "{text}");
+        for extension in ["yaml", "yml"] {
+            assert_policy_archive(&format!("config/service.{extension}"), text, true);
+        }
+    }
+}
+
+#[test]
+fn yaml_syntax_aliases_tags_and_processing_limits_fail_closed_without_expansion() {
+    let depth_at_limit = format!(
+        "{}null{}",
+        "[".repeat(MAX_POLICY_DEPTH),
+        "]".repeat(MAX_POLICY_DEPTH)
+    );
+    assert_eq!(yaml_has_credentials(&depth_at_limit), Ok(false));
+    for text in [
+        "api_keys: ['archive-secret'\n".to_owned(),
+        "api_keys:\n  primary: \"unterminated\n".to_owned(),
+        "defaults: &base [placeholder]\napi_keys: *base\n".to_owned(),
+        "defaults: &base [*base]\napi_keys: *base\n".to_owned(),
+        "a: &a [placeholder]\nb: &b [*a, *a]\nc: &c [*b, *b]\napi_keys: *c\n".to_owned(),
+        "api_keys: !!str archive-secret\n".to_owned(),
+        "? [password, secondary]\n: []\n".to_owned(),
+        format!(
+            "{}null{}",
+            "[".repeat(MAX_POLICY_DEPTH + 1),
+            "]".repeat(MAX_POLICY_DEPTH + 1)
+        ),
+        format!("[{}]", "null,".repeat(MAX_POLICY_EVENTS)),
+        format!("description: '{}'", "x".repeat(CONFIG_MAX_BYTES as usize)),
+    ] {
+        assert_eq!(yaml_has_credentials(&text), Err(()));
+        for extension in ["yaml", "yml"] {
+            assert_policy_archive(&format!("config/service.{extension}"), &text, false);
+        }
+    }
+}
+
+#[test]
+fn javascript_regexes_have_opaque_lexical_boundaries_and_byte_preserved_payloads() {
+    for text in [
+        r#"const cleanName = 'foo"bar'.replace(/"/g, '');"#,
+        r#"const cleanName = 'foo/bar'.replace(/\//g, '');"#,
+        r#"const path = 'foo\\bar'.replace(/\\/g, '');"#,
+        r#"const cleanName = name.replace(/["'/\\\]]/g, '');"#,
+        r#"const regex = /[a-z]+/dgimsuy;"#,
+        r#"const regex = /password="example"/g;"#,
+        r#"function clean(name) { return /"/g.test(name); }"#,
+        r#"if (ready) /"/g.test(name); else /'/g.test(name);"#,
+        r#"const x = ready ? /"/g : /'/g;"#,
+        r#"const regex = /* " harmless */ /[/*'"]/g; // password='example'"#,
+        "const x = 12 / 3; const clean = /\"/g;",
+        "const x = (12 + 6) / (3); const clean = /\"/g;",
+        "let x = 12; x /= 3; const clean = /\"/g;",
+        "let x = 12; const y = x++ / 3; const clean = /\"/g;",
+        "let x = 12; const y = --x / 3; const clean = /\"/g;",
+        "const x = [12][0] / 3; const clean = /\"/g;",
+        "const x = ({count:12}).count / 3; const clean = /\"/g;",
+        "const x = 12 / /* safe */ 3; const clean = /\"/g;",
+    ] {
+        assert!(javascript_policy_text(text).is_ok(), "{text}");
+        assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+        let protected = format!("{text}\nsettings['password'] = ('archive-secret');");
+        assert!(javascript_policy_text(&protected).is_ok(), "{protected}");
+        assert_policy_archive("kubejs/server_scripts/service.js", &protected, false);
+    }
+    for text in [
+        r#"settings['password'] = process.env.PASSWORD; const clean = /"/g;"#,
+        r#"settings['password'] = System.getenv('PASSWORD'); const clean = /"/g;"#,
+        r#"settings['password'] = '${PASSWORD}'; const clean = /"/g;"#,
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+    }
+}
+
+#[test]
+fn javascript_regex_division_comments_and_limits_cannot_hide_sensitive_writes() {
+    for text in [
+        r#"const regex = /"/g; settings.password = process.env.PASSWORD || 'archive-secret';"#
+            .to_owned(),
+        "settings.password = 12 / 'archive-secret';".to_owned(),
+        "settings.password /= 'archive-secret';".to_owned(),
+        "settings.password = process.env.PASSWORD / 'archive-secret';".to_owned(),
+        "let count = 12; count--; settings.password = 'archive-secret';".to_owned(),
+        "const regex = /unterminated".to_owned(),
+        "const regex = /[unterminated/;".to_owned(),
+        "const regex = /a\\\nb/;".to_owned(),
+        "const regex = /a/gg;".to_owned(),
+        "const regex = /a/uv;".to_owned(),
+        "const regex = /a/z;".to_owned(),
+        "/* unterminated".to_owned(),
+        format!(
+            "const x={}0{};",
+            "(".repeat(MAX_POLICY_DEPTH + 1),
+            ")".repeat(MAX_POLICY_DEPTH + 1)
+        ),
+        ";".repeat(MAX_POLICY_EVENTS),
+        format!("const regex=/{} /;", "x".repeat(CONFIG_MAX_BYTES as usize)),
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", &text, false);
+    }
+}
+
+#[test]
+fn javascript_regex_expression_context_cannot_mask_division_operand_credentials() {
+    for expression in [
+        "function() {}",
+        "function named() {}",
+        "function* named() {}",
+        "function named(value = (12 / 3)) {}",
+        "api.return",
+        "api.if(ready)",
+        "api?.return",
+        "class extends mixin(Base) {}",
+    ] {
+        let sensitive = format!(
+            "const x = {expression} / (settings.password = 'archive-secret') / denominator;"
+        );
+        assert_policy_archive("kubejs/server_scripts/service.js", &sensitive, false);
+        assert!(credential_text(&sensitive, true), "{sensitive}");
+        let safe = format!("const x = {expression} / denominator; const clean = /\"/g;");
+        assert_policy_archive("kubejs/server_scripts/service.js", &safe, true);
+    }
+    for safe in [
+        "function declared() {} /\"/g.test(name);",
+        "if (ready) {} /\"/g.test(name);",
+        "const fnValue = function() { return /\"/g.test(name); };",
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", safe, true);
+    }
+}
+
+#[test]
+fn yaml_and_javascript_policy_original_payloads_reject_credentials_and_preserve_controls() {
+    for text in [
+        "api_keys:\n  - round03-secret\nquality: high\n",
+        "api_keys:\n  primary: round03-secret\nquality: high\n",
+        "api_keys: [\"round03-secret\"]\nquality: high\n",
+    ] {
+        assert_policy_archive("config/service.yaml", text, false);
+    }
+    assert_policy_archive("config/service.yaml", "api_keys: []\nquality: high\n", true);
+    for text in [
+        "const cleanName = 'foo\"bar'.replace(/\"/g, '');\n",
+        "const cleanName = 'foobar';\n",
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+    }
+    assert_policy_archive(
+        "kubejs/server_scripts/service.js",
+        "settings['password'] = ('round03-secret');\n",
+        false,
+    );
 }
 
 #[test]
@@ -970,9 +1165,23 @@ fn literal_script_subscript_writes_reject_secrets_but_reads_and_comparisons_expo
 #[test]
 fn script_literal_writes_use_bounded_expression_and_escape_rules() {
     for operator in ["=", "??=", "||=", "&&=", "+="] {
-        for key in [r#""password""#, r#""pass\x77ord""#, r#"'pass\u{77}ord'"#, r#"'pass\167ord'"#] {
-            for value in ["'archive-secret'", "(('archive-secret'))", "process.env.PASSWORD || 'archive-secret'", "[({value:'archive-secret'})]"] {
-                assert_policy_archive("kubejs/server_scripts/service.js", &format!("settings[{key}] {operator} {value};"), false);
+        for key in [
+            r#""password""#,
+            r#""pass\x77ord""#,
+            r#"'pass\u{77}ord'"#,
+            r#"'pass\167ord'"#,
+        ] {
+            for value in [
+                "'archive-secret'",
+                "(('archive-secret'))",
+                "process.env.PASSWORD || 'archive-secret'",
+                "[({value:'archive-secret'})]",
+            ] {
+                assert_policy_archive(
+                    "kubejs/server_scripts/service.js",
+                    &format!("settings[{key}] {operator} {value};"),
+                    false,
+                );
             }
         }
     }
@@ -985,28 +1194,48 @@ fn script_literal_writes_use_bounded_expression_and_escape_rules() {
         "settings['password'] !== ('example');",
         "const x = ok ? settings['password'] : 'example';",
         "const documentation = 'password = not executed';",
-    ] { assert_policy_archive("kubejs/server_scripts/service.js", text, true); }
-    for text in ["settings.password = ('unterminated", "settings.password = ([)]"] {
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+    }
+    for text in [
+        "settings.password = ('unterminated",
+        "settings.password = ([)]",
+    ] {
         assert_policy_archive("kubejs/server_scripts/service.js", text, false);
     }
-    assert_policy_archive("kubejs/server_scripts/service.js", &format!("settings.password={}''{};", "(".repeat(65), ")".repeat(65)), false);
+    assert_policy_archive(
+        "kubejs/server_scripts/service.js",
+        &format!("settings.password={}''{};", "(".repeat(65), ")".repeat(65)),
+        false,
+    );
 }
 
 #[test]
 fn only_complete_valid_environment_placeholders_are_exempt_in_all_formats() {
     for (value, allowed) in [
-        ("${PASSWORD}", true), ("%PASSWORD%", true), ("${_PASSWORD2}", true),
-        ("archive-secret${}", false), ("archive-secret-${USER}", false),
-        ("${PASSWORD:-archive-secret}", false), ("${}", false), ("${1PASSWORD}", false),
-        ("%PASSWORD%archive-secret", false), ("%archive-secret%", false),
+        ("${PASSWORD}", true),
+        ("%PASSWORD%", true),
+        ("${_PASSWORD2}", true),
+        ("archive-secret${}", false),
+        ("archive-secret-${USER}", false),
+        ("${PASSWORD:-archive-secret}", false),
+        ("${}", false),
+        ("${1PASSWORD}", false),
+        ("%PASSWORD%archive-secret", false),
+        ("%archive-secret%", false),
         ("process.env.PASSWORD + archive-secret", false),
     ] {
         let literal = serde_json::to_string(value).unwrap();
         for (path, source) in [
             ("config/service.toml", format!("password = {literal}")),
             ("config/service.json", format!("{{\"password\":{literal}}}")),
-            ("kubejs/server_scripts/service.js", format!("settings['password'] = ({literal});")),
-        ] { assert_policy_archive(path, &source, allowed); }
+            (
+                "kubejs/server_scripts/service.js",
+                format!("settings['password'] = ({literal});"),
+            ),
+        ] {
+            assert_policy_archive(path, &source, allowed);
+        }
     }
 }
 
@@ -1429,6 +1658,22 @@ fn portable_comment_syntax_is_not_a_path_but_local_values_still_reject() {
         (
             "config/client.properties",
             "folder=file:///opt/jdk/bin/java\n",
+        ),
+        (
+            "scripts/host.js",
+            r#"const clean = /"/g; const folder = 'C:/Users/private/game';"#,
+        ),
+        (
+            "scripts/host.js",
+            "const clean = /[\"/]/g; // local path: /home/private/game\n",
+        ),
+        (
+            "scripts/host.js",
+            r#"const clean = /\\/g; const folder = '\\\\server\\share\\game';"#,
+        ),
+        (
+            "scripts/host.js",
+            r#"const clean = /"/g; const pre_launch_command = 'echo start';"#,
         ),
     ];
     for (relative, text) in unsafe_values {

@@ -376,14 +376,18 @@ fn credential_key(key: &str) -> bool {
 
 fn environment_name(value: &str) -> bool {
     let mut bytes = value.bytes();
-    bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn environment_placeholder(value: &str) -> bool {
     // Only a complete variable reference is non-secret; defaults and literal
     // prefixes/suffixes are data, even when an application expands placeholders.
-    value.strip_prefix("${").and_then(|v| v.strip_suffix('}'))
+    value
+        .strip_prefix("${")
+        .and_then(|v| v.strip_suffix('}'))
         .or_else(|| value.strip_prefix('%').and_then(|v| v.strip_suffix('%')))
         .is_some_and(environment_name)
 }
@@ -510,10 +514,17 @@ fn decode_script_string(inner: &str) -> Option<String> {
         let decoded = match escaped {
             '\n' => continue,
             '\r' => {
-                if chars.peek() == Some(&'\n') { chars.next(); }
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
                 continue;
             }
-            'n' => '\n', 'r' => '\r', 't' => '\t', 'b' => '\u{8}', 'f' => '\u{c}', 'v' => '\u{b}',
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            'b' => '\u{8}',
+            'f' => '\u{c}',
+            'v' => '\u{b}',
             'x' | 'u' => {
                 let braced = escaped == 'u' && chars.peek() == Some(&'{');
                 let mut hex = String::new();
@@ -521,24 +532,36 @@ fn decode_script_string(inner: &str) -> Option<String> {
                     chars.next();
                     loop {
                         let digit = chars.next()?;
-                        if digit == '}' { break; }
-                        if hex.len() >= 6 || !digit.is_ascii_hexdigit() { return None; }
+                        if digit == '}' {
+                            break;
+                        }
+                        if hex.len() >= 6 || !digit.is_ascii_hexdigit() {
+                            return None;
+                        }
                         hex.push(digit);
                     }
                 } else {
                     for _ in 0..if escaped == 'x' { 2 } else { 4 } {
                         let digit = chars.next()?;
-                        if !digit.is_ascii_hexdigit() { return None; }
+                        if !digit.is_ascii_hexdigit() {
+                            return None;
+                        }
                         hex.push(digit);
                     }
                 }
                 let mut code = u32::from_str_radix(&hex, 16).ok()?;
                 if (0xd800..=0xdbff).contains(&code) {
-                    if chars.next()? != '\\' || chars.next()? != 'u' { return None; }
+                    if chars.next()? != '\\' || chars.next()? != 'u' {
+                        return None;
+                    }
                     let low: String = chars.by_ref().take(4).collect();
-                    if low.len() != 4 { return None; }
+                    if low.len() != 4 {
+                        return None;
+                    }
                     let low = u32::from_str_radix(&low, 16).ok()?;
-                    if !(0xdc00..=0xdfff).contains(&low) { return None; }
+                    if !(0xdc00..=0xdfff).contains(&low) {
+                        return None;
+                    }
                     code = 0x10000 + ((code - 0xd800) << 10) + low - 0xdc00;
                 }
                 char::from_u32(code)?
@@ -546,7 +569,9 @@ fn decode_script_string(inner: &str) -> Option<String> {
             '0'..='7' => {
                 let mut code = escaped.to_digit(8)?;
                 for _ in 0..if escaped <= '3' { 2 } else { 1 } {
-                    let Some(digit @ '0'..='7') = chars.peek().copied() else { break; };
+                    let Some(digit @ '0'..='7') = chars.peek().copied() else {
+                        break;
+                    };
                     chars.next();
                     code = code * 8 + digit.to_digit(8)?;
                 }
@@ -559,16 +584,231 @@ fn decode_script_string(inner: &str) -> Option<String> {
     Some(result)
 }
 
-fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
+struct JavaScriptPolicyFrame {
+    close: u8,
+    regex_after: bool,
+    statement_body: bool,
+    function_body: Option<bool>,
+}
+
+fn javascript_policy_text(text: &str) -> Result<String, ()> {
+    use ress::ManualScanner;
+    use ress::tokens::{Punct, Token};
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(());
+    }
+    let mut scanner = ManualScanner::new(text);
+    let mut safe = text.as_bytes().to_vec();
+    let mut stack: Vec<JavaScriptPolicyFrame> = Vec::new();
+    let mut regex_allowed = true;
+    let mut statement_start = true;
+    let mut conditional = false;
+    let mut closed_paren = false;
+    let mut arrow = false;
+    let mut member_name = false;
+    let mut pending_function = None;
+    let mut function_body = None;
+    let mut pending_class = None;
+    for _ in 0..MAX_POLICY_EVENTS {
+        let Some(item) = scanner.next_token() else {
+            return Err(());
+        };
+        let mut item = item.map_err(|_| ())?;
+        if item.token.is_div_punct() && regex_allowed {
+            item = scanner
+                .next_regex(item.span.len())
+                .ok_or(())?
+                .map_err(|_| ())?;
+        }
+        if matches!(item.token, Token::EoF) {
+            return if stack.is_empty() && pending_function.is_none() && pending_class.is_none() {
+                String::from_utf8(safe).map_err(|_| ())
+            } else {
+                Err(())
+            };
+        }
+        if item.token.is_comment() {
+            continue;
+        }
+        if let Token::RegEx(regex) = &item.token {
+            let flags = regex.flags.unwrap_or("");
+            let mut seen = 0_u16;
+            for flag in flags.bytes() {
+                let bit = b"dgimsuvy"
+                    .iter()
+                    .position(|value| *value == flag)
+                    .ok_or(())?;
+                if seen & (1 << bit) != 0 {
+                    return Err(());
+                }
+                seen |= 1 << bit;
+            }
+            if flags.contains('u') && flags.contains('v') {
+                return Err(());
+            }
+            // Keep byte offsets and surrounding source intact. The policy scanner
+            // sees an opaque expression, never quotes or assignments inside regex.
+            safe[item.span.start..item.span.end].fill(b' ');
+            safe[item.span.start] = b'_';
+        } else if item.token.is_div_punct() {
+            // An arithmetic slash is not a filesystem root. Multiplication has
+            // the same policy role and preserves compound-assignment detection.
+            safe[item.span.start] = b'*';
+        }
+        let was_conditional = conditional;
+        let was_closed_paren = closed_paren;
+        let was_arrow = arrow;
+        let was_member = member_name;
+        let was_function_body = function_body.take();
+        conditional = false;
+        closed_paren = false;
+        arrow = false;
+        member_name = false;
+        match &item.token {
+            Token::Punct(Punct::OpenParen | Punct::OpenBrace | Punct::OpenBracket) => {
+                if stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let frame = match item.token {
+                    Token::Punct(Punct::OpenParen) => JavaScriptPolicyFrame {
+                        close: b')',
+                        regex_after: was_conditional,
+                        statement_body: false,
+                        function_body: pending_function.take(),
+                    },
+                    Token::Punct(Punct::OpenBracket) => JavaScriptPolicyFrame {
+                        close: b']',
+                        regex_after: false,
+                        statement_body: false,
+                        function_body: None,
+                    },
+                    _ => {
+                        // Function/arrow/class expression bodies contain statements,
+                        // but their closing brace still ends an expression, not a
+                        // statement that may be followed by a regex literal.
+                        let (regex_after, statement_body) =
+                            if let Some(declaration) = was_function_body {
+                                (declaration, true)
+                            } else if pending_class.is_some_and(|(depth, _)| depth == stack.len()) {
+                                let (_, declaration) = pending_class.take().ok_or(())?;
+                                (declaration, true)
+                            } else if was_arrow {
+                                (false, true)
+                            } else {
+                                (statement_start, statement_start || was_closed_paren)
+                            };
+                        JavaScriptPolicyFrame {
+                            close: b'}',
+                            regex_after,
+                            statement_body,
+                            function_body: None,
+                        }
+                    }
+                };
+                regex_allowed = true;
+                statement_start = frame.statement_body;
+                stack.push(frame);
+            }
+            Token::Punct(Punct::CloseParen | Punct::CloseBrace | Punct::CloseBracket) => {
+                let close = match item.token {
+                    Token::Punct(Punct::CloseParen) => b')',
+                    Token::Punct(Punct::CloseBracket) => b']',
+                    _ => b'}',
+                };
+                let frame = stack.pop().ok_or(())?;
+                if frame.close != close {
+                    return Err(());
+                }
+                regex_allowed = frame.regex_after;
+                statement_start = frame.regex_after;
+                closed_paren = close == b')';
+                function_body = frame.function_body;
+            }
+            Token::Punct(Punct::DoublePlus | Punct::DoubleDash) => {
+                statement_start = false;
+            }
+            Token::Punct(Punct::Period) => {
+                regex_allowed = false;
+                statement_start = false;
+                member_name = true;
+            }
+            Token::Punct(punct) => {
+                regex_allowed = true;
+                statement_start = *punct == Punct::SemiColon
+                    && stack.last().is_none_or(|frame| frame.statement_body);
+                arrow = *punct == Punct::EqualGreaterThan;
+            }
+            Token::Keyword(_) if was_member => {
+                regex_allowed = false;
+                statement_start = false;
+            }
+            Token::Keyword(keyword) => {
+                let word = keyword.as_str();
+                if word == "function" {
+                    pending_function = Some(statement_start);
+                } else if word == "class" {
+                    if pending_class.is_some() {
+                        return Err(());
+                    }
+                    pending_class = Some((stack.len(), statement_start));
+                }
+                conditional = matches!(word, "if" | "while" | "for" | "with" | "switch" | "catch");
+                regex_allowed = conditional
+                    || matches!(
+                        word,
+                        "return"
+                            | "throw"
+                            | "case"
+                            | "delete"
+                            | "void"
+                            | "typeof"
+                            | "new"
+                            | "in"
+                            | "instanceof"
+                            | "yield"
+                            | "await"
+                            | "else"
+                            | "do"
+                    );
+                statement_start = matches!(word, "else" | "do" | "try" | "finally")
+                    || statement_start && matches!(word, "export" | "default");
+            }
+            Token::Ident(identifier) if identifier.as_ref() == "async" && !was_member => {
+                regex_allowed = false;
+            }
+            Token::Template(template) => {
+                regex_allowed = template.is_head() || template.is_middle();
+                statement_start = false;
+            }
+            _ => {
+                regex_allowed = false;
+                statement_start = false;
+            }
+        }
+    }
+    Err(())
+}
+
+fn credential_token(text: &str, offset: &mut usize, javascript: bool) -> Option<CredentialToken> {
     let bytes = text.as_bytes();
     loop {
-        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) { *offset += 1; }
+        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) {
+            *offset += 1;
+        }
         let rest = text.get(*offset..)?;
-        if rest.starts_with('#') || rest.starts_with("//") || rest.starts_with("--") {
+        if rest.starts_with("//")
+            || (!javascript && (rest.starts_with('#') || rest.starts_with("--")))
+        {
             *offset += rest.find('\n').unwrap_or(rest.len());
         } else if rest.starts_with("/*") {
-            *offset += rest.find("*/").map_or(rest.len(), |end| end + 2);
-        } else { break; }
+            let Some(end) = rest.find("*/") else {
+                *offset = text.len();
+                return Some(CredentialToken::Invalid);
+            };
+            *offset += end + 2;
+        } else {
+            break;
+        }
     }
     let first = *bytes.get(*offset)?;
     let start = *offset;
@@ -577,18 +817,28 @@ fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
         b'$' if bytes.get(*offset) == Some(&b'{') => {
             if let Some(end) = text[*offset..].find('}') {
                 *offset += end + 1;
-                Some(CredentialToken::Text { value: text[start..*offset].into(), quoted: false })
-            } else { Some(CredentialToken::Invalid) }
+                Some(CredentialToken::Text {
+                    value: text[start..*offset].into(),
+                    quoted: false,
+                })
+            } else {
+                Some(CredentialToken::Invalid)
+            }
         }
         b'"' | b'\'' | b'`' => {
             let mut escaped = false;
             while let Some(&ch) = bytes.get(*offset) {
                 *offset += 1;
-                if escaped { escaped = false; }
-                else if ch == b'\\' { escaped = true; }
-                else if ch == first {
+                if escaped {
+                    escaped = false;
+                } else if ch == b'\\' {
+                    escaped = true;
+                } else if ch == first {
                     return Some(match decode_script_string(&text[start + 1..*offset - 1]) {
-                        Some(value) => CredentialToken::Text { value, quoted: true },
+                        Some(value) => CredentialToken::Text {
+                            value,
+                            quoted: true,
+                        },
                         None => CredentialToken::Invalid,
                     });
                 }
@@ -596,44 +846,100 @@ fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
             Some(CredentialToken::Invalid)
         }
         b':' => Some(CredentialToken::Field),
-        b'=' | b'!' | b'?' | b'|' | b'&' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'<' | b'>' => {
-            while bytes.get(*offset).is_some_and(|ch| matches!(ch, b'=' | b'?' | b'|' | b'&' | b'<' | b'>' | b'*')) {
+        b'=' | b'!' | b'?' | b'|' | b'&' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'<'
+        | b'>' => {
+            while bytes.get(*offset).is_some_and(|ch| {
+                matches!(ch, b'=' | b'?' | b'|' | b'&' | b'<' | b'>' | b'*')
+                    || javascript && *ch == first && matches!(first, b'+' | b'-')
+            }) {
                 *offset += 1;
             }
             let operator = &text[start..*offset];
-            Some(if matches!(operator, "=" | "??=" | "||=" | "&&=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=") {
-                CredentialToken::Assignment
-            } else { CredentialToken::Other })
+            Some(
+                if matches!(
+                    operator,
+                    "=" | "??="
+                        | "||="
+                        | "&&="
+                        | "+="
+                        | "-="
+                        | "*="
+                        | "/="
+                        | "%="
+                        | "**="
+                        | "&="
+                        | "|="
+                        | "^="
+                        | "<<="
+                        | ">>="
+                        | ">>>="
+                ) {
+                    CredentialToken::Assignment
+                } else {
+                    CredentialToken::Other
+                },
+            )
         }
         b'{' | b'[' | b'(' => Some(CredentialToken::Open(first)),
         b'}' | b']' | b')' => Some(CredentialToken::Close(first)),
         b',' | b';' => Some(CredentialToken::End),
         _ => {
-            while bytes.get(*offset).is_some_and(|ch| !ch.is_ascii_whitespace()
-                && !b"\"'`=:{}[](),;?!|&+*/%^<>".contains(ch)) { *offset += 1; }
+            while bytes.get(*offset).is_some_and(|ch| {
+                !ch.is_ascii_whitespace() && !b"\"'`=:{}[](),;?!|&+*/%^<>".contains(ch)
+            }) {
+                *offset += 1;
+            }
             let raw = &text[start..*offset];
             Some(match decode_script_string(raw) {
-                Some(value) => CredentialToken::Text { value, quoted: false },
+                Some(value) => CredentialToken::Text {
+                    value,
+                    quoted: false,
+                },
                 None => CredentialToken::Invalid,
             })
         }
     }
 }
 
-fn credential_assignment_value(token: CredentialToken, text: &str, offset: &mut usize, script: bool, depth: usize) -> bool {
+fn credential_assignment_value(
+    token: CredentialToken,
+    text: &str,
+    offset: &mut usize,
+    script: bool,
+    javascript: bool,
+    depth: usize,
+) -> bool {
     match token {
         CredentialToken::Invalid => true,
         CredentialToken::Text { value, quoted } => {
             let mut after = *offset;
-            if matches!(credential_token(text, &mut after), Some(CredentialToken::Field | CredentialToken::Assignment)) {
+            if matches!(
+                credential_token(text, &mut after, javascript),
+                Some(CredentialToken::Field | CredentialToken::Assignment)
+            ) {
                 return false;
             }
             // An environment lookup's variable name is not a secret literal.
-            if script && !quoted && matches!(value.as_str(), "System.getenv" | "os.getenv" | "getenv") {
+            if script
+                && !quoted
+                && matches!(value.as_str(), "System.getenv" | "os.getenv" | "getenv")
+            {
                 after = *offset;
-                if matches!(credential_token(text, &mut after), Some(CredentialToken::Open(b'('))) {
-                    if let Some(CredentialToken::Text { value: name, quoted: true }) = credential_token(text, &mut after) {
-                        if environment_name(&name) && matches!(credential_token(text, &mut after), Some(CredentialToken::Close(b')'))) {
+                if matches!(
+                    credential_token(text, &mut after, javascript),
+                    Some(CredentialToken::Open(b'('))
+                ) {
+                    if let Some(CredentialToken::Text {
+                        value: name,
+                        quoted: true,
+                    }) = credential_token(text, &mut after, javascript)
+                    {
+                        if environment_name(&name)
+                            && matches!(
+                                credential_token(text, &mut after, javascript),
+                                Some(CredentialToken::Close(b')'))
+                            )
+                        {
                             *offset = after;
                             return false;
                         }
@@ -643,11 +949,21 @@ fn credential_assignment_value(token: CredentialToken, text: &str, offset: &mut 
             (quoted || !script || value.parse::<f64>().is_ok()) && credential_value(&value)
         }
         CredentialToken::Open(open) => {
-            if depth >= 64 { return true; }
-            let close = match open { b'[' => b']', b'(' => b')', _ => b'}' };
-            while let Some(token) = credential_token(text, offset) {
-                if let CredentialToken::Close(end) = token { return end != close; }
-                if credential_assignment_value(token, text, offset, script, depth + 1) { return true; }
+            if depth >= MAX_POLICY_DEPTH {
+                return true;
+            }
+            let close = match open {
+                b'[' => b']',
+                b'(' => b')',
+                _ => b'}',
+            };
+            while let Some(token) = credential_token(text, offset, javascript) {
+                if let CredentialToken::Close(end) = token {
+                    return end != close;
+                }
+                if credential_assignment_value(token, text, offset, script, javascript, depth + 1) {
+                    return true;
+                }
             }
             true
         }
@@ -655,29 +971,71 @@ fn credential_assignment_value(token: CredentialToken, text: &str, offset: &mut 
     }
 }
 
+#[cfg(test)]
 fn credential_text(text: &str, script: bool) -> bool {
+    credential_text_language(text, script, script)
+}
+
+fn credential_text_language(text: &str, script: bool, javascript: bool) -> bool {
+    let safe;
+    let text = if javascript {
+        safe = match javascript_policy_text(text) {
+            Ok(value) => value,
+            Err(_) => return true,
+        };
+        safe.as_str()
+    } else {
+        text
+    };
     let mut offset = 0;
     let mut after_bracket = false;
-    while let Some(token) = credential_token(text, &mut offset) {
+    while let Some(token) = credential_token(text, &mut offset, javascript) {
         let indexed = after_bracket;
         after_bracket = matches!(token, CredentialToken::Open(b'['));
-        if matches!(token, CredentialToken::Invalid) { return true; }
-        let CredentialToken::Text { value, quoted } = token else { continue; };
-        if quoted && embedded_credentials(&value) { return true; }
-        if !credential_key(&value) { continue; }
-        let mut next = offset;
-        let mut operator = credential_token(text, &mut next);
-        if script && quoted && indexed && matches!(operator, Some(CredentialToken::Close(b']'))) {
-            operator = credential_token(text, &mut next);
-            if !matches!(operator, Some(CredentialToken::Assignment)) { continue; }
+        if matches!(token, CredentialToken::Invalid) {
+            return true;
         }
-        if !matches!(operator, Some(CredentialToken::Assignment | CredentialToken::Field)) { continue; }
-        while let Some(token) = credential_token(text, &mut next) {
-            if matches!(token, CredentialToken::End | CredentialToken::Close(_)) { break; }
-            if credential_assignment_value(token, text, &mut next, script, 0) { return true; }
-            if !script { break; }
+        let CredentialToken::Text { value, quoted } = token else {
+            continue;
+        };
+        if quoted && embedded_credentials(&value) {
+            return true;
+        }
+        if !credential_key(&value) {
+            continue;
+        }
+        let mut next = offset;
+        let mut operator = credential_token(text, &mut next, javascript);
+        if script && quoted && indexed && matches!(operator, Some(CredentialToken::Close(b']'))) {
+            operator = credential_token(text, &mut next, javascript);
+            if !matches!(operator, Some(CredentialToken::Assignment)) {
+                continue;
+            }
+        }
+        if !matches!(
+            operator,
+            Some(CredentialToken::Assignment | CredentialToken::Field)
+        ) {
+            continue;
+        }
+        while let Some(token) = credential_token(text, &mut next, javascript) {
+            if matches!(token, CredentialToken::End | CredentialToken::Close(_)) {
+                break;
+            }
+            if credential_assignment_value(token, text, &mut next, script, javascript, 0) {
+                return true;
+            }
+            if !script {
+                break;
+            }
             // A new statement without a semicolon is not part of this RHS.
-            if text.as_bytes().get(next).is_some_and(|ch| matches!(ch, b'\r' | b'\n')) { break; }
+            if text
+                .as_bytes()
+                .get(next)
+                .is_some_and(|ch| matches!(ch, b'\r' | b'\n'))
+            {
+                break;
+            }
         }
     }
     false
@@ -697,6 +1055,114 @@ fn toml_has_credentials(value: &toml::Value, sensitive: bool) -> bool {
         toml::Value::Boolean(_) => false,
         _ => sensitive,
     }
+}
+
+const MAX_POLICY_DEPTH: usize = 64;
+const MAX_POLICY_EVENTS: usize = 262_144;
+
+enum YamlPolicyFrame {
+    Sequence(bool),
+    Mapping {
+        sensitive: bool,
+        pending_value: Option<bool>,
+    },
+}
+
+fn yaml_child_context(stack: &mut [YamlPolicyFrame]) -> Result<bool, ()> {
+    match stack.last_mut() {
+        Some(YamlPolicyFrame::Sequence(sensitive)) => Ok(*sensitive),
+        Some(YamlPolicyFrame::Mapping { pending_value, .. }) => pending_value.take().ok_or(()),
+        None => Ok(false),
+    }
+}
+
+fn yaml_has_credentials(text: &str) -> Result<bool, ()> {
+    use yaml_rust2::parser::{Event, Parser};
+    use yaml_rust2::scanner::TScalarStyle;
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(());
+    }
+    let mut parser = Parser::new_from_str(text);
+    let mut stack = Vec::new();
+    // Validate the complete bounded stream even after finding credentials.
+    let mut contains_credentials = false;
+    for _ in 0..MAX_POLICY_EVENTS {
+        match parser.next_token().map_err(|_| ())?.0 {
+            Event::Scalar(value, style, _, tag) => {
+                if tag.is_some() {
+                    return Err(());
+                }
+                contains_credentials |= embedded_credentials(&value);
+                let sensitive = match stack.last_mut() {
+                    Some(YamlPolicyFrame::Mapping {
+                        sensitive,
+                        pending_value,
+                    }) => {
+                        if let Some(value_sensitive) = pending_value.take() {
+                            value_sensitive
+                        } else {
+                            *pending_value = Some(*sensitive || credential_key(&value));
+                            continue;
+                        }
+                    }
+                    Some(YamlPolicyFrame::Sequence(sensitive)) => *sensitive,
+                    None => false,
+                };
+                let null = style == TScalarStyle::Plain && value == "~";
+                contains_credentials |= sensitive && !null && credential_value(&value);
+            }
+            Event::SequenceStart(_, tag) => {
+                if tag.is_some() || stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let sensitive = yaml_child_context(&mut stack)?;
+                stack.push(YamlPolicyFrame::Sequence(sensitive));
+            }
+            Event::MappingStart(_, tag) => {
+                if tag.is_some() || stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let sensitive = yaml_child_context(&mut stack)?;
+                stack.push(YamlPolicyFrame::Mapping {
+                    sensitive,
+                    pending_value: None,
+                });
+            }
+            Event::SequenceEnd => {
+                if !matches!(stack.pop(), Some(YamlPolicyFrame::Sequence(_))) {
+                    return Err(());
+                }
+            }
+            Event::MappingEnd => {
+                if !matches!(
+                    stack.pop(),
+                    Some(YamlPolicyFrame::Mapping {
+                        pending_value: None,
+                        ..
+                    })
+                ) {
+                    return Err(());
+                }
+            }
+            // Reject graph features without building or expanding an alias tree.
+            Event::Alias(_) => return Err(()),
+            Event::DocumentStart | Event::DocumentEnd => {
+                if !stack.is_empty() {
+                    return Err(());
+                }
+            }
+            Event::StreamEnd => {
+                return if stack.is_empty() {
+                    Ok(contains_credentials)
+                } else {
+                    Err(())
+                };
+            }
+            Event::StreamStart => {}
+            Event::Nothing => return Err(()),
+        }
+    }
+    Err(())
 }
 
 fn json_has_credentials(value: &Value) -> bool {
@@ -757,18 +1223,22 @@ fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
         .and_then(|v| v.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    // TOML quoting, escapes and multiline continuations need a real parser.
-    // Never fall back to a looser scanner after a syntax/depth failure, and do
-    // not expose parser diagnostics containing the user's configuration text.
+    // Structured syntax/depth errors never fall back to a looser scanner or
+    // expose parser diagnostics containing the user's configuration text.
     let contains_credentials = if extension == "toml" {
         let value = toml::from_str::<toml::Value>(&text)
             .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
         toml_has_credentials(&value, false)
+    } else if matches!(extension.as_str(), "yaml" | "yml") {
+        yaml_has_credentials(&text)
+            .map_err(|_| format!("无法安全解析 YAML 配置（语法、别名、标签或处理上限），请修正或取消选择后重试：{relative}"))?
     } else {
         let script = matches!(extension.as_str(), "js" | "ts" | "zs" | "lua");
         match serde_json::from_str::<Value>(&text) {
             Ok(value) => json_has_credentials(&value),
-            Err(_) => credential_text(&text, script),
+            Err(_) => {
+                credential_text_language(&text, script, matches!(extension.as_str(), "js" | "ts"))
+            }
         }
     };
     if contains_credentials {
@@ -919,16 +1389,17 @@ fn reject_portable_host_data(
         return Ok(());
     }
     let text = read_policy_text(path, relative)?;
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let folded: String = text
         .to_ascii_lowercase()
         .chars()
         .filter(|c| !matches!(c, '_' | '-' | ' '))
         .collect();
-    let has_host_data = if path
-        .extension()
-        .and_then(|v| v.to_str())
-        .is_some_and(|v| v.eq_ignore_ascii_case("toml"))
-    {
+    let has_host_data = if extension == "toml" {
         let value = toml::from_str::<toml::Value>(&text)
             .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
         // Decoded values catch escaped paths. The raw pass still checks comments,
@@ -939,6 +1410,14 @@ fn reject_portable_host_data(
     } else {
         match serde_json::from_str::<Value>(&text) {
             Ok(value) => portable_json_has_host_data(&value, source_roots),
+            Err(_) if matches!(extension.as_str(), "js" | "ts") => {
+                // Reuse credential-policy regex boundaries without masking paths
+                // in strings or comment bodies.
+                let policy = javascript_policy_text(&text).map_err(|_| {
+                    format!("无法安全解析 JavaScript 脚本，请修正或取消选择后重试：{relative}")
+                })?;
+                has_host_path(&policy_host_scan_text(&policy), source_roots)
+            }
             Err(_) => has_host_path(&policy_host_scan_text(&text), source_roots),
         }
     };
