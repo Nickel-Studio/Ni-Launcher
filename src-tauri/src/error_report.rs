@@ -1,4 +1,4 @@
-//! 完整错误报告归档：只收集诊断及日志，逐行脱敏后写入 ZIP。
+//! 完整错误报告归档：只收集诊断及日志，有界保留跨行字段上下文后脱敏写入 ZIP。
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::launch_diagnostics::DiagnosticReport;
-use crate::launch_log_store::{DEFAULT_MAX_ARCHIVES, LOG_FILE_NAME, redact_sensitive_text};
+use crate::launch_log_store::{
+    DEFAULT_MAX_ARCHIVES, LOG_FILE_NAME, redact_sensitive_text, redact_sensitive_text_checked,
+};
 
 const DIAGNOSTIC_FILE: &str = "nickel-diagnostic.json";
 const FAILURE_FILE: &str = "nickel-launch-failure.txt";
@@ -177,6 +179,41 @@ fn sanitized_copy(source: &Path, destination: &Path) -> Result<(), String> {
     if expected > MAX_FILE_BYTES {
         return Err("日志超过完整报告配额".into());
     }
+    // Keep one bounded source document until field boundaries are known. Flushing
+    // at newlines loses the sensitive-key context of pretty-printed collections.
+    let mut reader = BufReader::new(file);
+    let mut document = Vec::new();
+    let mut line_bytes = 0;
+    loop {
+        let buffer = reader.fill_buf().map_err(|_| "无法读取日志内容")?;
+        if buffer.is_empty() {
+            break;
+        }
+        let count = buffer
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(buffer.len(), |index| index + 1);
+        line_bytes += count;
+        if line_bytes > MAX_LINE_BYTES {
+            return Err("日志单行过长，无法安全生成完整报告".into());
+        }
+        if document.len() as u64 + count as u64 > MAX_FILE_BYTES {
+            return Err("日志在导出时持续增长，请等待游戏退出后重试".into());
+        }
+        if buffer[count - 1] == b'\n' {
+            line_bytes = 0;
+        }
+        document.extend_from_slice(&buffer[..count]);
+        reader.consume(count);
+    }
+    if document.len() as u64 != expected {
+        return Err("日志在导出期间发生变化，请等待游戏退出后重试".into());
+    }
+    crate::instances::reject_links(source)?;
+    if fs::metadata(source).map_err(|_| "日志已不可读取")?.len() != expected {
+        return Err("日志在导出期间发生变化，请重试".into());
+    }
+    let sanitized = redact_sensitive_text_checked(&String::from_utf8_lossy(&document))?;
     fs::create_dir_all(destination.parent().ok_or("报告文件缺少目录")?)
         .map_err(|_| "无法创建报告临时目录")?;
     let mut output = fs::OpenOptions::new()
@@ -184,47 +221,9 @@ fn sanitized_copy(source: &Path, destination: &Path) -> Result<(), String> {
         .create_new(true)
         .open(destination)
         .map_err(|_| "无法写入报告临时文件")?;
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    let mut read = 0_u64;
-    loop {
-        let buffer = reader.fill_buf().map_err(|_| "无法读取日志内容")?;
-        if buffer.is_empty() {
-            if !line.is_empty() {
-                output
-                    .write_all(redact_sensitive_text(&String::from_utf8_lossy(&line)).as_bytes())
-                    .map_err(|_| "无法写入完整报告")?;
-            }
-            break;
-        }
-        let count = buffer
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .map_or(buffer.len(), |index| index + 1);
-        let ended = buffer[count - 1] == b'\n';
-        if line.len() + count > MAX_LINE_BYTES {
-            return Err("日志单行过长，无法安全生成完整报告".into());
-        }
-        line.extend_from_slice(&buffer[..count]);
-        reader.consume(count);
-        read += count as u64;
-        if read > MAX_FILE_BYTES {
-            return Err("日志在导出时持续增长，请等待游戏退出后重试".into());
-        }
-        if ended {
-            output
-                .write_all(redact_sensitive_text(&String::from_utf8_lossy(&line)).as_bytes())
-                .map_err(|_| "无法写入完整报告")?;
-            line.clear();
-        }
-    }
-    if read != expected {
-        return Err("日志在导出期间发生变化，请等待游戏退出后重试".into());
-    }
-    crate::instances::reject_links(source)?;
-    if fs::metadata(source).map_err(|_| "日志已不可读取")?.len() != expected {
-        return Err("日志在导出期间发生变化，请重试".into());
-    }
+    output
+        .write_all(sanitized.as_bytes())
+        .map_err(|_| "无法写入完整报告")?;
     output
         .sync_all()
         .map_err(|_| "错误报告未能完整写入".to_owned())
@@ -274,7 +273,7 @@ fn export_report(
     };
     let index = serde_json::to_vec_pretty(&manifest).map_err(|_| "无法生成错误报告清单")?;
     let notice = "Nickel 完整错误报告\n\n寻求帮助时，请发送此 ZIP 文件，不要只发送崩溃弹窗截图，也不要只挑选其中一份日志。\n报告包含现有完整启动日志、游戏日志及崩溃报告；敏感字段已自动脱敏。未收集账号配置、密钥文件、世界存档或资源包。\n发送前仍建议检查日志中由 Mod 自行写入的个人内容。\n";
-    let failure = redact_sensitive_text(failure);
+    let failure = redact_sensitive_text_checked(failure)?;
     let limits = ArchiveLimits {
         max_entries: MAX_FILES + 3,
         max_entry_bytes: MAX_FILE_BYTES,
@@ -452,6 +451,136 @@ mod tests {
             assert_eq!(value, expected, "{relative}");
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn report_zip_masks_nested_escaped_and_multiline_collections_without_losing_neighbors() {
+        let root = std::env::temp_dir().join(format!(
+            "nickel-report-collections-{}",
+            crate::store::random_token()
+        ));
+        let root = TemporaryDirectory(root);
+        fs::create_dir_all(root.0.join("logs")).unwrap();
+        fs::create_dir_all(root.0.join("crash-reports")).unwrap();
+        let files = [
+            "logs/latest.log",
+            "logs/debug.log",
+            "crash-reports/crash-collections.txt",
+        ];
+        let cases = [
+            (r#"{"password":["zip-secret"],"next":"visible"}"#.to_owned(), true),
+            (r#"{"apiKey":{"value":[{"nested":"zip-secret"}]},"next":"visible"}"#.to_owned(), true),
+            (r#"{"accessToken":["zip-secret"],"next":"visible"}"#.to_owned(), true),
+            (r#"{"password":["zip-secret\"}]\\tail", {"password":["zip-secret"]}],"next":"visible"}"#.to_owned(), true),
+            ("{\r\n\"password\"\r\n:\r\n[\r\n{\"v\":\"zip-secret\"}\r\n],\r\n\"next\":\"visible\"\r\n}".to_owned(), true),
+            (format!("{{\"password\":[{}\"zip-secret\"],\"next\":\"visible\"}}", " \n".repeat(5000)), true),
+            (r#"{"password":[],"next":"visible"}"#.to_owned(), true),
+            (r#"{"password":{"primary":[null,false,"placeholder","${PASSWORD}"]},"next":"visible"}"#.to_owned(), true),
+            ("password = [/* ] } */ 'zip-secret', {value: `zip-secret\\`}]`} ]\nnext=visible".to_owned(), false),
+            ("password = [# ] }\n'zip-secret']\nnext=visible".to_owned(), false),
+        ];
+        for (index, (raw, json)) in cases.iter().enumerate() {
+            for relative in files {
+                fs::write(root.0.join(relative), raw).unwrap();
+            }
+            let target = root.0.join(format!("collections-{index}.zip"));
+            assert!(export_report(&root.0, &target, raw).unwrap().complete);
+            for relative in files.into_iter().chain(["failure.txt"]) {
+                let bytes =
+                    read_zip_entry(&target, relative, MAX_FILE_BYTES, &CancellationToken::new())
+                        .unwrap();
+                let redacted = String::from_utf8(bytes).unwrap();
+                assert!(
+                    !redacted.contains("zip-secret"),
+                    "{index}: {relative}: {redacted}"
+                );
+                assert!(redacted.contains("visible"), "{index}: {redacted}");
+                assert_eq!(redact_sensitive_text(&redacted), redacted);
+                if *json {
+                    let value: serde_json::Value = serde_json::from_str(&redacted).unwrap();
+                    assert_eq!(value["next"], "visible");
+                    let key = if raw.contains("\"apiKey\"") {
+                        "apiKey"
+                    } else if raw.contains("\"accessToken\"") {
+                        "accessToken"
+                    } else {
+                        "password"
+                    };
+                    assert_eq!(value[key], "***");
+                }
+            }
+            if let Some(evidence) = std::env::var_os("NICKEL_REPORT_TEST_OUTPUT") {
+                let target_copy = PathBuf::from(evidence).join(format!("collections-{index}.zip"));
+                fs::create_dir_all(target_copy.parent().unwrap()).unwrap();
+                assert!(!target_copy.exists());
+                fs::copy(&target, target_copy).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_or_over_budget_collections_never_publish_a_report_zip() {
+        let root = TemporaryDirectory(std::env::temp_dir().join(format!(
+            "nickel-report-reject-{}",
+            crate::store::random_token()
+        )));
+        fs::create_dir_all(root.0.join("logs")).unwrap();
+        for (index, raw) in [
+            "password=[\n'zip-secret'".to_owned(),
+            "password=[{'value':'zip-secret']}]".to_owned(),
+            "password=['zip-secret\"]".to_owned(),
+            "password=[/* zip-secret */".to_owned(),
+            format!(
+                "password={}\"zip-secret\"{}",
+                "[".repeat(65),
+                "]".repeat(65)
+            ),
+            format!("password=[{}\"zip-secret\"]", " \n".repeat(512 * 1024)),
+            format!("password=[\"zip-secret{}\"]", "x".repeat(MAX_LINE_BYTES)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            fs::write(root.0.join("logs/latest.log"), raw).unwrap();
+            let target = root.0.join(format!("rejected-{index}.zip"));
+            let error = export_report(&root.0, &target, "test").unwrap_err();
+            assert!(!error.contains("zip-secret"));
+            assert!(!target.exists(), "{index}");
+            assert!(!redact_sensitive_text(raw).contains("zip-secret"));
+        }
+        fs::write(root.0.join("logs/latest.log"), "visible diagnostic").unwrap();
+        let target = root.0.join("rejected-failure.zip");
+        assert!(export_report(&root.0, &target, "password=[\n'zip-secret'").is_err());
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn pre_redacted_collection_fragments_cannot_hide_unsafe_report_continuations() {
+        let root = TemporaryDirectory(std::env::temp_dir().join(format!(
+            "nickel-report-fragments-{}",
+            crate::store::random_token()
+        )));
+        let store = crate::launch_log_store::LaunchLogStore::instance(&root.0);
+        for line in [
+            "{",
+            "\"password\": [",
+            "\"zip-secret\"",
+            "],",
+            "\"next\": \"visible\"",
+            "}",
+        ] {
+            // Launch events are redacted before they reach the log store.
+            store.append_text(&redact_sensitive_text(line)).unwrap();
+        }
+        let stored = fs::read_to_string(store.log_path()).unwrap();
+        assert!(stored.contains("zip-secret"));
+        let target = root.0.join("rejected-fragments.zip");
+        let error = export_report(&root.0, &target, "test").unwrap_err();
+        assert!(!error.contains("zip-secret"));
+        assert!(!target.exists());
+        let redacted = redact_sensitive_text(&stored);
+        assert!(!redacted.contains("zip-secret"));
+        assert_eq!(redact_sensitive_text(&redacted), redacted);
     }
 
     #[test]

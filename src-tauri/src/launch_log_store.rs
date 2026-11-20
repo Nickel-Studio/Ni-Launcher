@@ -43,6 +43,7 @@ pub const MAX_APPEND_BYTES: usize = 512 * 1024;
 const MIN_LOG_BYTES: u64 = 1024;
 const TRUNCATION_MARKER: &str = "[日志片段已截断]\n";
 const REDACTION_MASK: &str = "***";
+const REDACTION_FAILURE: &str = "[日志含无法安全脱敏的敏感字段]";
 
 static LOG_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -595,6 +596,7 @@ const FULL_KEYS: &[&str] = &[
 enum MaskKind {
     Full,
     Token,
+    Collection,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -612,78 +614,80 @@ struct RedactionSpan {
 ///
 /// 返回值仍是可读日志，键名、路径层级和错误信息都会保留。
 pub fn redact_sensitive_text(text: &str) -> String {
-    if text.is_empty() {
-        return String::new();
+    redact_sensitive_text_checked(text).unwrap_or_else(|_| REDACTION_FAILURE.into())
+}
+
+const MAX_REDACTION_SPANS: usize = 262_144;
+const MAX_COLLECTION_BYTES: usize = 1024 * 1024;
+const MAX_COLLECTION_DEPTH: usize = 64;
+
+/// Complete reports must fail rather than silently dropping an unparseable field.
+/// Callers supply a size-bounded document, not independent lines of a collection.
+pub(crate) fn redact_sensitive_text_checked(text: &str) -> Result<String, String> {
+    // Line-oriented callers may already have replaced a collection's opening
+    // fragment. Its continuation cannot be identified safely without that key.
+    if text.contains(REDACTION_FAILURE) {
+        return Err("日志包含先前无法安全脱敏的片段，无法生成完整报告".into());
     }
     let mut spans = Vec::new();
-    collect_key_value_spans(text, &mut spans);
-    collect_user_path_spans(text, &mut spans);
-    collect_invite_path_spans(text, &mut spans);
-    collect_url_userinfo_spans(text, &mut spans);
-    apply_redaction_spans(text, spans)
+    collect_key_value_spans(text, &mut spans)?;
+    collect_user_path_spans(text, &mut spans)?;
+    collect_invite_path_spans(text, &mut spans)?;
+    collect_url_userinfo_spans(text, &mut spans)?;
+    Ok(apply_redaction_spans(text, spans))
 }
 
-fn collect_key_value_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
-    for key in TOKEN_KEYS {
-        let authorization = key.eq_ignore_ascii_case("authorization");
-        let kind = if authorization {
-            MaskKind::Full
-        } else {
-            MaskKind::Token
-        };
-        collect_key_spans(
-            text,
-            key,
-            kind,
-            !key.eq_ignore_ascii_case("token"),
-            authorization,
-            spans,
-        );
+fn push_redaction_span(spans: &mut Vec<RedactionSpan>, span: RedactionSpan) -> Result<(), String> {
+    if spans.len() >= MAX_REDACTION_SPANS {
+        return Err("日志敏感字段数量超过安全处理上限".into());
     }
-    for key in FULL_KEYS {
-        collect_key_spans(text, key, MaskKind::Full, false, false, spans);
-    }
+    spans.push(span);
+    Ok(())
 }
 
-fn collect_key_spans(
-    text: &str,
-    key: &str,
-    kind: MaskKind,
-    allow_short_implicit: bool,
-    authorization: bool,
-    spans: &mut Vec<RedactionSpan>,
-) {
-    let mut from = 0;
-    while let Some(position) = find_key(text, key, from) {
-        if let Some((start, end)) = parse_key_value(
-            text,
-            position + key.len(),
-            kind,
-            allow_short_implicit,
-            authorization,
-        ) {
-            spans.push(RedactionSpan { start, end, kind });
-        }
-        from = position + key.len().max(1);
-    }
-}
-
-fn find_key(text: &str, key: &str, from: usize) -> Option<usize> {
+fn collect_key_value_spans(text: &str, spans: &mut Vec<RedactionSpan>) -> Result<(), String> {
     let bytes = text.as_bytes();
-    let needle = key.as_bytes();
-    if needle.is_empty() || from >= bytes.len() || bytes.len() < needle.len() {
-        return None;
-    }
-    let mut index = from;
-    while index + needle.len() <= bytes.len() {
-        if bytes[index..index + needle.len()].eq_ignore_ascii_case(needle)
-            && key_boundary(bytes, index, needle.len())
-        {
-            return Some(index);
+    let mut index = 0;
+    while index < bytes.len() {
+        if index > 0 && is_key_byte(bytes[index - 1]) {
+            index += 1;
+            continue;
         }
-        index += 1;
+        let matched = TOKEN_KEYS
+            .iter()
+            .map(|key| (*key, true))
+            .chain(FULL_KEYS.iter().map(|key| (*key, false)))
+            .find(|(key, _)| {
+                bytes
+                    .get(index..index + key.len())
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(key.as_bytes()))
+                    && key_boundary(bytes, index, key.len())
+            });
+        let Some((key, token)) = matched else {
+            index += 1;
+            continue;
+        };
+        let authorization = key.eq_ignore_ascii_case("authorization");
+        let kind = if token && !authorization {
+            MaskKind::Token
+        } else {
+            MaskKind::Full
+        };
+        index += key.len();
+        if let Some(span) = parse_key_value(
+            text,
+            index,
+            kind,
+            token && !key.eq_ignore_ascii_case("token"),
+            authorization,
+        )? {
+            // Scan in source order so keys inside a protected collection/string
+            // cannot truncate it or reinterpret literal contents as another field.
+            index = span.end;
+            push_redaction_span(spans, span)?;
+        }
     }
-    None
+    Ok(())
 }
 
 fn key_boundary(bytes: &[u8], start: usize, length: usize) -> bool {
@@ -703,74 +707,130 @@ fn parse_key_value(
     kind: MaskKind,
     allow_short_implicit: bool,
     authorization: bool,
-) -> Option<(usize, usize)> {
+) -> Result<Option<RedactionSpan>, String> {
     let bytes = text.as_bytes();
     let mut index = skip_spaces(text, after_key);
-
     let mut quote = None;
-    if let Some(byte) = bytes.get(index).copied() {
-        if byte == b'"' || byte == b'\'' {
-            let after_quote = skip_spaces(text, index + 1);
-            if matches!(bytes.get(after_quote), Some(b':') | Some(b'=')) {
-                index = after_quote;
-            } else {
-                // accessToken 后直接跟引号时，引号开始值而非包围键。
-                index += 1;
-                quote = Some(byte);
-            }
+    if let Some(byte @ (b'"' | b'\'')) = bytes.get(index).copied() {
+        let after_quote = skip_field_whitespace(text, index + 1);
+        if matches!(bytes.get(after_quote), Some(b':' | b'=')) {
+            index = after_quote;
+        } else {
+            index += 1;
+            quote = Some(byte);
         }
     }
-
-    let had_separator = match bytes.get(index).copied() {
-        Some(b':') | Some(b'=') => {
-            index = skip_spaces(text, index + 1);
-            true
-        }
-        _ => false,
-    };
-
+    let had_separator = matches!(bytes.get(index), Some(b':' | b'='));
+    if had_separator {
+        index = skip_field_whitespace(text, index + 1);
+    }
     if !had_separator && kind == MaskKind::Full && !allow_short_implicit {
-        return None;
+        return Ok(None);
     }
-
+    if quote.is_none() && matches!(bytes.get(index), Some(b'[' | b'{')) {
+        let end = scan_collection_end(text, index)?;
+        return Ok(Some(RedactionSpan {
+            start: index,
+            end,
+            kind: MaskKind::Collection,
+        }));
+    }
     if quote.is_none() {
-        if let Some(byte) = bytes.get(index).copied() {
-            if byte == b'"' || byte == b'\'' || byte == b'`' {
-                index += 1;
-                quote = Some(byte);
-            }
+        if let Some(byte @ (b'"' | b'\'' | b'`')) = bytes.get(index).copied() {
+            index += 1;
+            quote = Some(byte);
         }
     }
     index = skip_spaces(text, index);
-
     let mut bearer_value = false;
     if authorization && starts_with_bearer(&bytes[index..]) {
-        index += "bearer".len();
-        if matches!(bytes.get(index), Some(byte) if byte.is_ascii_whitespace()) {
-            index = skip_spaces(text, index + 1);
-        }
+        index = skip_spaces(text, index + "bearer".len());
         bearer_value = true;
     }
-
     let start = index;
     let end = if authorization && !bearer_value {
-        // Basic / Digest 等认证头没有统一的 token 边界，整行打码更安全。
         scan_line_end(text, start)
     } else if let Some(quote) = quote {
         scan_quoted_value_end(text, start, quote)
     } else {
         scan_value_end(text, start)
     };
-    if end <= start {
-        return None;
+    if end <= start
+        || (!had_separator && quote.is_none() && !allow_short_implicit && end - start < 8)
+    {
+        return Ok(None);
     }
+    Ok(Some(RedactionSpan { start, end, kind }))
+}
 
-    // 无分隔符时只接受较长的 token，避免把 `token is invalid` 中的 `is` 打码。
-    if !had_separator && quote.is_none() && !allow_short_implicit && end - start < 8 {
-        return None;
+fn skip_field_whitespace(text: &str, mut index: usize) -> usize {
+    while text
+        .as_bytes()
+        .get(index)
+        .is_some_and(u8::is_ascii_whitespace)
+    {
+        index += 1;
     }
+    index
+}
 
-    Some((start, end))
+fn scan_collection_end(text: &str, start: usize) -> Result<usize, String> {
+    // Logs may use JSON, flow YAML or Java-style maps. We only need the complete
+    // value boundary: mask the entire collection, never interpret/evaluate it.
+    let bytes = text.as_bytes();
+    let mut stack = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut index = start;
+    while let Some(&byte) = bytes.get(index) {
+        if index - start >= MAX_COLLECTION_BYTES {
+            return Err("日志敏感集合超过安全处理大小".into());
+        }
+        if line_comment {
+            line_comment = !matches!(byte, b'\n' | b'\r');
+        } else if block_comment {
+            if bytes[index..].starts_with(b"*/") {
+                block_comment = false;
+                index += 1;
+            }
+        } else if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == delimiter {
+                quote = None;
+            }
+        } else if bytes[index..].starts_with(b"//") || byte == b'#' {
+            line_comment = true;
+        } else if bytes[index..].starts_with(b"/*") {
+            block_comment = true;
+            index += 1;
+        } else {
+            match byte {
+                b'"' | b'\'' | b'`' => quote = Some(byte),
+                b'[' | b'{' => {
+                    if stack.len() >= MAX_COLLECTION_DEPTH {
+                        return Err("日志敏感集合嵌套超过安全处理深度".into());
+                    }
+                    stack.push(if byte == b'[' { b']' } else { b'}' });
+                }
+                b']' | b'}' => {
+                    if stack.pop() != Some(byte) {
+                        return Err("日志敏感集合括号不匹配，无法安全生成完整报告".into());
+                    }
+                    if stack.is_empty() {
+                        return Ok(index + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    Err("日志敏感集合未闭合，无法安全生成完整报告".into())
 }
 
 fn scan_line_end(text: &str, start: usize) -> usize {
@@ -828,7 +888,7 @@ fn scan_quoted_value_end(text: &str, start: usize, quote: u8) -> usize {
     index
 }
 
-fn collect_user_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
+fn collect_user_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) -> Result<(), String> {
     const MARKERS: &[&str] = &[
         "\\\\Users\\\\",
         "\\\\Documents and Settings\\\\",
@@ -843,15 +903,19 @@ fn collect_user_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
             let start = position + marker.len();
             let end = scan_path_segment_end(text, start);
             if end > start && &text[start..end] != REDACTION_MASK {
-                spans.push(RedactionSpan {
-                    start,
-                    end,
-                    kind: MaskKind::Full,
-                });
+                push_redaction_span(
+                    spans,
+                    RedactionSpan {
+                        start,
+                        end,
+                        kind: MaskKind::Full,
+                    },
+                )?;
             }
-            from = position + marker.len().max(1);
+            from = end.max(position + marker.len());
         }
     }
+    Ok(())
 }
 
 fn scan_path_segment_end(text: &str, start: usize) -> usize {
@@ -866,22 +930,26 @@ fn scan_path_segment_end(text: &str, start: usize) -> usize {
     index
 }
 
-fn collect_invite_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
+fn collect_invite_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) -> Result<(), String> {
     for marker in ["/invite/", "/join/"] {
         let mut from = 0;
         while let Some(position) = find_ascii_insensitive(text, marker, from) {
             let start = position + marker.len();
             let end = scan_invite_segment_end(text, start);
             if end > start && &text[start..end] != REDACTION_MASK {
-                spans.push(RedactionSpan {
-                    start,
-                    end,
-                    kind: MaskKind::Full,
-                });
+                push_redaction_span(
+                    spans,
+                    RedactionSpan {
+                        start,
+                        end,
+                        kind: MaskKind::Full,
+                    },
+                )?;
             }
-            from = position + marker.len().max(1);
+            from = end.max(position + marker.len());
         }
     }
+    Ok(())
 }
 
 fn scan_invite_segment_end(text: &str, start: usize) -> usize {
@@ -901,7 +969,7 @@ fn scan_invite_segment_end(text: &str, start: usize) -> usize {
     index
 }
 
-fn collect_url_userinfo_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
+fn collect_url_userinfo_spans(text: &str, spans: &mut Vec<RedactionSpan>) -> Result<(), String> {
     let mut from = 0;
     while let Some(position) = find_ascii_insensitive(text, "://", from) {
         let authority_start = position + 3;
@@ -909,15 +977,19 @@ fn collect_url_userinfo_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
         if let Some(userinfo_end) = text[authority_start..authority_end].rfind('@') {
             let at = authority_start + userinfo_end;
             if text[authority_start..at].contains(':') {
-                spans.push(RedactionSpan {
-                    start: authority_start,
-                    end: at,
-                    kind: MaskKind::Full,
-                });
+                push_redaction_span(
+                    spans,
+                    RedactionSpan {
+                        start: authority_start,
+                        end: at,
+                        kind: MaskKind::Full,
+                    },
+                )?;
             }
         }
-        from = authority_start.max(position + 1);
+        from = authority_end.max(authority_start);
     }
+    Ok(())
 }
 
 fn scan_authority_end(text: &str, start: usize) -> usize {
@@ -987,7 +1059,9 @@ fn apply_redaction_spans(text: &str, mut spans: Vec<RedactionSpan>) -> String {
 }
 
 fn merge_mask_kind(left: MaskKind, right: MaskKind) -> MaskKind {
-    if left == MaskKind::Full || right == MaskKind::Full {
+    if left == MaskKind::Collection || right == MaskKind::Collection {
+        MaskKind::Collection
+    } else if left == MaskKind::Full || right == MaskKind::Full {
         MaskKind::Full
     } else {
         MaskKind::Token
@@ -995,6 +1069,10 @@ fn merge_mask_kind(left: MaskKind, right: MaskKind) -> MaskKind {
 }
 
 fn mask_value(value: &str, kind: MaskKind) -> String {
+    if kind == MaskKind::Collection {
+        // A string replacement is valid in JSON/YAML and leaks no token edges.
+        return format!("\"{REDACTION_MASK}\"");
+    }
     if kind == MaskKind::Full {
         return REDACTION_MASK.to_string();
     }
@@ -1012,4 +1090,62 @@ fn mask_value(value: &str, kind: MaskKind) -> String {
         .rev()
         .collect();
     format!("{first}{REDACTION_MASK}{last}")
+}
+
+#[cfg(test)]
+mod collection_redaction_tests {
+    use super::*;
+
+    #[test]
+    fn collection_limits_are_inclusive_and_fail_closed() {
+        let within = format!(
+            "password={}\"bounded-secret\"{} next=visible",
+            "[".repeat(MAX_COLLECTION_DEPTH),
+            "]".repeat(MAX_COLLECTION_DEPTH)
+        );
+        assert_eq!(
+            redact_sensitive_text_checked(&within).unwrap(),
+            "password=\"***\" next=visible"
+        );
+        let oversized_depth = format!(
+            "password={}{}",
+            "[".repeat(MAX_COLLECTION_DEPTH + 1),
+            "]".repeat(MAX_COLLECTION_DEPTH + 1)
+        );
+        assert!(redact_sensitive_text_checked(&oversized_depth).is_err());
+        let exact_size = format!(
+            "password=[{}] next=visible",
+            " ".repeat(MAX_COLLECTION_BYTES - 2)
+        );
+        assert_eq!(
+            redact_sensitive_text_checked(&exact_size).unwrap(),
+            "password=\"***\" next=visible"
+        );
+        let over_size = format!("password=[{}]", " ".repeat(MAX_COLLECTION_BYTES - 1));
+        assert!(redact_sensitive_text_checked(&over_size).is_err());
+        let exact_spans = "password=x\n".repeat(MAX_REDACTION_SPANS);
+        assert_eq!(
+            redact_sensitive_text_checked(&exact_spans).unwrap(),
+            "password=***\n".repeat(MAX_REDACTION_SPANS)
+        );
+        let too_many = format!("{exact_spans}password=x\n");
+        assert!(redact_sensitive_text_checked(&too_many).is_err());
+        assert!(!redact_sensitive_text(&too_many).contains("password=x"));
+    }
+
+    #[test]
+    fn collection_contents_never_restart_key_scanning() {
+        for raw in [
+            r#"{"password":["apiKey=[not syntax", "bounded-secret"],"next":"visible"}"#,
+            r#"{"password":[{"authorization":"Basic bounded-secret"}],"next":"visible"}"#,
+            r#"{"apiKey":["C:\\Users\\PrivateName\\game", "bounded-secret"],"next":"visible"}"#,
+            r#"{"password":["https://user:bounded-secret@example.com"],"next":"visible"}"#,
+        ] {
+            let redacted = redact_sensitive_text_checked(raw).unwrap();
+            assert!(!redacted.contains("bounded-secret"));
+            let value: serde_json::Value = serde_json::from_str(&redacted).unwrap();
+            assert_eq!(value["next"], "visible");
+            assert_eq!(redact_sensitive_text(&redacted), redacted);
+        }
+    }
 }
