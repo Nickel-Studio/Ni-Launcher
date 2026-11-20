@@ -5,7 +5,6 @@ import aronaAvatar from "../assets/credits/itzarona.png";
 import planaAvatar from "../assets/credits/itzplana.png";
 import pclAvatar from "../assets/credits/pcl.png";
 import pclCeAvatar from "../assets/credits/pcl-ce.png";
-import linuxDoAvatar from "../assets/credits/linuxdo.png";
 import shittimChestsAvatar from "../assets/credits/shittimchests.png";
 import {
   Button,
@@ -46,7 +45,6 @@ const CREDIT_AVATARS: Readonly<Record<string, string>> = {
   itzplana: planaAvatar,
   pcl: pclAvatar,
   "pcl-ce": pclCeAvatar,
-  linuxdo: linuxDoAvatar,
   shittimchests: shittimChestsAvatar,
 };
 

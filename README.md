@@ -127,15 +127,12 @@ pnpm tauri dev
 
 ## 特别鸣谢
 
-**龙猫腾跃**
-
 感谢以下项目与社区带来的灵感、交流和支持：
 
 |                                                                                             | 项目与社区                                               |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | <img src="src/assets/credits/pcl.png" width="36" height="36" alt="PCL">                     | [PCL 启动器](https://github.com/Meloong-Git/PCL)         |
 | <img src="src/assets/credits/pcl-ce.png" width="36" height="36" alt="PCL-CE">               | [PCL-CE 启动器](https://github.com/PCL-Community/PCL-CE) |
-| <img src="src/assets/credits/linuxdo.png" width="36" height="36" alt="LinuxDO">             | [LinuxDO 社区](https://linux.do)                         |
 | <img src="src/assets/credits/shittimchests.png" width="36" height="36" alt="ShittimChests"> | [ShittimChests](https://github.com/ShittimChests)        |
 
 ## 许可与资源

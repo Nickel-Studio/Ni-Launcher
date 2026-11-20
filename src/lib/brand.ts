@@ -32,7 +32,6 @@ export const DEVELOPERS: readonly BrandCredit[] = [
 ];
 
 export const SPECIAL_THANKS: readonly BrandCredit[] = [
-  { id: "longmao", name: "龙猫腾跃" },
   {
     id: "pcl",
     name: "PCL 启动器",
@@ -44,12 +43,6 @@ export const SPECIAL_THANKS: readonly BrandCredit[] = [
     name: "PCL-CE 启动器",
     url: "https://github.com/PCL-Community/PCL-CE",
     linkLabel: "项目仓库",
-  },
-  {
-    id: "linuxdo",
-    name: "LinuxDO 社区",
-    url: "https://linux.do",
-    linkLabel: "社区主页",
   },
   {
     id: "shittimchests",

@@ -67,11 +67,13 @@ async function run(): Promise<void> {
   check("完整名称", page.querySelector(".mo-about__name")?.textContent === "Nickel");
   check("标题栏名称", document.querySelector(".ni-brand__text")?.textContent === "Nickel");
   check("关于页无技术栈", !/Tauri|React|TypeScript|Rust/.test(page.textContent ?? ""));
-  check("开发者与鸣谢", ["ItzArona", "ItzPlana", "龙猫腾跃", "PCL 启动器", "PCL-CE", "LinuxDO", "ShittimChests"].every((name) => page.textContent?.includes(name)));
-  check("文字鸣谢不含按钮", !page.querySelector('[aria-label="龙猫腾跃"] button'));
+  check("开发者与鸣谢", ["ItzArona", "ItzPlana", "PCL 启动器", "PCL-CE", "ShittimChests"].every((name) => page.textContent?.includes(name)));
+  const thanks = page.querySelector('[aria-labelledby="mo-thanks-title"]');
+  const creditNames = [...(thanks?.querySelectorAll(".mo-credit") ?? [])].map((card) => card.getAttribute("aria-label"));
+  check("鸣谢项目准确", JSON.stringify(creditNames) === JSON.stringify(["PCL 启动器", "PCL-CE 启动器", "ShittimChests 组织"]));
   const images = [...page.querySelectorAll<HTMLImageElement>("img")];
   await waitFor(() => images.every((image) => image.complete && image.naturalWidth > 0));
-  check("本地徽标与头像", images.length === 7 && images.every((image) => new URL(image.src).origin === location.origin));
+  check("本地徽标与头像", images.length === 6 && images.every((image) => new URL(image.src).origin === location.origin));
   for (const url of [PROJECT_URL, CODE_LICENSE_URL, ASSETS_LICENSE_URL]) {
     page.querySelector<HTMLButtonElement>(`[data-brand-url="${url}"]`)!.click();
     await waitFor(() => opened.includes(url));

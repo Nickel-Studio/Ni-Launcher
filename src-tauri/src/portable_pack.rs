@@ -43,10 +43,6 @@ const LAUNCHER_LICENSE_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../LICENSES/dependencies-NOTICES.txt"),
     ),
     (
-        "LICENSES/PCL-LICENCE.txt",
-        include_bytes!("../../LICENSES/PCL-LICENCE.txt"),
-    ),
-    (
         "LICENSES/OFL-1.1.txt",
         include_bytes!("../../LICENSES/OFL-1.1.txt"),
     ),
@@ -940,7 +936,6 @@ mod tests {
             "LICENSE-ASSETS",
             "NOTICE.md",
             "LICENSES/dependencies-NOTICES.txt",
-            "LICENSES/PCL-LICENCE.txt",
             "LICENSES/OFL-1.1.txt",
             "LICENSES/Apache-2.0.txt",
             "LICENSES/java-launch-wrapper-LICENCE.txt",
