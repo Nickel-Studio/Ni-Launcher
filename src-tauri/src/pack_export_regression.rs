@@ -224,11 +224,13 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
             .count(),
         1
     );
-    assert!(instance
-        .preview
-        .files
-        .iter()
-        .all(|entry| entry.kind == ExportEntryKind::Directory && entry.size_bytes.is_none()));
+    assert!(
+        instance
+            .preview
+            .files
+            .iter()
+            .all(|entry| entry.kind == ExportEntryKind::Directory && entry.size_bytes.is_none())
+    );
     assert_eq!(
         instance
             .preview
@@ -256,9 +258,11 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
         &CancellationToken::new(),
     )
     .unwrap();
-    assert!(default_files
-        .iter()
-        .all(|file| !file.path.starts_with("saves/")));
+    assert!(
+        default_files
+            .iter()
+            .all(|file| !file.path.starts_with("saves/"))
+    );
     // The former 4803 count omitted two world-owned files; full selection is 4805.
     for format in [ExportFormat::Mrpack, ExportFormat::Portable] {
         let name = if format == ExportFormat::Mrpack {
@@ -284,12 +288,16 @@ fn thousand_file_directories_have_constant_preview_and_complete_staged_payloads(
         .unwrap();
         assert_eq!(copied, 4805);
         assert_eq!(snapshot.files.len(), 4805);
-        assert!(snapshot
-            .files
-            .contains(&"saves/Selected/playerdata/player.dat".into()));
-        assert!(snapshot
-            .files
-            .contains(&"saves/Selected/stats/player.json".into()));
+        assert!(
+            snapshot
+                .files
+                .contains(&"saves/Selected/playerdata/player.dat".into())
+        );
+        assert!(
+            snapshot
+                .files
+                .contains(&"saves/Selected/stats/player.json".into())
+        );
         assert!(!snapshot.files.iter().any(|path| path.contains("Other")
             || path.starts_with("journeymap/")
             || path.contains("jei/world")
@@ -477,24 +485,28 @@ fn directory_tokens_cannot_escape_scopes() {
         assert!(content::parse_selection(value).is_err(), "{value}");
     }
     let preview = fixture.instance().preview;
-    assert!(content::selected_files(
-        &fixture.0,
-        &preview.files,
-        &["@dir/saves/saves/Other".into()],
-        &cancel
-    )
-    .is_err());
+    assert!(
+        content::selected_files(
+            &fixture.0,
+            &preview.files,
+            &["@dir/saves/saves/Other".into()],
+            &cancel
+        )
+        .is_err()
+    );
     assert!(
         content::selected_files(&fixture.0, &preview.files, &["screenshots".into()], &cancel)
             .is_err()
     );
-    assert!(content::selected_files(
-        &fixture.0,
-        &preview.files,
-        &["screenshots/one.png".into(), "screenshots/ONE.png".into()],
-        &cancel
-    )
-    .is_err());
+    assert!(
+        content::selected_files(
+            &fixture.0,
+            &preview.files,
+            &["screenshots/one.png".into(), "screenshots/ONE.png".into()],
+            &cancel
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -800,6 +812,161 @@ fn credential_collections_are_rejected_before_either_snapshot_format() {
     }
 }
 
+fn assert_policy_archive(relative: &str, text: &str, allowed: bool) {
+    let fixture = Fixture::new();
+    fixture.put(relative, text);
+    let cancel = CancellationToken::new();
+    for (index, format) in [ExportFormat::Mrpack, ExportFormat::Portable]
+        .into_iter()
+        .enumerate()
+    {
+        let workspace = fixture.0.join(format!("policy-stage-{index}"));
+        std::fs::create_dir(&workspace).unwrap();
+        let instance = fixture.instance();
+        let selected = instance
+            .preview
+            .files
+            .iter()
+            .filter(|entry| entry.selected)
+            .map(|entry| entry.path.clone())
+            .collect();
+        let request = fixture.request(format, selected);
+        let archive = workspace.join("payload.mrpack");
+        let result = snapshot_instance(instance, &request, &workspace, &cancel, |_, _, _| {});
+        if !allowed {
+            let error = result
+                .err()
+                .unwrap_or_else(|| panic!("accepted {relative}: {text}"));
+            assert!(error.contains(relative), "{error}");
+            assert!(!error.contains("archive-secret"), "{error}");
+            assert!(!archive.exists());
+            continue;
+        }
+        let snapshot = result.unwrap_or_else(|error| panic!("{relative}: {text}: {error}"));
+        assert_eq!(snapshot.files, vec![relative.to_owned()]);
+        write_snapshot_payload(
+            &snapshot,
+            &archive,
+            manifest(&snapshot.preview, &config(&request), &[]).unwrap(),
+            &HashSet::new(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        let bytes = read_zip_entry(
+            &archive,
+            &format!("overrides/{relative}"),
+            CONFIG_MAX_BYTES,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(bytes, text.as_bytes());
+        assert!(!String::from_utf8_lossy(&bytes).contains("archive-secret"));
+        fixture.record_archive(
+            &format!("policy-{index}"),
+            &snapshot,
+            &request,
+            &archive,
+            None,
+        );
+    }
+}
+
+#[test]
+fn toml_multiline_credentials_and_legal_quote_boundaries_are_checked_in_both_formats() {
+    let mut unsafe_documents = vec![
+        "password = \"\"\"archive-secret\"\"\"".to_owned(),
+        "password = '''archive-secret'''".to_owned(),
+        "password = \"\"\"\narchive-secret\nsecond line\"\"\"".to_owned(),
+        "password = '''\narchive-secret\nsecond line'''".to_owned(),
+        "password = \"\"\"archive-\\\n  secret\"\"\"".to_owned(),
+        r#"password = """archive-\u0073ecret\"quoted\\tail""""#.to_owned(),
+        "[password]\nprimary = '''archive-secret'''".to_owned(),
+        "api_keys = [{primary = '''archive-secret'''}]".to_owned(),
+    ];
+    // Four/five quote delimiters include one/two literal quotes in the value.
+    // Check the decoded value as well as rejection, so syntax errors cannot pass.
+    for quote in ['"', '\''] {
+        for extra in 1..=2 {
+            let delimiter = quote.to_string().repeat(3 + extra);
+            let document = format!("password = {delimiter}archive-secret{delimiter}");
+            let parsed: toml::Value = toml::from_str(&document).unwrap();
+            let inner = quote.to_string().repeat(extra);
+            assert_eq!(
+                parsed["password"].as_str().unwrap(),
+                format!("{inner}archive-secret{inner}")
+            );
+            unsafe_documents.push(document);
+        }
+    }
+    for text in unsafe_documents {
+        let parsed: toml::Value = toml::from_str(&text).unwrap();
+        assert!(toml_has_credentials(&parsed, false), "{text}");
+        assert_policy_archive("config/service.toml", &text, false);
+    }
+    for text in [
+        "password = \"\"\"\"\"\"",
+        "password = ''''''",
+        "password = \"\"\"\n  \n\"\"\"",
+        "password = '''\n  \n'''",
+        "password = \"\"\"\\\n  \"\"\"",
+        "password = \"\"\"YOUR_\\\n  PASSWORD_HERE\"\"\"",
+        "password = '''${PASSWORD}'''",
+        "password = \"\"\"***\"\"\"",
+        "api_keys = [{primary = \"\"\"\"\"\"}, {primary = '''placeholder'''}]",
+        "description = \"\"\"\"password documentation\"\"\"\"\npassword = false",
+        "description = '''''password documentation'''''\npassword = ''",
+        "description = '''literal\\text\npassword = example'''\napi_keys = []",
+    ] {
+        let parsed: toml::Value = toml::from_str(text).unwrap();
+        assert!(!toml_has_credentials(&parsed, false), "{text}");
+        assert_policy_archive("config/service.toml", text, true);
+    }
+}
+
+#[test]
+fn toml_invalid_or_over_budget_documents_cannot_fall_back_to_scalar_scanning() {
+    for text in [
+        "password = \"\"\"archive-secret".to_owned(),
+        "password = '''archive-secret".to_owned(),
+        "password = \"\"\"\\qarchive-secret\"\"\"".to_owned(),
+        format!("password = {}{}", "[".repeat(100), "]".repeat(100)),
+        format!("description = '{}'", "x".repeat(CONFIG_MAX_BYTES as usize)),
+    ] {
+        assert_policy_archive("config/service.toml", &text, false);
+    }
+}
+
+#[test]
+fn literal_script_subscript_writes_reject_secrets_but_reads_and_comparisons_export() {
+    for text in [
+        r#"settings["password"] = "archive-secret";"#,
+        "settings['api_key'] = 'archive-secret';",
+        "settings[ /* key */ 'password' /* end */ ] /* write */ = 'archive-secret';",
+        "settings[\n'password'\n]\n=\n'archive-secret';",
+        r#"settings["pass\u0077ord"] = "archive-secret";"#,
+        "settings['password'] = [{value: 'archive-secret'}];",
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, false);
+    }
+    for text in [
+        "const value = settings['password'];",
+        "settings['password'] == 'example';",
+        "settings['password'] === 'example';",
+        "settings['password'] != 'example';",
+        "settings['password'] !== 'example';",
+        "const value = ok ? settings['password'] : 'example';",
+        "settings['password'] = '';",
+        "settings['password'] = '${PASSWORD}';",
+        "settings['password'] = process.env.PASSWORD;",
+        "settings['password'] = [null, {}, 'placeholder'];",
+        "// settings['password'] = 'example';\nconst passwordRequired = true;",
+        "/* settings['password'] = 'example'; */ const key = 'password';",
+    ] {
+        assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+    }
+}
+
 #[test]
 fn credential_collections_keep_empty_placeholder_and_description_values_safe() {
     for text in [
@@ -864,13 +1031,15 @@ fn symlinks_inside_selected_directories_are_rejected_at_export_time() {
             return;
         }
     }
-    assert!(content::selected_files(
-        &fixture.0,
-        &preview.files,
-        &["@dir/config/config".into()],
-        &CancellationToken::new()
-    )
-    .is_err());
+    assert!(
+        content::selected_files(
+            &fixture.0,
+            &preview.files,
+            &["@dir/config/config".into()],
+            &CancellationToken::new()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -988,11 +1157,13 @@ fn explicitly_selected_world_preserves_inventory_statistics_and_mod_data() {
     fixture.put("saves/Other/stats/player.json", b"{}");
     let instance = fixture.instance();
     assert_eq!(instance.preview.files.len(), 2);
-    assert!(instance
-        .preview
-        .files
-        .iter()
-        .all(|entry| entry.group == "saves" && !entry.selected));
+    assert!(
+        instance
+            .preview
+            .files
+            .iter()
+            .all(|entry| entry.group == "saves" && !entry.selected)
+    );
     let defaults = content::selected_files(
         &fixture.0,
         &instance.preview.files,
@@ -1020,10 +1191,12 @@ fn explicitly_selected_world_preserves_inventory_statistics_and_mod_data() {
         )
         .unwrap();
         assert_eq!(snapshot.files.len(), expected.len());
-        assert!(snapshot
-            .files
-            .iter()
-            .all(|path| path.starts_with(&format!("{world}/"))));
+        assert!(
+            snapshot
+                .files
+                .iter()
+                .all(|path| path.starts_with(&format!("{world}/")))
+        );
         for relative in expected {
             assert!(snapshot.files.contains(&format!("{world}/{relative}")));
         }
@@ -1144,9 +1317,11 @@ fn portable_zip_wraps_the_real_thousand_file_snapshot_and_preserves_world_bytes(
     let cancelled = CancellationToken::new();
     cancelled.cancel();
     let cancelled_zip = workspace.join("cancelled.zip");
-    assert!(portable
-        .write(&cancelled_zip, &cancelled, |_, _, _| {})
-        .is_err());
+    assert!(
+        portable
+            .write(&cancelled_zip, &cancelled, |_, _, _| {})
+            .is_err()
+    );
     assert!(!cancelled_zip.exists());
     fixture.record_archive(
         "portable-outer",

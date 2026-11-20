@@ -11,10 +11,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use minecraft_java_rs_core::net::transfer::{CancellationToken, TransferContext};
-use minecraft_java_rs_core::utils::archive::{write_zip_files, ArchiveLimits};
-use minecraft_java_rs_core::utils::hash::{get_file_hash_cancellable, HashAlgorithm};
+use minecraft_java_rs_core::utils::archive::{ArchiveLimits, write_zip_files};
+use minecraft_java_rs_core::utils::hash::{HashAlgorithm, get_file_hash_cancellable};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
@@ -634,7 +634,10 @@ fn credential_assignment_value(
 
 fn credential_text(text: &str, script: bool) -> bool {
     let mut offset = 0;
+    let mut after_bracket = false;
     while let Some(token) = credential_token(text, &mut offset) {
+        let indexed = after_bracket;
+        after_bracket = matches!(token, CredentialToken::Open(b'['));
         let CredentialToken::Text { value, quoted } = token else {
             continue;
         };
@@ -645,10 +648,19 @@ fn credential_text(text: &str, script: bool) -> bool {
             continue;
         }
         let mut next = offset;
-        if !matches!(
-            credential_token(text, &mut next),
-            Some(CredentialToken::Assignment)
-        ) {
+        let mut operator = credential_token(text, &mut next);
+        // Only a literal subscript followed by an assignment is a write. Reads,
+        // comparisons and computed subscripts must not become credential values.
+        if script && quoted && indexed && matches!(operator, Some(CredentialToken::Close(b']'))) {
+            operator = credential_token(text, &mut next);
+            // A ternary expression can follow a read with ':', not a write.
+            if !matches!(operator, Some(CredentialToken::Assignment))
+                || text.as_bytes().get(next.saturating_sub(1)) != Some(&b'=')
+            {
+                continue;
+            }
+        }
+        if !matches!(operator, Some(CredentialToken::Assignment)) {
             continue;
         }
         if let Some(token) = credential_token(text, &mut next) {
@@ -658,6 +670,22 @@ fn credential_text(text: &str, script: bool) -> bool {
         }
     }
     false
+}
+
+fn toml_has_credentials(value: &toml::Value, sensitive: bool) -> bool {
+    // The TOML parser enforces its depth limit; preserve key context through both
+    // tables and arrays, using the same value policy as JSON and script exports.
+    match value {
+        toml::Value::String(text) => {
+            (sensitive && credential_value(text)) || embedded_credentials(text)
+        }
+        toml::Value::Array(values) => values.iter().any(|v| toml_has_credentials(v, sensitive)),
+        toml::Value::Table(values) => values
+            .iter()
+            .any(|(key, value)| toml_has_credentials(value, sensitive || credential_key(key))),
+        toml::Value::Boolean(_) => false,
+        _ => sensitive,
+    }
 }
 
 fn json_has_credentials(value: &Value) -> bool {
@@ -713,20 +741,24 @@ fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
         return Ok(());
     }
     let text = read_policy_text(path, relative)?;
-    let script = path
+    let extension = path
         .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "js" | "ts" | "zs" | "lua"
-            )
-        });
-    // Field names and comments describe configuration; only populated credential
-    // assignments or recognizable embedded authentication material reject a pack.
-    let contains_credentials = match serde_json::from_str::<Value>(&text) {
-        Ok(value) => json_has_credentials(&value),
-        Err(_) => credential_text(&text, script),
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    // TOML quoting, escapes and multiline continuations need a real parser.
+    // Never fall back to a looser scanner after a syntax/depth failure, and do
+    // not expose parser diagnostics containing the user's configuration text.
+    let contains_credentials = if extension == "toml" {
+        let value = toml::from_str::<toml::Value>(&text)
+            .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
+        toml_has_credentials(&value, false)
+    } else {
+        let script = matches!(extension.as_str(), "js" | "ts" | "zs" | "lua");
+        match serde_json::from_str::<Value>(&text) {
+            Ok(value) => json_has_credentials(&value),
+            Err(_) => credential_text(&text, script),
+        }
     };
     if contains_credentials {
         return Err(format!(
@@ -854,6 +886,19 @@ fn policy_host_scan_text(text: &str) -> String {
     String::from_utf8(bytes).expect("masking ASCII preserves UTF-8")
 }
 
+fn portable_toml_has_host_data(value: &toml::Value, source_roots: &[&Path]) -> bool {
+    match value {
+        toml::Value::String(text) => has_host_path(text, source_roots),
+        toml::Value::Array(values) => values
+            .iter()
+            .any(|v| portable_toml_has_host_data(v, source_roots)),
+        toml::Value::Table(values) => values.iter().any(|(key, value)| {
+            has_host_path(key, source_roots) || portable_toml_has_host_data(value, source_roots)
+        }),
+        _ => false,
+    }
+}
+
 fn reject_portable_host_data(
     path: &Path,
     relative: &str,
@@ -868,9 +913,23 @@ fn reject_portable_host_data(
         .chars()
         .filter(|c| !matches!(c, '_' | '-' | ' '))
         .collect();
-    let has_host_data = match serde_json::from_str::<Value>(&text) {
-        Ok(value) => portable_json_has_host_data(&value, source_roots),
-        Err(_) => has_host_path(&policy_host_scan_text(&text), source_roots),
+    let has_host_data = if path
+        .extension()
+        .and_then(|v| v.to_str())
+        .is_some_and(|v| v.eq_ignore_ascii_case("toml"))
+    {
+        let value = toml::from_str::<toml::Value>(&text)
+            .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
+        // Decoded values catch escaped paths. The raw pass still checks comments,
+        // but a continuation backslash is not itself an absolute filesystem path.
+        let raw = text.replace("\\\r\n", "\r\n").replace("\\\n", "\n");
+        portable_toml_has_host_data(&value, source_roots)
+            || has_host_path(&policy_host_scan_text(&raw), source_roots)
+    } else {
+        match serde_json::from_str::<Value>(&text) {
+            Ok(value) => portable_json_has_host_data(&value, source_roots),
+            Err(_) => has_host_path(&policy_host_scan_text(&text), source_roots),
+        }
     };
     if has_host_data || folded.contains("prelaunchcommand") {
         return Err(format!(
@@ -1385,11 +1444,13 @@ mod tests {
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
         assert_eq!(instance.preview.name, "显示名称不等于目录");
-        assert!(instance
-            .preview
-            .files
-            .iter()
-            .all(|file| !file.path.contains("accounts")));
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| !file.path.contains("accounts"))
+        );
         assert!(
             !instance
                 .preview
@@ -1621,17 +1682,21 @@ mod tests {
         let mut files = Vec::new();
         let mut total = 0;
         collect_files(&root, &lite, &mut files, &mut total).unwrap();
-        assert!(files
-            .iter()
-            .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods"));
+        assert!(
+            files
+                .iter()
+                .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods")
+        );
         assert!(files.iter().any(|file| {
             file.path == "mods/1.12.2/legacy.litemod.old"
                 && file.group == "disabledMods"
                 && !file.selected
         }));
-        assert!(files
-            .iter()
-            .all(|file| !file.path.starts_with("mods/ignored")));
+        assert!(
+            files
+                .iter()
+                .all(|file| !file.path.starts_with("mods/ignored"))
+        );
         assert_eq!(
             content_directory(&root, "mods", "forge", "1.20.1"),
             root.join("mods")
@@ -1677,21 +1742,27 @@ mod tests {
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
-        assert!(instance
-            .preview
-            .instance_settings
-            .iter()
-            .any(|field| field == "窗口标题"));
-        assert!(instance
-            .preview
-            .instance_settings
-            .iter()
-            .any(|field| field == "内存上限"));
-        assert!(instance
-            .preview
-            .instance_settings
-            .iter()
-            .all(|field| field != "Java 路径"));
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "窗口标题")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "内存上限")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .all(|field| field != "Java 路径")
+        );
         for relative in ["XaeroWaypoints", "XaeroWorldMap"] {
             assert!(instance.preview.files.iter().any(|file| {
                 file.path == format!("@dir/maps/{relative}")
@@ -1702,11 +1773,13 @@ mod tests {
                     && file.size_bytes.is_none()
             }));
         }
-        assert!(instance
-            .preview
-            .files
-            .iter()
-            .all(|file| file.path != "nickel.settings.json"));
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| file.path != "nickel.settings.json")
+        );
         let selections: Vec<_> = instance
             .preview
             .files
@@ -1967,9 +2040,11 @@ mod tests {
         for path in &config.files {
             collect_files(&fixture.0, &fixture.0.join(path), &mut files, &mut size).unwrap();
         }
-        assert!(files
-            .iter()
-            .all(|file| file.group == "shaderOptions" && file.selected));
+        assert!(
+            files
+                .iter()
+                .all(|file| file.group == "shaderOptions" && file.selected)
+        );
         let preview = ExportPreview {
             name: config.name.clone(),
             minecraft_version: "1.20.1".into(),
