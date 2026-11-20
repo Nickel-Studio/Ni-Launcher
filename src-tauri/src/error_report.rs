@@ -812,6 +812,140 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn quoted_json_messages_are_safe_in_storage_capture_events_and_raw_latest_zip() {
+        use minecraft_java_rs_core::launcher::{events::ProcessStream, forward_process_output};
+        use tokio::io::AsyncWriteExt;
+        let mut cases = vec![
+            r#"{"message":"password=\"round03-secret\"","next":"visible"}"#.to_owned(),
+            r#"{"message":"prefix pass\u0077ord=\u0022round03-secret\u0022 suffix visible","next":"visible"}"#.to_owned(),
+        ];
+        for message in [
+            r#"prefix password="round03-secret\\tail\"more" suffix visible"#,
+            r#"prefix password="round03-secret\uD83D\uDE00" suffix visible"#,
+            r#"prefix password=["round03-secret",{"v":"round03-secret"}] suffix visible"#,
+            r#"prefix {"password":["round03-secret"],"other":"visible"} suffix visible"#,
+            r#"Unexpected token \" in JSON and password == expected"#,
+            r#"password="***" and token=abcd***wxyz"#,
+        ] {
+            cases.push(serde_json::json!({"message":message,"next":"visible"}).to_string());
+        }
+        for (index, raw) in cases.iter().enumerate() {
+            let root = TemporaryDirectory(std::env::temp_dir().join(format!(
+                "nickel-quoted-message-{}",
+                crate::store::random_token(),
+            )));
+            let store = crate::launch_log_store::LaunchLogStore::instance(&root.0);
+            let (tx, pump, capture, events) = stream_pump(store.clone());
+            let (mut writer, reader) = tokio::io::duplex(7);
+            let stdout = tokio::spawn(forward_process_output(
+                reader,
+                tx.clone(),
+                ProcessStream::Stdout,
+            ));
+            let stderr = tokio::spawn(forward_process_output(
+                &b"visible-stderr\n"[..],
+                tx.clone(),
+                ProcessStream::Stderr,
+            ));
+            let bytes = format!("{raw}\n").into_bytes();
+            let write = tokio::spawn(async move {
+                for byte in bytes {
+                    writer.write_all(&[byte]).await.unwrap();
+                }
+                writer.shutdown().await.unwrap();
+            });
+            drop(tx);
+            write.await.unwrap();
+            stdout.await.unwrap();
+            stderr.await.unwrap();
+            pump.finish().await;
+            let stored = fs::read_to_string(store.log_path()).unwrap();
+            let captured = capture.lock().unwrap().text();
+            let payload = serde_json::to_string(&*events.lock().unwrap()).unwrap();
+            for text in [&stored, &captured, &payload] {
+                assert!(
+                    !text.contains("round03-secret") && !text.contains("无法安全脱敏"),
+                    "{index}: {text}"
+                );
+                assert!(text.contains("visible-stderr") && text.contains("visible"));
+            }
+            let safe = stored.lines().find(|line| line.starts_with('{')).unwrap();
+            let value: serde_json::Value = serde_json::from_str(safe).unwrap();
+            assert_eq!(value["next"], "visible");
+            assert_eq!(
+                crate::launch_log_store::redact_sensitive_text_checked(safe).unwrap(),
+                safe
+            );
+            for event in events.lock().unwrap().iter() {
+                if let crate::FrontendEvent::Log { line } = event {
+                    if line.starts_with('{') {
+                        assert_eq!(line.trim_end(), safe);
+                    }
+                }
+            }
+            let stream_zip = root.0.join("stream.zip");
+            assert!(
+                export_report(&root.0, &stream_zip, "quoted message test")
+                    .unwrap()
+                    .complete
+            );
+            let stream_entry = read_zip_entry(
+                &stream_zip,
+                "logs/nickel-launcher.log",
+                MAX_FILE_BYTES,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert!(
+                !String::from_utf8(stream_entry)
+                    .unwrap()
+                    .contains("round03-secret")
+            );
+            fs::write(root.0.join("logs/latest.log"), format!("{raw}\n")).unwrap();
+            let raw_zip = root.0.join("raw-latest.zip");
+            assert!(
+                export_report(&root.0, &raw_zip, "raw quoted message test")
+                    .unwrap()
+                    .complete
+            );
+            let raw_entry = read_zip_entry(
+                &raw_zip,
+                "logs/latest.log",
+                MAX_FILE_BYTES,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let raw_safe = String::from_utf8(raw_entry).unwrap();
+            assert_eq!(raw_safe.trim_end(), safe);
+            assert!(!raw_safe.contains("round03-secret"));
+            if let Some(output) = std::env::var_os("NICKEL_REPORT_TEST_OUTPUT") {
+                let output = PathBuf::from(output);
+                fs::create_dir_all(&output).unwrap();
+                for (label, path) in [("stream", &stream_zip), ("raw-latest", &raw_zip)] {
+                    let target = output.join(format!("quoted-message-{index}-{label}.zip"));
+                    assert!(!target.exists());
+                    fs::copy(path, target).unwrap();
+                }
+                fs::write(
+                    output.join(format!("quoted-message-{index}-storage.log")),
+                    stored,
+                )
+                .unwrap();
+                fs::write(
+                    output.join(format!("quoted-message-{index}-capture.log")),
+                    captured,
+                )
+                .unwrap();
+                fs::write(
+                    output.join(format!("quoted-message-{index}-events.json")),
+                    payload,
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn stdout_pending_values_never_capture_stderr_or_another_session() {
         use minecraft_java_rs_core::launcher::events::{LaunchEvent, ProcessStream};
         let root = TemporaryDirectory(

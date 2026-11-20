@@ -940,6 +940,7 @@ enum MaskKind {
     Full,
     Token,
     Collection,
+    EncodedCollection(usize),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1078,17 +1079,178 @@ fn quoted_key(text: &str, start: usize) -> Option<(String, usize)> {
     None
 }
 
+const MAX_QUOTED_MESSAGE_DEPTH: usize = 8;
+
+fn decode_log_string(inner: &str, quote: u8) -> Option<(String, Vec<usize>)> {
+    let mut decoded = String::new();
+    let mut offsets = vec![0];
+    let mut index = 0;
+    while index < inner.len() {
+        let start = index;
+        let ch = inner[index..].chars().next()?;
+        let value = if ch == '\\' {
+            let escape = *inner.as_bytes().get(index + 1)?;
+            let mut width = if escape == b'u' { 6 } else { 2 };
+            if escape == b'u' {
+                let code = u16::from_str_radix(inner.get(index + 2..index + 6)?, 16).ok()?;
+                if (0xd800..=0xdbff).contains(&code) {
+                    width = 12;
+                }
+            }
+            index = index.checked_add(width)?;
+            let raw = inner.get(start..index)?;
+            if quote == b'\'' && escape == b'\'' {
+                "'".to_owned()
+            } else {
+                serde_json::from_str::<String>(&format!("\"{raw}\"")).ok()?
+            }
+        } else if quote == b'\'' && inner.as_bytes().get(index..index + 2) == Some(b"''") {
+            index += 2;
+            "'".to_owned()
+        } else {
+            if quote == b'"' && ch.is_control() {
+                return None;
+            }
+            index += ch.len_utf8();
+            ch.to_string()
+        };
+        decoded.push_str(&value);
+        offsets.extend(std::iter::repeat_n(start, value.len().saturating_sub(1)));
+        offsets.push(index);
+    }
+    Some((decoded, offsets))
+}
+
+fn collect_quoted_message_spans(
+    inner: &str,
+    quote: u8,
+    width: usize,
+    depth: usize,
+) -> Result<Vec<RedactionSpan>, ScanFailure> {
+    if depth >= MAX_QUOTED_MESSAGE_DEPTH {
+        return Err(ScanFailure::Invalid("日志引号消息嵌套超过安全处理深度"));
+    }
+    let decoded = (width == 1)
+        .then(|| decode_log_string(inner, quote))
+        .flatten();
+    let text = decoded.as_ref().map_or(inner, |(text, _)| text.as_str());
+    let mut spans = Vec::new();
+    match collect_key_value_spans_bounded(text, &mut spans, true, depth + 1) {
+        Ok(()) => {}
+        Err(ScanFailure::Incomplete | ScanFailure::IncompleteField { .. }) => {
+            // A complete outer string can safely hide an uncertain assignment in full.
+            return Ok(vec![RedactionSpan {
+                start: 0,
+                end: inner.len(),
+                kind: MaskKind::Full,
+            }]);
+        }
+        Err(error) => return Err(error),
+    }
+    let Some((text, offsets)) = decoded else {
+        return Ok(if spans.is_empty() {
+            Vec::new()
+        } else {
+            vec![RedactionSpan {
+                start: 0,
+                end: inner.len(),
+                kind: MaskKind::Full,
+            }]
+        });
+    };
+    // Map decoded boundaries back to the original escape sequences; never splice
+    // an encoded quote, backslash or Unicode scalar in half.
+    spans.retain(|span| text.is_char_boundary(span.start) && text.is_char_boundary(span.end));
+    for span in &mut spans {
+        let start = offsets[span.start];
+        let end = offsets[span.end];
+        span.kind = match span.kind {
+            MaskKind::Collection => MaskKind::EncodedCollection(1),
+            MaskKind::EncodedCollection(depth) => MaskKind::EncodedCollection(depth + 1),
+            MaskKind::Token if inner[start..end] == text[span.start..span.end] => MaskKind::Token,
+            _ => MaskKind::Full,
+        };
+        span.start = start;
+        span.end = end;
+    }
+    Ok(spans)
+}
+
 fn collect_key_value_spans(
     text: &str,
     spans: &mut Vec<RedactionSpan>,
     final_input: bool,
+) -> Result<(), ScanFailure> {
+    collect_key_value_spans_bounded(text, spans, final_input, 0)
+}
+
+fn collect_key_value_spans_bounded(
+    text: &str,
+    spans: &mut Vec<RedactionSpan>,
+    final_input: bool,
+    depth: usize,
 ) -> Result<(), ScanFailure> {
     let bytes = text.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
         let key_start = index;
         let (key, after_key, quoted) = if matches!(bytes[index], b'"' | b'\'') {
-            if let Some((key, end)) = quoted_key(text, index) {
+            let key = quoted_key(text, index);
+            let explicit = key.as_ref().is_some_and(|(_, end)| {
+                matches!(
+                    bytes.get(skip_field_whitespace(text, *end)),
+                    Some(b':' | b'=')
+                )
+            });
+            if !explicit {
+                if let Some((key, end)) = &key {
+                    if !final_input
+                        && log_key_kind(key).is_some()
+                        && skip_field_whitespace(text, *end) == text.len()
+                    {
+                        return Err(ScanFailure::IncompleteField {
+                            key_start,
+                            value_start: None,
+                        });
+                    }
+                }
+                let width = quote_width(bytes, index);
+                match scan_quote_end(text, index, width) {
+                    Ok((inner_end, end)) => {
+                        for mut span in collect_quoted_message_spans(
+                            &text[index + width..inner_end],
+                            bytes[index],
+                            width,
+                            depth,
+                        )? {
+                            span.start += index + width;
+                            span.end += index + width;
+                            push_redaction_span(spans, span).map_err(|_| {
+                                ScanFailure::Invalid("日志敏感字段数量超过安全处理上限")
+                            })?;
+                        }
+                        index = end;
+                        continue;
+                    }
+                    Err(ScanFailure::Incomplete) => {
+                        if !collect_quoted_message_spans(
+                            &text[index + width..],
+                            bytes[index],
+                            width,
+                            depth,
+                        )?
+                        .is_empty()
+                        {
+                            return Err(ScanFailure::IncompleteField {
+                                key_start,
+                                value_start: Some(index),
+                            });
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            if let Some((key, end)) = key {
                 (key, end, true)
             } else {
                 index += 1;
@@ -1109,13 +1271,7 @@ fn collect_key_value_spans(
         };
         let separator = skip_field_whitespace(text, after_key);
         let explicit = matches!(bytes.get(separator), Some(b':' | b'='));
-        // A quoted diagnostic message can itself contain an assignment. Only
-        // consume it as an opaque key when its closing quote has a separator.
-        index = if quoted && !explicit {
-            key_start + 1
-        } else {
-            after_key
-        };
+        index = after_key;
         let cli = !quoted
             && key.starts_with("--")
             && key.len() > 2
@@ -1124,12 +1280,6 @@ fn collect_key_value_spans(
             continue;
         };
         if !explicit && !cli {
-            if !final_input && separator == text.len() && quoted {
-                return Err(ScanFailure::IncompleteField {
-                    key_start,
-                    value_start: None,
-                });
-            }
             continue;
         }
         if explicit && matches!(bytes.get(separator + 1), Some(b'=' | b'>')) {
@@ -1152,7 +1302,6 @@ fn collect_key_value_spans(
         let authorization = key
             .trim_start_matches('-')
             .eq_ignore_ascii_case("authorization");
-        // Inline Bearer headers can precede another field; YAML scalar continuations cannot.
         let inline_bearer = authorization
             && text[start..]
                 .get(..7)
@@ -1187,14 +1336,7 @@ fn collect_key_value_spans(
                 )
             })
         } else {
-            scan_sensitive_value(
-                text,
-                key_start,
-                start,
-                kind,
-                authorization,
-                final_input,
-            )
+            scan_sensitive_value(text, key_start, start, kind, authorization, final_input)
         };
         let (span, consumed) = scanned.map_err(|error| match error {
             ScanFailure::Incomplete => ScanFailure::IncompleteField {
@@ -1236,7 +1378,6 @@ fn inline_field_follows(text: &str, start: usize) -> bool {
             && separator > end
             && separator < line_end)
 }
-
 
 fn scan_sensitive_value(
     text: &str,
@@ -1564,16 +1705,28 @@ fn apply_redaction_spans(text: &str, mut spans: Vec<RedactionSpan>) -> String {
 }
 
 fn merge_mask_kind(left: MaskKind, right: MaskKind) -> MaskKind {
-    if left == MaskKind::Collection || right == MaskKind::Collection {
-        MaskKind::Collection
-    } else if left == MaskKind::Full || right == MaskKind::Full {
-        MaskKind::Full
-    } else {
-        MaskKind::Token
+    match (left, right) {
+        (MaskKind::Collection, _) | (_, MaskKind::Collection) => MaskKind::Collection,
+        (MaskKind::EncodedCollection(a), MaskKind::EncodedCollection(b)) => {
+            MaskKind::EncodedCollection(a.min(b))
+        }
+        (MaskKind::EncodedCollection(depth), _) | (_, MaskKind::EncodedCollection(depth)) => {
+            MaskKind::EncodedCollection(depth)
+        }
+        (MaskKind::Full, _) | (_, MaskKind::Full) => MaskKind::Full,
+        _ => MaskKind::Token,
     }
 }
 
 fn mask_value(value: &str, kind: MaskKind) -> String {
+    if let MaskKind::EncodedCollection(depth) = kind {
+        let mut mask = format!("\"{REDACTION_MASK}\"");
+        for _ in 0..depth {
+            let encoded = serde_json::to_string(&mask).expect("a string always serializes");
+            mask = encoded[1..encoded.len() - 1].to_owned();
+        }
+        return mask;
+    }
     if kind == MaskKind::Collection {
         // A string replacement is valid in JSON/YAML and leaks no token edges.
         return format!("\"{REDACTION_MASK}\"");
@@ -1654,6 +1807,95 @@ mod collection_redaction_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod quoted_message_redaction_tests {
+    use super::*;
+
+    #[test]
+    fn quoted_messages_map_escaped_values_without_changing_neighbors() {
+        for inner in [
+            r#"prefix password="round03-secret" suffix visible"#,
+            r#"prefix password="round03-secret\\tail\"more" suffix visible"#,
+            r#"prefix {"pass\u0077ord":"round03-secret"} suffix visible"#,
+            r#"prefix password="round03-secret\uD83D\uDE00" suffix visible"#,
+            r#"prefix password=["round03-secret",{"v":"round03-secret"}] suffix visible"#,
+            r#"prefix {"password":["round03-secret"],"other":"visible"} suffix visible"#,
+        ] {
+            let raw = serde_json::json!({"message":inner,"next":"visible"}).to_string();
+            let safe = redact_sensitive_text_checked(&raw).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&safe).unwrap();
+            assert!(!safe.contains("round03-secret"), "{safe}");
+            assert_eq!(value["next"], "visible");
+            let message = value["message"].as_str().unwrap();
+            assert!(
+                message.starts_with("prefix ") && message.ends_with(" suffix visible"),
+                "{message}"
+            );
+            assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+            let mut stream = StreamRedactor::default();
+            assert_eq!(stream.push_line(&raw, false), format!("{safe}\n"));
+            assert!(stream.finish(false).is_empty() && !stream.failed());
+        }
+        let raw = r#"{"message":"prefix pass\u0077ord=\u0022round03-secret\u0022 suffix visible","next":"visible"}"#;
+        let safe = redact_sensitive_text_checked(raw).unwrap();
+        assert!(!safe.contains("round03-secret"));
+        assert!(serde_json::from_str::<serde_json::Value>(&safe).is_ok());
+        assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+    }
+
+    #[test]
+    fn quoted_messages_keep_normal_diagnostics_and_redacted_edges_stable() {
+        for raw in [
+            r#"{"message":"Unexpected token \" in JSON","next":"visible"}"#,
+            r#"{"message":"path C:\\Program Files\\game and \uD83D\uDE00","next":"visible"}"#,
+            r#"{"message":"password == expected and password => callback","next":"visible"}"#,
+            r#"{"message":"password=\"***\" token=abcd***wxyz","next":"visible"}"#,
+            r#"{"message":"password=[\"***\"]","next":"visible"}"#,
+        ] {
+            let safe = redact_sensitive_text_checked(raw).unwrap();
+            assert!(serde_json::from_str::<serde_json::Value>(&safe).is_ok());
+            assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+            if !raw.contains("password=[") {
+                assert_eq!(safe, raw);
+            }
+        }
+        assert_eq!(
+            redact_sensitive_text_checked(
+                r#"message='prefix password="round03-secret" suffix visible' next=visible"#
+            )
+            .unwrap(),
+            r#"message='prefix password="***" suffix visible' next=visible"#,
+        );
+        let raw = r#"{"message":"password=\"round03-secret","next":"visible"}"#;
+        let safe = redact_sensitive_text_checked(raw).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&safe).unwrap()["message"],
+            "***"
+        );
+        assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+    }
+
+    #[test]
+    fn quoted_messages_bound_mapping_depth_and_unfinished_streams() {
+        let mut inner = r#"password="round03-secret""#.to_owned();
+        for _ in 0..MAX_QUOTED_MESSAGE_DEPTH {
+            inner = serde_json::to_string(&inner).unwrap();
+        }
+        let safe = redact_sensitive_text_checked(&inner).unwrap();
+        assert!(!safe.contains("round03-secret"));
+        assert!(redact_sensitive_text_checked(&serde_json::to_string(&inner).unwrap()).is_err());
+        let oversized = format!("\"{}\"", "x".repeat(MAX_COLLECTION_BYTES));
+        assert!(redact_sensitive_text_checked(&oversized).is_err());
+        let unfinished = r#"{"message":"prefix password=\"round03-secret\""#;
+        let mut stream = StreamRedactor::default();
+        let mut safe = stream.push_line(unfinished, false);
+        safe.push_str(&stream.finish(false));
+        assert!(!safe.contains("round03-secret"));
+        assert!(stream.failed());
+    }
+}
+
 #[cfg(test)]
 mod stream_redaction_tests {
     use super::*;
