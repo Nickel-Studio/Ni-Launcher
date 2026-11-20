@@ -39,18 +39,18 @@ export function installBackend(setup: Setup) {
     accent: "nickel",
     titlebarTint: true,
   };
-  localStorage.setItem("nowhere.settings", JSON.stringify(settings));
+  localStorage.setItem("nickel.settings", JSON.stringify(settings));
   const account = {
     id: "fixture-player",
     type: "microsoft",
     name: "AcceptancePlayer",
   };
   localStorage.setItem(
-    "nowhere.accounts",
+    "nickel.accounts",
     JSON.stringify(setup.accountType === "microsoft" ? [account] : [])
   );
   localStorage.setItem(
-    "nowhere.accounts.active",
+    "nickel.accounts.active",
     setup.accountType === "microsoft" ? account.id : ""
   );
   mockWindows("main");

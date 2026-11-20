@@ -364,7 +364,7 @@ function snapshot() {
       }),
       loading: Boolean(document.querySelector(".vs-root--loading")),
       errors: Array.from(
-        document.querySelectorAll(".vs-alert, .nw-loading--error")
+        document.querySelectorAll(".vs-alert, .ni-loading--error")
       ).map((node) => node.textContent ?? ""),
     },
     calls: readCalls(),

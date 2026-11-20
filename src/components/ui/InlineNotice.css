@@ -1,5 +1,5 @@
 /* 行内通知：状态变化时淡入；颜色只来自 design tokens。 */
-.nw-inline-notice {
+.ni-inline-notice {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
@@ -8,25 +8,25 @@
   background: var(--fill-2);
   color: var(--text-dim);
   box-shadow: var(--shadow-inset-top);
-  animation: nw-inline-notice-in var(--t) var(--ease-out) both;
+  animation: ni-inline-notice-in var(--t) var(--ease-out) both;
 }
 
-.nw-inline-notice[data-tone="success"] {
+.ni-inline-notice[data-tone="success"] {
   background: var(--success-soft);
   color: var(--text);
 }
 
-.nw-inline-notice[data-tone="warning"] {
+.ni-inline-notice[data-tone="warning"] {
   background: var(--warning-soft);
   color: var(--text);
 }
 
-.nw-inline-notice[data-tone="danger"] {
+.ni-inline-notice[data-tone="danger"] {
   background: var(--danger-soft);
   color: var(--text);
 }
 
-.nw-inline-notice__icon {
+.ni-inline-notice__icon {
   flex: 0 0 auto;
   display: inline-grid;
   place-items: center;
@@ -37,25 +37,25 @@
   color: var(--accent);
 }
 
-.nw-inline-notice[data-tone="success"] .nw-inline-notice__icon {
+.ni-inline-notice[data-tone="success"] .ni-inline-notice__icon {
   color: var(--success);
 }
 
-.nw-inline-notice[data-tone="warning"] .nw-inline-notice__icon {
+.ni-inline-notice[data-tone="warning"] .ni-inline-notice__icon {
   color: var(--warning);
 }
 
-.nw-inline-notice[data-tone="danger"] .nw-inline-notice__icon {
+.ni-inline-notice[data-tone="danger"] .ni-inline-notice__icon {
   color: var(--danger);
 }
 
-.nw-inline-notice__icon svg {
+.ni-inline-notice__icon svg {
   display: block;
   width: 16px;
   height: 16px;
 }
 
-.nw-inline-notice__content {
+.ni-inline-notice__content {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -63,14 +63,14 @@
   gap: var(--space-1);
 }
 
-.nw-inline-notice__title {
+.ni-inline-notice__title {
   color: var(--text);
   font-size: var(--fs-sm);
   font-weight: 650;
   line-height: var(--lh-snug);
 }
 
-.nw-inline-notice__message {
+.ni-inline-notice__message {
   min-width: 0;
   color: var(--text-dim);
   font-size: var(--fs-sm);
@@ -78,12 +78,12 @@
   overflow-wrap: anywhere;
 }
 
-.nw-inline-notice__action {
+.ni-inline-notice__action {
   flex: 0 0 auto;
   align-self: center;
 }
 
-@keyframes nw-inline-notice-in {
+@keyframes ni-inline-notice-in {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -95,7 +95,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nw-inline-notice {
+  .ni-inline-notice {
     animation: none;
   }
 }

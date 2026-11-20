@@ -184,7 +184,7 @@ export function VanillaPage() {
     >
       <header className="van-page__head">
         <div className="van-page__titles">
-          <div className="nw-eyebrow">原版游戏</div>
+          <div className="ni-eyebrow">原版游戏</div>
           <h2 className="van-page__title">线上版本</h2>
         </div>
         <label className="mr-search">

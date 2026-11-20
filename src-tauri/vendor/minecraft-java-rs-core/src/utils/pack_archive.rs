@@ -115,7 +115,7 @@ pub fn read_zip_entry(archive: &Path, entry: &str, max_bytes: u64, cancel: &Canc
 }
 
 fn protected(path: &str, extra: &[String]) -> bool {
-    const RESERVED: &[&str] = &["nowhere.profile.json", "nowhere.instance.json", "nowhere.pack.json", "versions", "libraries", "assets", "runtime", "gamedata.json", "launcher_profiles.json", "nowhere.display.json"];
+    const RESERVED: &[&str] = &["nickel.profile.json", "nickel.instance.json", "nickel.pack.json", "versions", "libraries", "assets", "runtime", "gamedata.json", "launcher_profiles.json", "nickel.display.json"];
     let path = path.to_lowercase();
     RESERVED.iter().copied().chain(extra.iter().map(String::as_str)).any(|item| {
         let item = item.to_lowercase();
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn case_conflicts_control_files_and_limits_are_rejected_before_writing() {
         let cancel = CancellationToken::new();
-        for entries in [vec![("overrides/a", b"a".as_slice()), ("overrides/A", b"b".as_slice())], vec![("overrides/nowhere.profile.json", b"{}".as_slice())], vec![("overrides/a", b"long".as_slice())]] {
+        for entries in [vec![("overrides/a", b"a".as_slice()), ("overrides/A", b"b".as_slice())], vec![("overrides/nickel.profile.json", b"{}".as_slice())], vec![("overrides/a", b"long".as_slice())]] {
             let file = pack(&entries); let dest = tempfile::TempDir::new().unwrap();
             let limits = ArchiveLimits { max_entry_bytes: 2, ..ArchiveLimits::default() };
             assert!(extract_zip_subtrees(file.path(), dest.path(), &["overrides".into()], &[], &limits, &cancel).is_err());

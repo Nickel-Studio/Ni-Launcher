@@ -197,18 +197,16 @@ pub fn gc_arguments(
     Ok(Some(args))
 }
 
-/// 兼容旧测试入口；真实启动使用 [`resolve_with_memory`]。
+/// 测试用简化内存探测；真实启动同时提供总量、可用量和 Mod 数。
 #[cfg(test)]
 pub fn resolve(
     global: &Value,
     local: &Value,
-    legacy_memory: Option<u64>,
     available: Option<u64>,
 ) -> Result<EffectiveSettings, String> {
     resolve_with_memory(
         global,
         local,
-        legacy_memory,
         available,
         available,
         0,
@@ -219,7 +217,6 @@ pub fn resolve(
 pub fn resolve_with_memory(
     global: &Value,
     local: &Value,
-    legacy_memory: Option<u64>,
     total_memory: Option<u64>,
     available_memory: Option<u64>,
     mod_count: u64,
@@ -230,11 +227,7 @@ pub fn resolve_with_memory(
             global,
             local,
             "memoryMode",
-            if legacy_memory.is_some() {
-                "custom"
-            } else {
-                "auto"
-            },
+            "auto",
         ),
         &["auto", "custom"],
         "内存模式",
@@ -244,7 +237,6 @@ pub fn resolve_with_memory(
     } else {
         let saved = inherited(global, local, "memoryMb")
             .and_then(Value::as_u64)
-            .or(legacy_memory)
             .unwrap_or(DEFAULT_MEMORY_MB);
         memory_plan::manual_memory_mb(saved, total_memory)?
     };
@@ -919,7 +911,7 @@ mod tests {
     #[test]
     fn launch_log_is_bounded_and_rotates() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-log-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-log-{}", crate::store::random_token()));
         let logs = root.join("logs");
         std::fs::create_dir_all(&logs).unwrap();
         let path = logs.join(launch_log_store::LOG_FILE_NAME);
@@ -937,7 +929,7 @@ mod tests {
     #[test]
     fn launch_failure_analysis_reads_bounded_logs_and_java_context() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-diag-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-diag-{}", crate::store::random_token()));
         std::fs::create_dir_all(root.join("logs")).unwrap();
         let mut latest = vec![0xff, 0xfe, b'\n'];
         latest.extend_from_slice(b"java.lang.OutOfMemoryError: Java heap space\n");
@@ -966,7 +958,7 @@ mod tests {
     #[test]
     fn failed_launch_report_propagates_stored_log_truncation() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-diag-truncated-{}",
+            "nickel-diag-truncated-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(root.join("logs")).unwrap();
@@ -991,7 +983,7 @@ mod tests {
     #[test]
     fn broken_log_sources_fall_back_without_hiding_process_output() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-diag-bad-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-diag-bad-{}", crate::store::random_token()));
         std::fs::create_dir_all(root.join("logs")).unwrap();
         // latest.log 是目录、crash-reports 是普通文件：两个来源都应被安全跳过。
         std::fs::create_dir_all(root.join("logs").join("latest.log")).unwrap();
@@ -1144,7 +1136,6 @@ mod tests {
         let result = resolve_with_memory(
             &global,
             &local,
-            None,
             Some(16_384),
             Some(12_000),
             0,
@@ -1173,7 +1164,6 @@ mod tests {
         let result = resolve_with_memory(
             &global,
             &local,
-            None,
             Some(16_384),
             Some(12_000),
             0,
@@ -1193,7 +1183,7 @@ mod tests {
     #[tokio::test]
     async fn pre_launch_preserves_cmd_quotes_and_working_directory() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere prelaunch {}",
+            "nickel prelaunch {}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -1203,7 +1193,6 @@ mod tests {
         let mut settings = resolve_with_memory(
             &serde_json::json!({}),
             &serde_json::json!({}),
-            None,
             None,
             None,
             0,
@@ -1243,7 +1232,7 @@ mod tests {
 
     fn cleanup_temp_root(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "nowhere-runtime-cleanup-{tag}-{}",
+            "nickel-runtime-cleanup-{tag}-{}",
             crate::store::random_token()
         ))
     }

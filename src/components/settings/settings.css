@@ -4,7 +4,7 @@
    设计语言：Graphite Console —— 填充式圆角、无描边；
    层次靠「填充亮度差 + 柔和阴影」，颜色主题（accent）仅用于选中态/主操作/焦点环。
    术语：明暗模式（themeMode）≠ 主题；本项目的「主题」＝颜色主题（accent）。
-   分组卡片复用 UI 基元 Card（.nw-card），此处仅补充布局与少量自定义部件。
+   分组卡片复用 UI 基元 Card（.ni-card），此处仅补充布局与少量自定义部件。
    ========================================================================== */
 
 .st-root {
@@ -129,10 +129,10 @@
   min-width: 0;
 }
 
-/* ---------- 分组（基于 .nw-card，仅补充布局/入场动画） ---------- */
+/* ---------- 分组（基于 .ni-card，仅补充布局/入场动画） ---------- */
 .st-group {
   scroll-margin-top: var(--space-4);
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 
 .st-group:nth-child(2) {
@@ -189,7 +189,7 @@
   color: var(--text-dim);
   font-size: var(--fs-sm);
 }
-.st-group--collapsible .nw-collapse[data-open="true"] {
+.st-group--collapsible .ni-collapse[data-open="true"] {
   overflow: visible;
 }
 
@@ -234,12 +234,12 @@
   gap: var(--space-5);
 }
 .st-row--fill .st-row__control,
-.st-row--fill .nw-slider-row,
-.st-row--fill .nw-select {
+.st-row--fill .ni-slider-row,
+.st-row--fill .ni-select {
   width: 100%;
   min-width: 0;
 }
-.st-row--fill .nw-slider-row__val {
+.st-row--fill .ni-slider-row__val {
   min-width: var(--setting-value-width);
 }
 @media (max-width: 640px) {
@@ -318,7 +318,7 @@
 .st-game__java {
   flex-wrap: wrap;
 }
-.st-game__java .nw-select {
+.st-game__java .ni-select {
   flex: 1;
 }
 
@@ -348,14 +348,14 @@
 }
 
 /* 展开的下拉菜单需要跨过相邻分组的入场动画层。 */
-.st-game .st-group:has(.nw-select__trigger[data-open="true"]) {
+.st-game .st-group:has(.ni-select__trigger[data-open="true"]) {
   z-index: var(--z-content);
 }
 .st-game .st-row {
   padding-block: var(--space-2);
   box-shadow: none;
 }
-.st-game .st-group .nw-select__trigger {
+.st-game .st-group .ni-select__trigger {
   min-height: calc(var(--space-7) + var(--space-1));
   padding-block: var(--space-1);
 }
@@ -370,10 +370,10 @@
   gap: var(--space-3);
   padding-top: var(--space-3);
 }
-.st-game__toggles .nw-field {
+.st-game__toggles .ni-field {
   width: 100%;
 }
-.st-game__toggles .nw-field__label strong {
+.st-game__toggles .ni-field__label strong {
   font-weight: 500;
 }
 .st-game__skin-options {
@@ -491,10 +491,10 @@
   font-size: var(--fs-md);
   padding: var(--space-3);
 }
-.st-group .nw-select__value {
+.st-group .ni-select__value {
   white-space: normal;
 }
-.st-group .nw-select__trigger {
+.st-group .ni-select__trigger {
   height: auto;
   min-height: var(--space-8);
   padding-block: var(--space-2);
@@ -680,7 +680,7 @@
 .st-preview__bar[data-tinted="true"] {
   background: var(--theme-chrome-bg, var(--chrome-bg));
 }
-.st-preview__bar > :not(.nw-theme-artwork) {
+.st-preview__bar > :not(.ni-theme-artwork) {
   position: relative;
   z-index: 1;
 }
@@ -1012,7 +1012,7 @@
   height: 40px;
   pointer-events: none;
 }
-.st-custom-decoration__art .nw-theme-artwork--titlebar {
+.st-custom-decoration__art .ni-theme-artwork--titlebar {
   inset: 0;
   width: 100%;
   height: 100%;

@@ -535,7 +535,7 @@ if (!host) throw new Error("Missing community regression root");
 setLaunchInstance(target);
 createRoot(host).render(
   <SettingsProvider>
-    <div className="nw-shell">
+    <div className="ni-shell">
       <header
         style={{
           height: "var(--titlebar-h)",
@@ -548,8 +548,8 @@ createRoot(host).render(
       >
         Nickel / 资源
       </header>
-      <div className="nw-body">
-        <main className="nw-content">
+      <div className="ni-body">
+        <main className="ni-content">
           <Resources />
         </main>
       </div>

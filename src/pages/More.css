@@ -9,14 +9,14 @@
 
 /* ---------- 章节卡片（复用 UI 基元 Card，仅补入场动画） ---------- */
 .mo-card {
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 
-.mo-card .nw-card__head {
+.mo-card .ni-card__head {
   align-items: center;
 }
 
-.mo-card__action.nw-btn {
+.mo-card__action.ni-btn {
   flex: 0 0 auto;
 }
 
@@ -155,7 +155,7 @@
   gap: var(--space-2);
 }
 
-.mo-starlight__actions .nw-btn {
+.mo-starlight__actions .ni-btn {
   min-width: 140px;
 }
 
@@ -264,7 +264,7 @@
   margin: 0;
 }
 
-.mo-about__licenses .nw-btn {
+.mo-about__licenses .ni-btn {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
@@ -319,7 +319,7 @@
   overflow-wrap: anywhere;
 }
 
-.mo-credit__link.nw-btn {
+.mo-credit__link.ni-btn {
   grid-column: 2;
   justify-self: start;
   min-height: var(--space-6);
@@ -350,11 +350,11 @@
     gap: var(--space-1);
   }
 
-  .mo-card .nw-card__head {
+  .mo-card .ni-card__head {
     align-items: flex-start;
     flex-wrap: wrap;
   }
-  .mo-card__action.nw-btn {
+  .mo-card__action.ni-btn {
     margin-left: 0;
   }
 

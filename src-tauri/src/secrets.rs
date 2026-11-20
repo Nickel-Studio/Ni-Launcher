@@ -27,7 +27,7 @@ pub struct MsaConfig {
 /// `authority` 缺省值：个人微软账号。
 const DEFAULT_AUTHORITY: &str = "consumers";
 /// `redirectUri` 缺省值。
-const DEFAULT_REDIRECT_URI: &str = "nowhere://auth";
+const DEFAULT_REDIRECT_URI: &str = "nickel://auth";
 /// 密钥文件名。
 const SECRETS_FILE_NAME: &str = "secrets.local.json";
 const EMBEDDED_CONFIG: &str =
@@ -115,16 +115,6 @@ fn load_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<Stri
     first_curseforge_key(paths).or_else(|| parse_curseforge_key(EMBEDDED_CONFIG).ok().flatten())
 }
 
-fn env_secrets_paths(primary: Option<&str>, legacy: Option<&str>) -> Vec<PathBuf> {
-    [primary, legacy]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .collect()
-}
-
 /// 开发根仅用于调试构建；发行程序不会读取构建机的源码路径。
 #[cfg(debug_assertions)]
 fn dev_fallback_path() -> PathBuf {
@@ -135,11 +125,11 @@ fn dev_fallback_path() -> PathBuf {
 
 fn runtime_candidate_paths(
     primary: Option<&str>,
-    legacy: Option<&str>,
     config_directory: Option<&Path>,
     executable_directory: Option<&Path>,
 ) -> Vec<PathBuf> {
-    let mut paths = env_secrets_paths(primary, legacy);
+    let mut paths: Vec<PathBuf> = primary.into_iter()
+        .map(str::trim).filter(|path| !path.is_empty()).map(PathBuf::from).collect();
     for directory in [config_directory, executable_directory]
         .into_iter()
         .flatten()
@@ -153,12 +143,10 @@ fn runtime_candidate_paths(
 
 fn candidate_paths(app: &AppHandle) -> Vec<PathBuf> {
     let primary = std::env::var("NICKEL_SECRETS").ok();
-    let legacy = std::env::var("NOWHERE_SECRETS").ok();
     let config = crate::app_paths::config_dir(app).ok();
     let executable = std::env::current_exe().ok();
     runtime_candidate_paths(
         primary.as_deref(),
-        legacy.as_deref(),
         config.as_deref(),
         executable.as_deref().and_then(Path::parent),
     )
@@ -185,7 +173,7 @@ mod tests {
         "objectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "tenantId": "ffffffff-0000-1111-2222-333333333333",
         "authority": "common",
-        "redirectUri": "nowhere://auth"
+        "redirectUri": "nickel://auth"
       },
       "curseforge": { "apiKey": null }
     }"#;
@@ -212,7 +200,7 @@ mod tests {
         let cfg = parse_msa_config(SAMPLE).unwrap().unwrap();
         assert_eq!(cfg.client_id, "11111111-2222-3333-4444-555555555555");
         assert_eq!(cfg.authority, "common");
-        assert_eq!(cfg.redirect_uri, "nowhere://auth");
+        assert_eq!(cfg.redirect_uri, "nickel://auth");
     }
 
     #[test]
@@ -317,40 +305,7 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
-    #[test]
-    fn secrets_aliases_prefer_primary_and_skip_blank_paths() {
-        let primary = temp_path("primary");
-        let legacy = temp_path("legacy");
-        let primary_text = primary.to_string_lossy();
-        let legacy_text = legacy.to_string_lossy();
-        assert_eq!(
-            env_secrets_paths(Some(&primary_text), Some(&legacy_text)),
-            vec![primary.clone(), legacy.clone()]
-        );
-        assert_eq!(
-            env_secrets_paths(Some(" "), Some(&legacy_text)),
-            vec![legacy.clone()]
-        );
-        assert!(env_secrets_paths(None, Some(" ")).is_empty());
-        std::fs::write(&primary, r#"{"microsoft":{"clientId":"primary-fixture"},"curseforge":{"apiKey":"primary-fixture"}}"#).unwrap();
-        std::fs::write(&legacy, SAMPLE).unwrap();
-        let paths = env_secrets_paths(Some(&primary_text), Some(&legacy_text));
-        assert_eq!(
-            first_msa_config(paths.clone()).unwrap().client_id,
-            "primary-fixture"
-        );
-        assert_eq!(
-            first_curseforge_key(paths.clone()).as_deref(),
-            Some("primary-fixture")
-        );
-        std::fs::write(&primary, "broken").unwrap();
-        assert_eq!(
-            first_msa_config(paths).unwrap().client_id,
-            "11111111-2222-3333-4444-555555555555"
-        );
-        std::fs::remove_file(primary).unwrap();
-        std::fs::remove_file(legacy).unwrap();
-    }
+
 
     // ── CurseForge API Key 读取 ────────────────────────────────────────────
 
@@ -547,57 +502,52 @@ mod tests {
     }
 
     #[test]
-    fn runtime_candidate_order_is_primary_legacy_config_executable_then_debug_only_source() {
+    fn runtime_candidate_order_is_override_config_executable_then_debug_only_source() {
         let directory = TestDirectory::new("candidate-order");
         let primary = directory.file("primary.json");
-        let legacy = directory.file("legacy.json");
         let config = directory.file("config");
         let executable = directory.file("executable");
         let paths = runtime_candidate_paths(
             Some(&primary.to_string_lossy()),
-            Some(&legacy.to_string_lossy()),
             Some(&config),
             Some(&executable),
         );
         assert_eq!(
-            &paths[..4],
+            &paths[..3],
             &[
                 primary,
-                legacy,
                 config.join(SECRETS_FILE_NAME),
                 executable.join(SECRETS_FILE_NAME)
             ]
         );
         #[cfg(debug_assertions)]
         {
-            assert_eq!(paths.len(), 5);
+            assert_eq!(paths.len(), 4);
             assert_eq!(paths.last(), Some(&dev_fallback_path()));
         }
         #[cfg(not(debug_assertions))]
-        assert_eq!(paths.len(), 4);
+        assert_eq!(paths.len(), 3);
     }
 
     #[test]
     fn runtime_precedence_and_missing_fields_are_resolved_independently() {
         let directory = TestDirectory::new("precedence");
         let primary = directory.file("primary.json");
-        let legacy = directory.file("legacy.json");
         let config = directory.file("config");
         let executable = directory.file("executable");
         std::fs::create_dir(&config).unwrap();
         std::fs::create_dir(&executable).unwrap();
         let paths = runtime_candidate_paths(
             Some(&primary.to_string_lossy()),
-            Some(&legacy.to_string_lossy()),
             Some(&config),
             Some(&executable),
         )
         .into_iter()
-        .take(4)
+        .take(3)
         .collect::<Vec<_>>();
         for (path, name) in paths
             .iter()
-            .zip(["primary", "legacy", "config", "executable"])
+            .zip(["primary", "config", "executable"])
         {
             std::fs::write(
                 path,
@@ -609,7 +559,7 @@ mod tests {
             )
             .unwrap();
         }
-        for (index, name) in ["primary", "legacy", "config", "executable"]
+        for (index, name) in ["primary", "config", "executable"]
             .into_iter()
             .enumerate()
         {
@@ -629,15 +579,15 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            &legacy,
-            r#"{"microsoft":{"clientId":false},"curseforge":{"apiKey":"legacy-key"}}"#,
+            config.join(SECRETS_FILE_NAME),
+            r#"{"microsoft":{"clientId":false},"curseforge":{"apiKey":"config-key"}}"#,
         )
         .unwrap();
         assert_eq!(
             load_msa_config(paths.clone()).unwrap().client_id,
             "primary-client"
         );
-        assert_eq!(load_curseforge_key(paths).as_deref(), Some("legacy-key"));
+        assert_eq!(load_curseforge_key(paths).as_deref(), Some("config-key"));
     }
 
     #[test]
@@ -655,9 +605,9 @@ mod tests {
     #[test]
     fn release_candidates_never_include_the_build_source_root() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../secrets.local.json");
-        assert!(runtime_candidate_paths(None, None, None, None).is_empty());
+        assert!(runtime_candidate_paths(None, None, None).is_empty());
         let directory = TestDirectory::new("release-candidates");
-        let paths = runtime_candidate_paths(None, None, Some(&directory.0), Some(&directory.0));
+        let paths = runtime_candidate_paths(None, Some(&directory.0), Some(&directory.0));
         assert_eq!(paths.len(), 2);
         assert!(paths.iter().all(|path| path != &source));
     }
@@ -684,7 +634,6 @@ mod tests {
         );
         for key in [
             "NICKEL_SECRETS",
-            "NOWHERE_SECRETS",
             "NICKEL_BUILD_SECRETS",
             "NICKEL_MSA_CLIENT_ID",
             "NICKEL_MSA_AUTHORITY",
@@ -697,7 +646,7 @@ mod tests {
             );
         }
         let config = directory.join("config");
-        let paths = runtime_candidate_paths(None, None, Some(&config), executable.parent());
+        let paths = runtime_candidate_paths(None, Some(&config), executable.parent());
         assert_eq!(paths.len(), 2);
         assert!(
             paths.iter().all(|path| !path.exists()),

@@ -2,7 +2,7 @@
    社区资源 · 单页头 + 单工具栏 + CurseForge 未配置指引
    全部颜色、圆角、字号、动效取自 design tokens（src/styles/tokens.css）。
    工具栏子项的选择器统一带 .cv-toolbar 前缀：community.css 在 modrinth.css
-   之前导入，前缀提高优先级以覆盖 .mr-search / .nw-select 的默认宽度。
+   之前导入，前缀提高优先级以覆盖 .mr-search / .ni-select 的默认宽度。
    ========================================================================== */
 
 /* ------------------------------------------------------------- 页头 + 工具栏 */
@@ -87,10 +87,10 @@
   background: var(--glass-card);
   box-shadow: var(--shadow-1);
 }
-.cv-pager .nw-iconbtn {
+.cv-pager .ni-iconbtn {
   color: var(--text-dim);
 }
-.cv-pager .nw-iconbtn:disabled {
+.cv-pager .ni-iconbtn:disabled {
   opacity: 0.25;
 }
 .cv-pager__page {
@@ -104,19 +104,19 @@
 
 /* ------------------------------------------------- 加载器下拉（常驻） --- */
 /* 渐进式浮现（width/opacity 过渡 + overflow:hidden）已废弃——
-   overflow:hidden 会把 nw-select 绝对定位的菜单裁掉，浮现动画也是
+   overflow:hidden 会把 ni-select 绝对定位的菜单裁掉，浮现动画也是
    「缩进抽搐」的来源；现在常驻工具栏，仅做值联动。 */
 .cv-loader {
   flex: 0 0 auto;
   width: 150px;
 }
 
-.cv-loader .nw-select {
+.cv-loader .ni-select {
   width: 100%;
 }
 
 /* --------------------------------------------------- MC 版本可输入下拉 --- */
-/* 视觉对齐 .nw-select：填充式圆角、无 1px 描边，accent 只用于焦点环与选中。 */
+/* 视觉对齐 .ni-select：填充式圆角、无 1px 描边，accent 只用于焦点环与选中。 */
 .cv-combo {
   position: relative;
   min-width: 0;
@@ -206,7 +206,7 @@
   border-radius: var(--radius-md);
   background: var(--surface-2);
   box-shadow: var(--shadow-3);
-  animation: nw-pop var(--t) var(--ease-out) both;
+  animation: ni-pop var(--t) var(--ease-out) both;
 }
 
 .cv-combo__option {
@@ -244,7 +244,7 @@
   box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
-/* 版本号次要信息：sans 小字号 + faint 色（点阵字纪律：--font-mono 只允许 .nw-mono）。 */
+/* 版本号次要信息：sans 小字号 + faint 色（点阵字纪律：--font-mono 只允许 .ni-mono）。 */
 .cv-combo__option-version {
   font-family: var(--font-sans);
   font-size: var(--fs-sm);
@@ -285,7 +285,7 @@
 /* 与 .van-page--loading 同一高度算法：AnimatedSwap 的图层是 auto 高度，
    百分比 min-height 在它身上无法解析；这里用视口推算锁到外壳内容区高度，
    否则社区页的卡片会停在内容顶部、下方留出一大片空白。 */
-.nw-pager--fill .mr-page.mr-page--loading {
+.ni-pager--fill .mr-page.mr-page--loading {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
 }
 
@@ -293,7 +293,7 @@
   flex: 1 1 auto;
 }
 
-.mr-page--loading .cv-engine > .nw-loading {
+.mr-page--loading .cv-engine > .ni-loading {
   flex: 1 1 auto;
 }
 
@@ -314,7 +314,7 @@
   color: var(--warning);
   font-size: var(--fs-sm);
   line-height: 1.5;
-  animation: nw-fade-up var(--t) var(--ease-out) both;
+  animation: ni-fade-up var(--t) var(--ease-out) both;
 }
 
 .cf-setup svg {

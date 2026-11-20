@@ -819,7 +819,7 @@ mod tests {
     fn temp_dir(tag: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!(
-            "nowhere_store_{}_{}_{}",
+            "nickel_store_{}_{}_{}",
             std::process::id(),
             random_token(),
             tag

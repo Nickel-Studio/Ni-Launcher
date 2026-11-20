@@ -89,7 +89,7 @@ export function openVersionSettings(target: VersionFocus): void {
   setRoute("versionSettings");
 }
 
-export const RESOURCE_MODS_EVENT = "nowhere:open-resource-mods";
+export const RESOURCE_MODS_EVENT = "nickel:open-resource-mods";
 let resourceModsTarget: VersionFocus | null = null;
 
 /** 浏览当前实例的 Mod，不改动首页启动实例；接收方在 effect 中消费。 */

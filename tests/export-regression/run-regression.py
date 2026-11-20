@@ -74,10 +74,10 @@ with sync_playwright() as playwright:
         expect(warning).to_have_count(0)
         bundle.click()
         expect(warning).to_be_visible()
-        expect(warning.locator(".nw-inline-notice__title")).to_have_text("注意")
+        expect(warning.locator(".ni-inline-notice__title")).to_have_text("注意")
         expected_notice = "建议仅在无法稳定连接CurseForge或Modrinth 时才打包资源文件。\n公开发布含资源文件的整合包可能会违反部分Mod的使用协议。"
-        check("Warning body is exactly the approved two-line notice", warning.locator(".nw-inline-notice__message").text_content() == expected_notice)
-        check("Warning is inline and yellow", warning.get_attribute("data-tone") == "warning" and warning.locator(".nw-inline-notice__title").evaluate("node => { const probe = document.createElement('span'); probe.style.color = 'var(--warning)'; node.append(probe); const expected = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(node).color === expected; }") )
+        check("Warning body is exactly the approved two-line notice", warning.locator(".ni-inline-notice__message").text_content() == expected_notice)
+        check("Warning is inline and yellow", warning.get_attribute("data-tone") == "warning" and warning.locator(".ni-inline-notice__title").evaluate("node => { const probe = document.createElement('span'); probe.style.color = 'var(--warning)'; node.append(probe); const expected = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(node).color === expected; }") )
         bundle.click()
         expect(warning).to_have_count(0)
         checks.append("Resource warning appears and disappears with its switch")

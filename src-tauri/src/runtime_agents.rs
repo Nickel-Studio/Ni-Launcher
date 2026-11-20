@@ -510,7 +510,7 @@ mod tests {
     impl TestDirectory {
         fn new() -> Self {
             let path = std::env::temp_dir()
-                .join(format!("nowhere-agents-{}", crate::store::random_token()));
+                .join(format!("nickel-agents-{}", crate::store::random_token()));
             std::fs::create_dir_all(&path).expect("创建隔离组件测试目录");
             Self(path)
         }
@@ -527,7 +527,7 @@ mod tests {
     }
 
     fn settings() -> EffectiveSettings {
-        crate::runtime_settings::resolve(&Value::Null, &Value::Null, None, None)
+        crate::runtime_settings::resolve(&Value::Null, &Value::Null, None)
             .expect("解析默认设置")
     }
 

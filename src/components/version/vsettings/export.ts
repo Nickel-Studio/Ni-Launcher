@@ -144,7 +144,7 @@ function fileGroup(path: string): ExportGroup | null {
       const stem = part.replace(/\.[^.]*$/, "").replace(/[_ -]/g, "");
       return (
         part.startsWith(".") ||
-        part.startsWith("nowhere.") ||
+        part.startsWith("nickel.") ||
         /^(secrets?|credentials?|passwords?|accesstoken|clienttoken|refreshtoken|authtoken|bearertoken|sessiontoken|apitoken|clientsecret|apikeys?|authorization|privatekey|privatetoken|secretkey)$/.test(
           stem
         ) ||

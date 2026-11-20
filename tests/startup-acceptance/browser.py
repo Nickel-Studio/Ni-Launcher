@@ -55,9 +55,9 @@ def wait_ready(page):
 
 def non_dismiss(page):
     page.keyboard.press("Escape")
-    page.locator(".nw-modal__backdrop").click(position={"x": 4, "y": 4})
+    page.locator(".ni-modal__backdrop").click(position={"x": 4, "y": 4})
     expect(page.locator(".startup-modal")).to_have_count(1)
-    expect(page.locator(".startup-modal .nw-modal__head button")).to_have_count(0)
+    expect(page.locator(".startup-modal .ni-modal__head button")).to_have_count(0)
     for _ in range(8):
         page.keyboard.press("Tab")
         check(page.evaluate("document.querySelector('.startup-modal').contains(document.activeElement)"), "Tab escaped the gate")
@@ -139,7 +139,7 @@ def main():
         is_eula(page)
         page.get_by_role("checkbox").click()
         page.evaluate("""() => {
-            const buttons = [...document.querySelectorAll('.nw-modal__foot button')];
+            const buttons = [...document.querySelectorAll('.ni-modal__foot button')];
             const accept = buttons.find(b => b.textContent.includes('\u540c\u610f\u5e76\u7b7e\u7f72'));
             const reject = buttons.find(b => b.textContent.includes('\u62d2\u7edd'));
             for (let i = 0; i < 20; i++) accept.dispatchEvent(new MouseEvent('click', {bubbles: true}));
@@ -278,7 +278,7 @@ def main():
         check(not differences, "Refusal hover changed computed CSS: " + repr(differences))
         check(image_before == image_hover, "Refusal button screenshot changed on hover")
         page.keyboard.press("Escape")
-        page.locator(".nw-modal__backdrop").click(position={"x": 3, "y": 3})
+        page.locator(".ni-modal__backdrop").click(position={"x": 3, "y": 3})
         page.keyboard.press("Tab")
         check(page.evaluate("document.activeElement === document.querySelector('.startup-modal')"), "Disabled-only refusal dialog lost focus trap")
         samples = page.evaluate("window.__refusalSamples")
@@ -311,7 +311,7 @@ def main():
         is_eula(page)
         page.get_by_role("checkbox").click()
         page.evaluate("""() => {
-            const buttons = [...document.querySelectorAll('.nw-modal__foot button')];
+            const buttons = [...document.querySelectorAll('.ni-modal__foot button')];
             const reject = buttons.find(b => b.textContent.includes('\u62d2\u7edd'));
             const accept = buttons.find(b => b.textContent.includes('\u540c\u610f\u5e76\u7b7e\u7f72'));
             for (let i = 0; i < 15; i++) reject.dispatchEvent(new MouseEvent('click', {bubbles: true}));
@@ -440,7 +440,7 @@ def main():
         check(snapshot(page)["autoLaunchCount"] == 1, "Production App did not dispatch gated startup")
         page.get_by_role("dialog", name="\u6b63\u5728\u51c6\u5907\u4fbf\u643a\u6574\u5408\u5305").get_by_role("button", name="\u540e\u53f0\u7ee7\u7eed", exact=True).click()
         page.get_by_role("button", name="\u8bbe\u7f6e", exact=True).click()
-        expect(page.locator('.nw-navtab[data-active="true"]')).to_have_text("\u8bbe\u7f6e")
+        expect(page.locator('.ni-navtab[data-active="true"]')).to_have_text("\u8bbe\u7f6e")
         check(not calls(snapshot(page), "window_close"), "Window close was invoked while startup was gated")
         page.screenshot(path=str(output / "production-shell.png"))
 

@@ -3,11 +3,11 @@
   flex-direction: column;
   max-height: calc(100dvh - 40px);
 }
-.startup-modal .nw-modal__head,
-.startup-modal .nw-modal__foot {
+.startup-modal .ni-modal__head,
+.startup-modal .ni-modal__foot {
   flex-shrink: 0;
 }
-.startup-modal .nw-modal__body {
+.startup-modal .ni-modal__body {
   overflow: auto;
   min-height: 0;
 }
@@ -36,7 +36,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
 }
-.startup-eula__summary .nw-btn {
+.startup-eula__summary .ni-btn {
   justify-self: start;
 }
 .startup-eula__url {
@@ -44,12 +44,12 @@
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
-.startup-eula .nw-check {
+.startup-eula .ni-check {
   white-space: normal;
   text-align: left;
   line-height: 1.6;
 }
-.startup-eula .nw-check__box {
+.startup-eula .ni-check__box {
   flex-shrink: 0;
 }
 .startup-changelog h3 {
@@ -83,7 +83,7 @@
   .startup-eula__summary {
     padding: 14px;
   }
-  .startup-modal .nw-modal__foot {
+  .startup-modal .ni-modal__foot {
     flex-wrap: wrap;
   }
 }

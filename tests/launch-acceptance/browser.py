@@ -56,7 +56,7 @@ GEOMETRY = """() => {
   const presentation = document.querySelector('.home__presentation');
   const account = document.querySelector('.home__account');
   const progress = document.querySelector('.home__launch-progress');
-  const content = document.querySelector('.nw-content');
+  const content = document.querySelector('.ni-content');
   return {
     card: rect(card), presentation: rect(presentation), account: style(account), progress: style(progress),
     progressBox: rect(progress), button: rect(document.querySelector('.launch-button')),
@@ -320,10 +320,10 @@ def main():
             export.evaluate("button => { button.click(); button.click(); }")
             expect(page.get_by_role("button", name=BUSY, exact=True)).to_be_disabled()
             check("dialog: duplicate export invokes once", len(calls(page, "launch_error_report_export")) == 1)
-            check("dialog: all footer controls disabled while saving", page.locator(".nw-modal__foot button:not(:disabled)").count() == 0)
+            check("dialog: all footer controls disabled while saving", page.locator(".ni-modal__foot button:not(:disabled)").count() == 0)
             check("dialog: close icon unavailable while saving", page.get_by_role("dialog").get_by_role("button", name="\u5173\u95ed", exact=True).count() == 0)
             page.keyboard.press("Escape")
-            page.locator(".nw-modal__backdrop").click(position={"x": 2, "y": 2})
+            page.locator(".ni-modal__backdrop").click(position={"x": 2, "y": 2})
             expect(page.get_by_role("dialog")).to_be_visible()
             check("dialog: busy dismissal does not call close", snapshot(page)["closeCount"] == 0)
             page.evaluate("window.__launchFixture.release('report')")

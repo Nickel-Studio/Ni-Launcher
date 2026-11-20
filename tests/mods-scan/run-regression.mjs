@@ -123,7 +123,7 @@ try {
       report.visual.push({ kind, focus });
     }
     if (kind === "loading") {
-      const running = await cdp.evaluate("document.querySelector('.nw-loading') ? document.querySelector('.nw-loading').getAnimations({subtree:true}).filter(animation => animation.playState === 'running').length : -1");
+      const running = await cdp.evaluate("document.querySelector('.ni-loading') ? document.querySelector('.ni-loading').getAnimations({subtree:true}).filter(animation => animation.playState === 'running').length : -1");
       if (running !== 0) throw new Error(`reduced-motion 加载动画未停：${running}`);
     }
     const bounds = await cdp.evaluate("({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth})");

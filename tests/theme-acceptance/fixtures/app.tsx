@@ -40,7 +40,7 @@ let latest: AppSettings = normalizeSettings(DEFAULT_SETTINGS);
 let updateSettings: ((patch: Partial<AppSettings>) => void) | undefined;
 let commits = 0;
 let failSave = false;
-const settingsKey = "nowhere.settings";
+const settingsKey = "nickel.settings";
 const backendKey = "theme.acceptance.backend";
 
 if (query.get("host") === "tauri") {
@@ -121,7 +121,7 @@ function Specimen() {
           decoration={settings.customTheme.decoration}
         />
         <div className="ta-art-stage__text">
-          <span className="nw-eyebrow">NICKEL / COLOR STUDY</span>
+          <span className="ni-eyebrow">NICKEL / COLOR STUDY</span>
           <h1>Theme acceptance</h1>
           <p>Neutral reading surfaces and original edge geometry.</p>
         </div>
@@ -168,11 +168,11 @@ function Shell() {
     document.documentElement.dataset.fixtureReady = String(ready);
   }, [ready]);
   return (
-    <div className="nw-shell">
+    <div className="ni-shell">
       <BackgroundLayer />
       <TitleBar />
-      <div className="nw-body">
-        <main className="nw-content" data-route={route}>
+      <div className="ni-body">
+        <main className="ni-content" data-route={route}>
           {route === "settings" ? (
             <Settings />
           ) : route === "more" ? (

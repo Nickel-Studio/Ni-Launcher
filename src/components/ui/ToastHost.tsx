@@ -30,17 +30,17 @@ function ToastItem({ message }: { message: ToastMessage }) {
 
   return (
     <div
-      className="nw-toast"
+      className="ni-toast"
       data-tone={message.tone}
       data-leaving={leaving ? "true" : undefined}
       role="status"
       aria-live="polite"
     >
-      <span className="nw-toast__icon" aria-hidden="true">
+      <span className="ni-toast__icon" aria-hidden="true">
         {message.tone === "success" ? <IconCheck /> : null}
         {message.tone === "error" ? <IconAlert /> : null}
       </span>
-      <span className="nw-toast__text">{message.text}</span>
+      <span className="ni-toast__text">{message.text}</span>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function ToastHost() {
   const messages = useToasts();
   if (messages.length === 0) return null;
   return createPortal(
-    <div className="nw-toast-host" aria-label="通知">
+    <div className="ni-toast-host" aria-label="通知">
       {messages.map((message) => (
         <ToastItem key={message.id} message={message} />
       ))}

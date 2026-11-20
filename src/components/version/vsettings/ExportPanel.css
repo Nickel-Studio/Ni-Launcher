@@ -278,11 +278,11 @@
   margin-bottom: var(--space-3);
 }
 
-.vst-export__resource-warning .nw-inline-notice__message {
+.vst-export__resource-warning .ni-inline-notice__message {
   white-space: pre-line;
 }
 
-.vst-export__resource-warning .nw-inline-notice__title {
+.vst-export__resource-warning .ni-inline-notice__title {
   color: var(--warning);
 }
 

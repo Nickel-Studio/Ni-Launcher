@@ -1,7 +1,7 @@
 //! Windows 窗口外观微调（DWM）。
 //!
 //! 背景：本应用使用「`transparent: true` + `decorations: false`」的无边框透明窗口，
-//! 圆角与所有视觉均由 CSS 绘制（`.nw-shell` 的 `border-radius`）。
+//! 圆角与所有视觉均由 CSS 绘制（`.ni-shell` 的 `border-radius`）。
 //!
 //! 但 Windows 仍会在窗口上画两种「非客户区」装饰，它们绘制在 WebView 内容之上、
 //! 纯 CSS 无法消除，必须通过 DWM 属性关掉：

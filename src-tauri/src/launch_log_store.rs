@@ -2,7 +2,7 @@
 //!
 //! 本模块不读取 Tauri 全局状态：所有路径都由调用方传入的 `base` 推导。
 //! 约定布局：
-//! - `<base>/logs/nowhere-launcher.log`：本启动器捕获的游戏输出
+//! - `<base>/logs/nickel-launcher.log`：本启动器捕获的游戏输出
 //! - `<base>/logs/latest.log`：Minecraft 自己写入的最新日志（只读）
 //! - `<base>/crash-reports/`：Minecraft 崩溃报告目录（只读）
 //!
@@ -19,7 +19,7 @@ use std::sync::{Mutex, MutexGuard};
 /// 日志目录名，位于调用方给定的 base 之下。
 pub const LOG_DIRECTORY: &str = "logs";
 /// 启动器捕获日志的文件名。
-pub const LOG_FILE_NAME: &str = "nowhere-launcher.log";
+pub const LOG_FILE_NAME: &str = "nickel-launcher.log";
 /// Minecraft 自己维护的最新日志文件名。
 pub const LATEST_GAME_LOG_NAME: &str = "latest.log";
 /// Minecraft 崩溃报告目录名。
@@ -63,7 +63,7 @@ pub struct LaunchLogPaths {
 }
 
 impl LaunchLogPaths {
-    /// 返回轮转归档文件路径，例如 `nowhere-launcher.log.1`。
+    /// 返回轮转归档文件路径，例如 `nickel-launcher.log.1`。
     pub fn archive_file(&self, index: usize) -> PathBuf {
         let mut name = self
             .log_file

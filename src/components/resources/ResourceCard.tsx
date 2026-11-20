@@ -44,7 +44,7 @@ export function ResourceCard({ entry, index }: Props) {
     <Card
       padding="none"
       role="listitem"
-      className="rs-card nw-reveal"
+      className="rs-card ni-reveal"
       style={{ animationDelay: `${Math.min(index, 14) * 40}ms` }}
     >
       <div className="rs-card__head">
@@ -52,7 +52,7 @@ export function ResourceCard({ entry, index }: Props) {
           <KindIcon aria-hidden />
           {KIND_LABELS[entry.kind]}
         </span>
-        <span className="rs-card__size nw-mono">{sizeLabel}</span>
+        <span className="rs-card__size ni-mono">{sizeLabel}</span>
       </div>
 
       <Tooltip label={entry.path}>
@@ -63,7 +63,7 @@ export function ResourceCard({ entry, index }: Props) {
 
       <p className="rs-card__meta">
         <IconClock aria-hidden />
-        <span className="nw-mono">{formatTimestamp(entry.modified)}</span>
+        <span className="ni-mono">{formatTimestamp(entry.modified)}</span>
       </p>
 
       <div className="rs-card__foot">

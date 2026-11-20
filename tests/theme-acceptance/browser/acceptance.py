@@ -44,7 +44,7 @@ COLORS = """() => {
     const style = getComputedStyle(element), box = element.getBoundingClientRect();
     return {color: style.color, background: style.backgroundColor, opacity: style.opacity, x: box.x, y: box.y, width: box.width, height: box.height};
   };
-  return {tokens, primary: sample('[data-testid="primary-button"]'), signal: sample('[data-testid="signal-text"]'), body: sample('.ta-body-text'), titlebar: sample('.nw-titlebar'), brand: sample('.nw-brand__text'), nav: sample('.nw-navtab[data-active="true"]'), pill: sample('.nw-navtab__pill'), inactive: sample('.nw-navtab:not([data-active="true"])'), window: sample('.nw-winbtn'), segment: sample('.nw-seg__item[data-active="true"]'), segmentPill: sample('.nw-seg__pill'), previewButton: sample('.st-preview__btn--accent'), previewTitle: sample('.st-preview__bar-title'), previewBar: sample('.st-preview__bar')};
+  return {tokens, primary: sample('[data-testid="primary-button"]'), signal: sample('[data-testid="signal-text"]'), body: sample('.ta-body-text'), titlebar: sample('.ni-titlebar'), brand: sample('.ni-brand__text'), nav: sample('.ni-navtab[data-active="true"]'), pill: sample('.ni-navtab__pill'), inactive: sample('.ni-navtab:not([data-active="true"])'), window: sample('.ni-winbtn'), segment: sample('.ni-seg__item[data-active="true"]'), segmentPill: sample('.ni-seg__pill'), previewButton: sample('.st-preview__btn--accent'), previewTitle: sample('.st-preview__bar-title'), previewBar: sample('.st-preview__bar')};
 }"""
 
 
@@ -148,7 +148,7 @@ class Acceptance:
         page.add_init_script(TRACKER)
         if seed is not None:
             value = json.dumps(seed, ensure_ascii=True)
-            page.add_init_script("if (!sessionStorage.getItem('theme.acceptance.seeded')) { localStorage.setItem('nowhere.settings', JSON.stringify(" + value + ")); sessionStorage.setItem('theme.acceptance.seeded', 'true'); }")
+            page.add_init_script("if (!sessionStorage.getItem('theme.acceptance.seeded')) { localStorage.setItem('nickel.settings', JSON.stringify(" + value + ")); sessionStorage.setItem('theme.acceptance.seeded', 'true'); }")
         page.on("pageerror", lambda error: self.errors.append({"type": "pageerror", "message": str(error)}))
         page.on("console", lambda message: self.errors.append({"type": "console", "message": message.text}) if message.type == "error" else None)
         page.set_default_timeout(15000)
@@ -223,7 +223,7 @@ class Acceptance:
                 expected = ("#14171a", "#2b2f31", "#f5f6f7") if mode == "light" and accent == "mono" else expected
                 measured = [rgba(tokens[key])[:3] for key in ("--accent", "--accent-strong", "--accent-fg")]
                 self.check("legacy CSS tokens unchanged " + mode + "/" + accent, measured == [rgba(color)[:3] for color in expected], {"actual": measured, "expected": expected})
-                self.check("legacy has no new SVG artwork " + mode + "/" + accent, page.locator(".nw-theme-artwork").count() == 0)
+                self.check("legacy has no new SVG artwork " + mode + "/" + accent, page.locator(".ni-theme-artwork").count() == 0)
 
     def custom(self):
         page = self.new_page({"accent": "custom", "themeMode": "dark"})
@@ -251,26 +251,26 @@ class Acceptance:
             self.check("custom native radio keyboard saves " + expected, page.evaluate("document.activeElement.value") == expected)
         decoration.get_by_role("radio", name="无装饰").check()
         page.wait_for_function("window.__themeAcceptance.settings.customTheme.decoration === 'none'")
-        self.check("none disables intensity and removes shell artwork", page.get_by_role("slider", name=SLIDERS["decorationOpacity"]).is_disabled() and page.locator(".nw-bg .nw-theme-artwork, .nw-titlebar > .nw-theme-artwork").count() == 0)
+        self.check("none disables intensity and removes shell artwork", page.get_by_role("slider", name=SLIDERS["decorationOpacity"]).is_disabled() and page.locator(".ni-bg .ni-theme-artwork, .ni-titlebar > .ni-theme-artwork").count() == 0)
         decoration.get_by_role("radio", name="流带").check()
         intensity = page.get_by_role("slider", name=SLIDERS["decorationOpacity"])
         for key, expected in (("Home", 0), ("End", 1)):
             intensity.focus()
             page.keyboard.press(key)
             page.wait_for_function("value => window.__themeAcceptance.saved().customTheme.decorationOpacity === value", arg=expected)
-            opacity = page.locator(".nw-titlebar > .nw-theme-artwork").evaluate("e => getComputedStyle(e).opacity")
+            opacity = page.locator(".ni-titlebar > .ni-theme-artwork").evaluate("e => getComputedStyle(e).opacity")
             self.check("custom opacity applies and saves " + key, float(opacity) == expected, opacity)
         page.get_by_role("navigation", name="主导航").get_by_role("button", name="更多", exact=True).click()
         page.get_by_role("navigation", name="更多分区").get_by_role("button", name="前沿计划", exact=True).click()
         switch = page.get_by_role("switch", name="顶栏颜色小改", exact=True)
         switch.wait_for()
         self.check("frontier shows UI group and default-off switch", page.get_by_text("用户界面项", exact=True).count() == 1 and switch.get_attribute("aria-checked") == "false")
-        before = page.locator(".nw-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
+        before = page.locator(".ni-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
         switch.focus()
         page.keyboard.press("Space")
         page.wait_for_function("window.__themeAcceptance.saved().titlebarTint === true")
-        after = page.locator(".nw-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
-        self.check("frontier keyboard enables tinted translucent titlebar", before != after and rgba(after)[3] < 1 and page.locator(".nw-titlebar").get_attribute("data-tinted") == "true", {"off": before, "on": after})
+        after = page.locator(".ni-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
+        self.check("frontier keyboard enables tinted translucent titlebar", before != after and rgba(after)[3] < 1 and page.locator(".ni-titlebar").get_attribute("data-tinted") == "true", {"off": before, "on": after})
         self.screenshot(page, "frontier-dark")
         self.patch(page, {"themeMode": "light"})
         self.screenshot(page, "frontier-light")
@@ -313,7 +313,7 @@ class Acceptance:
         switch = page.get_by_role("switch", name="顶栏颜色小改", exact=True)
         switch.click()
         page.wait_for_function("window.__themeAcceptance.saved().titlebarTint === false")
-        off = page.locator(".nw-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
+        off = page.locator(".ni-titlebar").evaluate("e => getComputedStyle(e).backgroundColor")
         expected_off = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--chrome-bg')")
         self.check("turning tint off restores neutral chrome", rgba(off) == rgba(expected_off), {"actual": off, "expected": expected_off})
 
@@ -323,16 +323,16 @@ class Acceptance:
         for mode in ("dark", "light"):
             for accent in ORDER[6:11]:
                 self.patch(page, {"accent": accent, "themeMode": mode})
-                art = page.locator("[data-testid=art-stage] > .nw-theme-artwork")
+                art = page.locator("[data-testid=art-stage] > .ni-theme-artwork")
                 info = art.evaluate("e => ({motif: e.dataset.motif, width: e.getBoundingClientRect().width, height: e.getBoundingClientRect().height, opacity: getComputedStyle(e).opacity, pointer: getComputedStyle(e).pointerEvents, paths: Array.from(e.querySelectorAll('path,ellipse,circle')).map(n => n.outerHTML).join(''), images: e.querySelectorAll('image,foreignObject,use').length, childrenNoninteractive: Array.from(e.querySelectorAll('*')).every(n => getComputedStyle(n).pointerEvents === 'none')})")
                 fingerprints[accent] = hashlib.sha256(re.sub(r"theme-glow-[^)]+", "theme-glow", info["paths"]).encode()).hexdigest()
                 self.check("original background geometry visible and noninteractive " + mode + "/" + accent, info["motif"] == accent and info["width"] > 0 and info["height"] > 0 and float(info["opacity"]) > 0 and info["pointer"] == "none" and info["childrenNoninteractive"] and info["images"] == 0, info)
-                title_art = page.locator(".nw-titlebar > .nw-theme-artwork")
+                title_art = page.locator(".ni-titlebar > .ni-theme-artwork")
                 title_info = title_art.evaluate("e => ({html: e.innerHTML, display: getComputedStyle(e).display, pointer: getComputedStyle(e).pointerEvents, width: e.getBoundingClientRect().width})")
                 title_fingerprints[accent] = hashlib.sha256(title_info["html"].encode()).hexdigest()
                 self.check("original titlebar geometry visible " + mode + "/" + accent, title_info["display"] != "none" and title_info["width"] > 0 and title_info["pointer"] == "none")
-                ids = page.locator(".nw-theme-artwork radialGradient").evaluate_all("items => items.map(e => e.id)")
-                valid_refs = page.evaluate("Array.from(document.querySelectorAll('.nw-theme-artwork [fill^=\"url\"]')).every(e => { const id = e.getAttribute('fill').slice(5,-1); return e.closest('svg').querySelector(`[id=\"${id}\"]`) !== null; })")
+                ids = page.locator(".ni-theme-artwork radialGradient").evaluate_all("items => items.map(e => e.id)")
+                valid_refs = page.evaluate("Array.from(document.querySelectorAll('.ni-theme-artwork [fill^=\"url\"]')).every(e => { const id = e.getAttribute('fill').slice(5,-1); return e.closest('svg').querySelector(`[id=\"${id}\"]`) !== null; })")
                 self.check("all gradient IDs unique and locally resolved " + mode + "/" + accent, len(ids) == len(set(ids)) and len(ids) >= 3 and valid_refs, ids)
                 if accent == "fortyTwo":
                     page.emulate_media(reduced_motion="reduce")
@@ -403,9 +403,9 @@ class Acceptance:
         page = self.new_page({"accent": "paper", "titlebarTint": True}, route="home", tauri=True)
         image = page.evaluate("() => { const canvas = document.createElement('canvas'); canvas.width=160; canvas.height=100; const ctx=canvas.getContext('2d'); ctx.fillStyle='#246c89'; ctx.fillRect(0,0,160,100); ctx.fillStyle='#e1b16c'; ctx.fillRect(80,0,80,100); return canvas.toDataURL(); }")
         self.patch(page, {"backgroundImage": image, "backgroundOpacity": 0.85, "backgroundBlur": 6})
-        self.check("user image replaces shell and preview theme backgrounds", page.locator(".nw-bg > .nw-theme-artwork").count() == 0 and page.locator(".st-preview__art > .nw-theme-artwork").count() == 0 and page.locator(".nw-bg__image, .st-preview__image").count() == 2)
-        self.check("user image retains original titlebar decoration", page.locator(".nw-titlebar > .nw-theme-artwork[data-motif=paper]").count() == 1)
-        self.check("image style uses selected URL and live blur", page.locator(".nw-bg__image").evaluate("(e, url) => e.style.backgroundImage.includes(url) && getComputedStyle(e).filter === 'blur(6px)'", image))
+        self.check("user image replaces shell and preview theme backgrounds", page.locator(".ni-bg > .ni-theme-artwork").count() == 0 and page.locator(".st-preview__art > .ni-theme-artwork").count() == 0 and page.locator(".ni-bg__image, .st-preview__image").count() == 2)
+        self.check("user image retains original titlebar decoration", page.locator(".ni-titlebar > .ni-theme-artwork[data-motif=paper]").count() == 1)
+        self.check("image style uses selected URL and live blur", page.locator(".ni-bg__image").evaluate("(e, url) => e.style.backgroundImage.includes(url) && getComputedStyle(e).filter === 'blur(6px)'", image))
         self.screenshot(page, "user-image-dark")
         self.patch(page, {"themeMode": "light"})
         self.screenshot(page, "user-image-light")
@@ -414,16 +414,16 @@ class Acceptance:
             page.wait_for_timeout(350)
             for tint in (False, True):
                 self.patch(page, {"titlebarTint": tint})
-                display = page.locator(".nw-titlebar > .nw-theme-artwork").evaluate("e => getComputedStyle(e).display")
+                display = page.locator(".ni-titlebar > .ni-theme-artwork").evaluate("e => getComputedStyle(e).display")
                 self.check("narrow titlebar decoration threshold " + str(width) + "/" + str(tint), (display == "none") == (width <= 820), display)
-                hits = page.locator(".nw-titlebar button").evaluate_all("items => items.map(e => {const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {label: e.getAttribute('aria-label') || e.textContent.trim(), hit: e===hit || e.contains(hit), drag: e.hasAttribute('data-tauri-drag-region'), width:r.width, x:r.x};})")
+                hits = page.locator(".ni-titlebar button").evaluate_all("items => items.map(e => {const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {label: e.getAttribute('aria-label') || e.textContent.trim(), hit: e===hit || e.contains(hit), drag: e.hasAttribute('data-tauri-drag-region'), width:r.width, x:r.x};})")
                 self.check("all real nav and window buttons hit their centers " + str(width) + "/" + str(tint), len(hits) == 6 and all(hit["hit"] and not hit["drag"] for hit in hits), hits)
-                drag = page.locator(".nw-brand__text").evaluate("e => {const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {hit: e===hit || e.contains(hit), drag: hit?.hasAttribute('data-tauri-drag-region'), header: e.closest('header').hasAttribute('data-tauri-drag-region')};}")
+                drag = page.locator(".ni-brand__text").evaluate("e => {const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {hit: e===hit || e.contains(hit), drag: hit?.hasAttribute('data-tauri-drag-region'), header: e.closest('header').hasAttribute('data-tauri-drag-region')};}")
                 self.check("real titlebar brand remains drag-region hit " + str(width) + "/" + str(tint), drag["hit"] and drag["drag"] and drag["header"], drag)
                 for label, route in (("资源", "resources"), ("更多", "more"), ("设置", "settings"), ("首页", "home")):
                     page.get_by_role("navigation", name="主导航").get_by_role("button", name=label, exact=True).click()
                     page.wait_for_function("route => window.__themeAcceptance.route === route", arg=route)
-                    self.check("real TitleBar navigation handler " + str(width) + "/" + str(tint) + "/" + route, page.locator(".nw-content").get_attribute("data-route") == route)
+                    self.check("real TitleBar navigation handler " + str(width) + "/" + str(tint) + "/" + route, page.locator(".ni-content").get_attribute("data-route") == route)
                 page.get_by_role("button", name="最小化", exact=True).click()
                 page.wait_for_function("window.__themeAcceptance.calls.some(c => c.command === 'window_minimize')")
         page.set_viewport_size({"width": 820, "height": 960})
@@ -432,9 +432,9 @@ class Acceptance:
         page.get_by_role("button", name="关闭", exact=True).click()
         page.wait_for_function("window.__themeAcceptance.calls.some(c => c.command === 'window_close')")
         self.check("real close handler invokes backend after exit animation", page.evaluate("window.__themeAcceptance.calls.filter(c => c.command === 'window_close').length") == 1)
-        page.evaluate("document.querySelector('.nw-shell').classList.remove('nw-shell--leaving')")
+        page.evaluate("document.querySelector('.ni-shell').classList.remove('ni-shell--leaving')")
         self.patch(page, {"backgroundImage": None})
-        self.check("clearing user image restores theme background", page.locator(".nw-bg > .nw-theme-artwork[data-motif=paper]").count() == 1 and page.locator(".nw-bg__image").count() == 0)
+        self.check("clearing user image restores theme background", page.locator(".ni-bg > .ni-theme-artwork[data-motif=paper]").count() == 1 and page.locator(".ni-bg__image").count() == 0)
 
     def tauri_persistence(self):
         page = self.new_page({"accent": "custom", "titlebarTint": True}, tauri=True)

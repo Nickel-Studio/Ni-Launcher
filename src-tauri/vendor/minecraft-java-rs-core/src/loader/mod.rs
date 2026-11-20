@@ -1185,7 +1185,7 @@ mod tests {
     #[test]
     fn temporary_installer_home_is_removed_on_failure_paths() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-optifine-temp-{}",
+            "nickel-optifine-temp-{}",
             TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let home = TempHome::create(&root).unwrap();
@@ -1200,7 +1200,7 @@ mod tests {
     #[test]
     fn generated_profile_finder_is_scoped_to_target_minecraft() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-optifine-profile-{}",
+            "nickel-optifine-profile-{}",
             TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let version_dir = root.join(".minecraft/versions/1.20.1-OptiFine_HD_U_I6");
@@ -1228,7 +1228,7 @@ mod tests {
     #[tokio::test]
     async fn liteloader_profile_builds_runtime_assets_without_network() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-liteloader-assets-{}",
+            "nickel-liteloader-assets-{}",
             TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let profile = json!({

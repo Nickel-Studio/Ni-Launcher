@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn mod_count_ignores_disabled_and_unrelated_files() {
-        let root = std::env::temp_dir().join(format!("nowhere-memory-{}", crate::store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-memory-{}", crate::store::random_token()));
         let mods = root.join("mods");
         std::fs::create_dir_all(&mods).unwrap();
         for name in ["a.jar", "b.ZIP", "c.litemod", "d.jar.disabled", "readme.txt"] {
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn mod_count_accepts_an_explicit_loader_directory() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-memory-lite-{}",
+            "nickel-memory-lite-{}",
             crate::store::random_token()
         ));
         let mods = root.join("mods/1.12.2");

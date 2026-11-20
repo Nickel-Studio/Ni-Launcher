@@ -1,7 +1,7 @@
 //! 实例设置与版本管理命令。
 //!
-//! 设置文件 `nowhere.settings.json` 随版本目录保存；读写补齐默认值并保留未知键。
-//! 版本 JSON 的 `nowhereCustom` 只保存展示信息，改名不得修改目录身份或 `id`。
+//! 设置文件 `nickel.settings.json` 随版本目录保存；读写补齐默认值并保留未知键。
+//! 版本 JSON 的 `nickelCustom` 只保存展示信息，改名不得修改目录身份或 `id`。
 //! 外部启动器设置只作为缺失本地设置时的只读来源，首次保存才写本地文件。
 //! 写入和删除前须校验版本 ID，拒绝路径分隔符、`..`、盘符、备用数据流与 NUL。
 
@@ -16,16 +16,16 @@ use crate::store;
 const SETTINGS_MAX_BYTES: usize = 256 * 1024;
 
 /// 保留已有实例的设置文件名，复制与迁移时随版本目录携带。
-const SETTINGS_FILE_NAME: &str = "nowhere.settings.json";
+const SETTINGS_FILE_NAME: &str = "nickel.settings.json";
 
 const ICON_MAX_BYTES: u64 = 8 * 1024 * 1024;
 const ICON_MAX_DIMENSION: u32 = 4096;
-const ICON_DIRECTORY: &str = "nowhere-icons";
+const ICON_DIRECTORY: &str = "nickel-icons";
 const ICON_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
 
 /// 版本 JSON 里的自定义信息字段。
-const CUSTOM_FIELD: &str = "nowhereCustom";
+const CUSTOM_FIELD: &str = "nickelCustom";
 
 // memoryMode 的持久化取值。
 const MEMORY_GLOBAL: &str = "global";
@@ -586,12 +586,12 @@ pub(crate) fn legacy_launcher_unmapped_keys(version_dir: &Path) -> Vec<String> {
 pub(crate) fn effective_local(root: &Path, version: &str) -> (serde_json::Value, &'static str) {
     let version_dir = root.join("versions").join(version);
     if let Some(value) = read_own_settings(&version_dir.join(SETTINGS_FILE_NAME)) {
-        return (value, "nowhere");
+        return (value, "nickel");
     }
     if let Some(value) = legacy_launcher_effective_settings(root, version) {
         return (value, "pcl");
     }
-    (serde_json::Value::Null, "nowhere")
+    (serde_json::Value::Null, "nickel")
 }
 
 pub(crate) fn settings_source(root: &Path, version: &str) -> &'static str {
@@ -640,7 +640,7 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("nowhere.tmp");
+        .unwrap_or("nickel.tmp");
     let tmp = path.with_file_name(format!("{file_name}.tmp-{}", store::random_token()));
     std::fs::write(&tmp, text)
         .map_err(|e| format!("写入 {} 失败: {e}", path.display()))?;
@@ -686,7 +686,7 @@ fn find_version_jar(version_dir: &Path, version_id: &str) -> Option<u64> {
     std::fs::metadata(&jar).map(|m| m.len()).ok()
 }
 
-/// 仅更新 nowhereCustom 的展示字段，保留其余键与顶层 id；非对象输入返回 false。
+/// 仅更新 nickelCustom 的展示字段，保留其余键与顶层 id；非对象输入返回 false。
 fn patch_custom_fields(
     value: &mut serde_json::Value,
     name: &str,
@@ -944,7 +944,7 @@ pub async fn version_icon_pick(app: AppHandle, dir: String, version_id: String) 
 
 
 /// 修改版本的自定义信息（名称 / 描述 / 分类 / 收藏）：对版本 JSON 做最小侵入
-/// patch，仅替换 `nowhereCustom` 的四个键，其余字段原样保留，`id` 不动。
+/// patch，仅替换 `nickelCustom` 的四个键，其余字段原样保留，`id` 不动。
 #[tauri::command]
 pub fn version_rename(
     dir: String,
@@ -996,7 +996,7 @@ pub fn version_delete(dir: String, version_id: String) -> Result<(), String> {
 // 命令：版本详情 / 补全文件
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 真实版本与加载器来自扫描结果，展示字段来自 nowhereCustom；缺失值按 IPC 契约回退。
+/// 真实版本与加载器来自扫描结果，展示字段来自 nickelCustom；缺失值按 IPC 契约回退。
 fn build_detail(
     version_dir: &Path,
     version_id: &str,
@@ -1234,7 +1234,7 @@ mod tests {
     /// 测试用临时目录（唯一名，避免并行测试互相干扰）。
     fn temp_dir(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "nowhere-vsettings-test-{tag}-{}",
+            "nickel-vsettings-test-{tag}-{}",
             store::random_token()
         ))
     }
@@ -1244,7 +1244,7 @@ mod tests {
     #[test]
     fn settings_fall_back_to_defaults_on_missing_and_corruption() {
         let dir = temp_dir("fallback");
-        let path = dir.join("nowhere.settings.json");
+        let path = dir.join("nickel.settings.json");
         let text = read_settings_file(&path);
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert!(value["versionIsolation"].is_null());
@@ -1346,7 +1346,7 @@ mod tests {
             let merged = normalize_memory(merge_settings(default_settings_value(), stored));
             let result = crate::runtime_settings::resolve(
                 &serde_json::json!({"versionIsolation":false,"jvmArgs":"-Dglobal=1","gameArgs":"--demo","preLaunchCommand":"echo hello"}),
-                &merged, None, None
+                &merged, None
             ).unwrap();
             assert!(!result.isolation);
             assert_eq!(result.jvm_args, ["-Dglobal=1"]);
@@ -1357,9 +1357,9 @@ mod tests {
 
     #[test]
     fn scripts_only_forward_identity_and_quote_special_paths() {
-        let windows = launch_script(Path::new(r"C:\Launch 100%\NoWheRE.exe"), Path::new(r"D:\Games & Mods!"), "我的实例", true).unwrap();
+        let windows = launch_script(Path::new(r"C:\Launch 100%\Nickel.exe"), Path::new(r"D:\Games & Mods!"), "我的实例", true).unwrap();
         assert!(windows.contains("DisableDelayedExpansion"));
-        assert!(windows.contains(r#""C:\Launch 100%%\NoWheRE.exe" --launch-instance "我的实例" --game-root "D:\Games & Mods!""#));
+        assert!(windows.contains(r#""C:\Launch 100%%\Nickel.exe" --launch-instance "我的实例" --game-root "D:\Games & Mods!""#));
         assert!(!windows.contains("accessToken"));
         assert!(!windows.contains("username"));
         assert!(script_argument("bad\npath", true).is_err());
@@ -1428,7 +1428,7 @@ mod tests {
         let custom = value.get(CUSTOM_FIELD).unwrap();
         assert_eq!(custom["name"], "改名");
         assert_eq!(custom["favorite"], false);
-        assert_eq!(custom["icon"], "anvil", "rename 不得丢掉 nowhereCustom 的其它键");
+        assert_eq!(custom["icon"], "anvil", "rename 不得丢掉 nickelCustom 的其它键");
     }
 
     #[test]
@@ -1490,7 +1490,7 @@ mod tests {
         let version_json: serde_json::Value = serde_json::from_str(
             r#"{
                 "id": "1.20.1-forge",
-                "nowhereCustom": {
+                "nickelCustom": {
                     "name": "我的整合包",
                     "description": "主玩",
                     "category": "生存",
@@ -1572,7 +1572,7 @@ mod tests {
                     "type": "release",
                     "mainClass": "net.minecraft.launchwrapper.Launch",
                     "libraries": [{"name": library}],
-                    "nowhereProfile": {
+                    "nickelProfile": {
                         "minecraftVersion": minecraft,
                         "loader": loader,
                         "loaderVersion": loader_version
@@ -1612,7 +1612,7 @@ mod tests {
         let version = root.join("versions/icon-test");
         std::fs::create_dir_all(&version).unwrap();
         let descriptor = version.join("icon-test.json");
-        std::fs::write(&descriptor, br#"{"id":"1.16.5","nowhereCustom":{"name":"Keep"}}"#).unwrap();
+        std::fs::write(&descriptor, br#"{"id":"1.16.5","nickelCustom":{"name":"Keep"}}"#).unwrap();
         let dir = root.to_string_lossy().into_owned();
         let source = root.join("selected.PNG");
         let png = include_bytes!("../../src/assets/blocks/Grass.png");
@@ -1801,15 +1801,15 @@ VersionVanillaName:1.20.1\r\n",
         assert!(!own.contains("settingsSource"));
         let loaded: serde_json::Value =
             serde_json::from_str(&version_settings_get(dir.clone(), "id".into())?).unwrap();
-        assert_eq!(loaded["settingsSource"], "nowhere");
+        assert_eq!(loaded["settingsSource"], "nickel");
         assert_eq!(loaded["windowTitle"], "Saved");
-        assert_eq!(loaded["memoryMode"], "global", "NoWheRE 配置优先后不再套用 PCL");
+        assert_eq!(loaded["memoryMode"], "global", "Nickel 配置优先后不再套用 PCL");
 
         // 无外部设置时仍返回默认来源。
         let plain = root.join("versions").join("plain");
         std::fs::create_dir_all(&plain).map_err(|e| e.to_string())?;
         assert!(legacy_launcher_effective_settings(&root, "plain").is_none());
-        assert_eq!(settings_source(&root, "plain"), "nowhere");
+        assert_eq!(settings_source(&root, "plain"), "nickel");
 
         std::fs::remove_dir_all(root).map_err(|e| e.to_string())?;
         Ok(())

@@ -125,7 +125,7 @@ export interface SettingsContextValue {
    Environment helpers
    ========================================================================== */
 
-const STORAGE_KEY = "nowhere.settings";
+const STORAGE_KEY = "nickel.settings";
 
 const THEME_MODES: readonly ThemeMode[] = ["system", "light", "dark"];
 const ACCENTS: readonly Accent[] = ACCENT_IDS;

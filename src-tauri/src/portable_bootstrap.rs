@@ -54,7 +54,7 @@ fn committed_version(root: &Path, manifest: &portable_pack::PortableManifest) ->
         let name = entry.file_name().to_string_lossy().into_owned();
         if named_profiles::validate_name(&name).is_err() { continue; }
         let descriptor = read_value(&directory.join(format!("{name}.json")));
-        if descriptor.as_ref().and_then(|value| value.pointer("/nowherePack/portablePackageId")).and_then(Value::as_str) == Some(manifest.package_id.as_str()) {
+        if descriptor.as_ref().and_then(|value| value.pointer("/nickelPack/portablePackageId")).and_then(Value::as_str) == Some(manifest.package_id.as_str()) {
             return Some(name);
         }
     }
@@ -152,23 +152,18 @@ pub fn seed_personalization(root: &Path, manifest: &portable_pack::PortableManif
     Ok(())
 }
 
-fn relative_background(manifest: &portable_pack::PortableManifest, path: &Path) -> Result<bool, String> {
+fn relative_background(path: &Path) -> Result<bool, String> {
     if path.components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
         return Err("便携背景路径无效，请重新选择背景图片".into());
     }
-    let portable_directory = [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY]
-        .iter().any(|directory| path.starts_with(directory));
-    if portable_directory && !path.starts_with(&manifest.data_directory) {
-        return Err("便携背景目录与整合包不一致，请重新选择背景图片".into());
-    }
-    Ok(portable_directory)
+    Ok(path.starts_with(app_paths::DATA_DIRECTORY))
 }
 
 pub fn background_for_display(root: &Path, manifest: &portable_pack::PortableManifest, value: &mut Value) -> Result<(), String> {
     portable_pack::validate_manifest(manifest)?;
     let Some(path) = value.get("backgroundImage").and_then(Value::as_str) else { return Ok(()); };
     let path = Path::new(path);
-    if path.is_absolute() || !relative_background(manifest, path)? { return Ok(()); }
+    if path.is_absolute() || !relative_background(path)? { return Ok(()); }
     let resolved = root.join(path);
     instances::reject_links(&resolved)?;
     value["backgroundImage"] = Value::String(resolved.to_string_lossy().into_owned());
@@ -179,9 +174,9 @@ pub fn background_for_storage(root: &Path, manifest: &portable_pack::PortableMan
     portable_pack::validate_manifest(manifest)?;
     let Some(path) = value.get("backgroundImage").and_then(Value::as_str) else { return Ok(()); };
     let path = Path::new(path);
-    if !path.is_absolute() { relative_background(manifest, path)?; return Ok(()); }
+    if !path.is_absolute() { relative_background(path)?; return Ok(()); }
     let Ok(relative) = path.strip_prefix(root) else { return Ok(()); };
-    if !relative_background(manifest, relative)? { return Ok(()); }
+    if !relative_background(relative)? { return Ok(()); }
     instances::reject_links(path)?;
     value["backgroundImage"] = Value::String(relative.to_string_lossy().replace('\\', "/"));
     Ok(())

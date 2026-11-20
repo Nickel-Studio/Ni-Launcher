@@ -6,12 +6,12 @@ import { PRODUCT_NAME } from "../lib/brand";
 export function Sparkles({ className }: { className?: string }) {
   return (
     <span
-      className={["nw-sparkles", className].filter(Boolean).join(" ")}
+      className={["ni-sparkles", className].filter(Boolean).join(" ")}
       aria-hidden="true"
     >
-      <i className="nw-sparkles__dot nw-sparkles__dot--a" />
-      <i className="nw-sparkles__dot nw-sparkles__dot--b" />
-      <i className="nw-sparkles__dot nw-sparkles__dot--c" />
+      <i className="ni-sparkles__dot ni-sparkles__dot--a" />
+      <i className="ni-sparkles__dot ni-sparkles__dot--b" />
+      <i className="ni-sparkles__dot ni-sparkles__dot--c" />
     </span>
   );
 }
@@ -34,12 +34,12 @@ export function BrandMark({
 }: BrandMarkProps) {
   return (
     <span
-      className={["nw-brandmark", className].filter(Boolean).join(" ")}
+      className={["ni-brandmark", className].filter(Boolean).join(" ")}
       style={{ "--mark-size": `${size}px` } as CSSProperties}
     >
-      {glow ? <span className="nw-brandmark__glow" aria-hidden="true" /> : null}
+      {glow ? <span className="ni-brandmark__glow" aria-hidden="true" /> : null}
       <img
-        className="nw-brandmark__img"
+        className="ni-brandmark__img"
         src={logoUrl}
         alt={alt}
         width={size}

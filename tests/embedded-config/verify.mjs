@@ -42,7 +42,6 @@ const configurationEnvironment = [
   "NICKEL_MSA_REDIRECT_URI",
   "NICKEL_CURSEFORGE_API_KEY",
   "NICKEL_SECRETS",
-  "NOWHERE_SECRETS",
 ];
 const testKey = "NICKEL_TEST_CURSEFORGE_KEY";
 const environmentBefore = JSON.stringify(process.env);

@@ -32,17 +32,17 @@
       name === "inert" &&
       (this === document.body || this.id === "root") &&
       state.times.ready === undefined &&
-      document.getElementById("nw-splash")
+      document.getElementById("ni-splash")
     ) {
       state.appInertDuringStartup = true;
     }
     return nativeSetAttribute.call(this, name, value);
   };
-  const rootDirectory = "C:/NoWheRE-startup-regression";
+  const rootDirectory = "C:/Nickel-startup-regression";
   const callbacks = new Map();
   let callbackId = 0;
   const settings = { themeMode: config.mode, accent: "mono" };
-  localStorage.setItem("nowhere.settings", JSON.stringify(settings));
+  localStorage.setItem("nickel.settings", JSON.stringify(settings));
   const version = {
     id: "1.14.3",
     type: "release",
@@ -147,7 +147,7 @@
   document.addEventListener(
     "transitionend",
     (event) => {
-      if (event.target.id !== "nw-splash" || event.propertyName !== "opacity")
+      if (event.target.id !== "ni-splash" || event.propertyName !== "opacity")
         return;
       state.times.transitionEnd = performance.now();
       if (config.splash === "missing-event") event.stopImmediatePropagation();
@@ -158,7 +158,7 @@
     "transitioncancel",
     (event) => {
       if (
-        event.target.id === "nw-splash" &&
+        event.target.id === "ni-splash" &&
         config.splash === "missing-event"
       ) {
         event.stopImmediatePropagation();
@@ -167,7 +167,7 @@
     true
   );
   const observer = new MutationObserver(() => {
-    const splash = document.getElementById("nw-splash");
+    const splash = document.getElementById("ni-splash");
     // MutationObserver 兜底记录启动期 inert（Element.prototype 替身之外的路径）。
     if (
       state.times.ready === undefined &&
@@ -186,13 +186,13 @@
       splash.style.setProperty("transition", "none", "important");
     }
     if (
-      document.querySelector(".nw-shell") &&
+      document.querySelector(".ni-shell") &&
       state.times.commit === undefined
     ) {
       state.times.commit = performance.now();
     }
     if (
-      document.documentElement.classList.contains("nw-app-ready") &&
+      document.documentElement.classList.contains("ni-app-ready") &&
       state.times.ready === undefined
     ) {
       state.times.ready = performance.now();
@@ -217,20 +217,20 @@
     // 记录淡出开始的时刻：硬截止场景据此断言闪屏不会提前消失。
     if (
       splash &&
-      splash.classList.contains("nw-splash--leaving") &&
+      splash.classList.contains("ni-splash--leaving") &&
       state.times.leaving === undefined
     ) {
       state.times.leaving = performance.now();
     }
     if (
       state.times.ready !== undefined &&
-      !document.getElementById("nw-splash") &&
+      !document.getElementById("ni-splash") &&
       state.times.removed === undefined
     ) {
       state.times.removed = performance.now();
       // 交接后的应用可交互性：正常淡出 / 硬截止都必须移除 body / #root / 外壳的
       // inert，并恢复指针事件。启动遮挡现在惰性化 document.body，以覆盖 body 级 portal。
-      const shell = document.querySelector(".nw-shell");
+      const shell = document.querySelector(".ni-shell");
       const rootElement = document.getElementById("root");
       state.appAfterReveal = {
         bodyInert: Boolean(

@@ -254,7 +254,7 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
         </p>
       ) : null}
       <div className="st-preview-wrap">
-        <div className="st-preview-wrap__hint nw-eyebrow">实时预览</div>
+        <div className="st-preview-wrap__hint ni-eyebrow">实时预览</div>
         <ThemePreview />
       </div>
     </SettingsGroup>

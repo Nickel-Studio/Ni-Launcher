@@ -14,7 +14,7 @@ use minecraft_java_rs_core::{
     net::transfer::CancellationToken,
     utils::auth::offline_uuid,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Window};
 
 // ── 真实认证 / 账号后端模块 ──
@@ -397,29 +397,10 @@ fn resolved_memory_plan_for(
 // 5. 启动游戏
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 兼容旧调用形态 `{ params: { version, username, memoryMin, memoryMax, gameDir, source } }`
-/// 的参数对象。所有字段可选，便于与扁平参数合并。
-#[derive(Debug, Default, Deserialize)]
-pub struct LaunchParams {
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub username: Option<String>,
-    #[serde(default)]
-    pub memory_min: Option<String>,
-    #[serde(default)]
-    pub memory_max: Option<String>,
-    #[serde(default)]
-    pub game_dir: Option<String>,
-    #[serde(default)]
-    pub source: Option<String>,
-}
-
 /// 解析后的启动参数
 struct ResolvedLaunch {
     version: String,
     username: String,
-    memory_min: String,
     memory_max: String,
     game_dir: Option<String>,
 }
@@ -482,7 +463,6 @@ fn launch_cancel(launch_id: Option<String>) {
     }
 }
 
-/// 启动参数兼容扁平字段与旧的 params 对象。
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn launch_game(
@@ -490,29 +470,19 @@ async fn launch_game(
     version_id: Option<String>,
     username: Option<String>,
     memory_mb: Option<u64>,
-    memory_min: Option<String>,
-    memory_max: Option<String>,
     source: Option<String>,
     game_dir: Option<String>,
-    params: Option<LaunchParams>,
     launch_id: Option<String>,
 ) -> Result<(), String> {
     onboarding::require_accepted(&app)?;
     let launch_id = validate_launch_id(launch_id)?;
-    let p = params.unwrap_or_default();
     let version = version_id
-        .or(p.version)
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
         .ok_or("缺少版本号（versionId）")?;
-    let username = username.or(p.username).unwrap_or_default();
-    let memory_min = memory_min.or(p.memory_min).unwrap_or_default();
-    let memory_max = memory_max
-        .or(p.memory_max)
-        .or_else(|| memory_mb.map(|value| format!("{value}M")))
-        .unwrap_or_else(|| "2G".into());
-    let game_dir = game_dir.or(p.game_dir);
-    let transfer = network_settings::snapshot().transfer(source.or(p.source).as_deref())?;
+    let username = username.unwrap_or_default();
+    let memory_max = memory_mb.map(|value| format!("{value}M")).unwrap_or_else(|| "2G".into());
+    let transfer = network_settings::snapshot().transfer(source.as_deref())?;
     let control = Arc::new(LaunchControl {
         token: transfer.cancellation().clone(),
         launch_id: launch_id.clone(),
@@ -527,7 +497,6 @@ async fn launch_game(
     let resolved = ResolvedLaunch {
         version: version.clone(),
         username,
-        memory_min,
         memory_max,
         game_dir: game_dir.clone(),
     };
@@ -646,8 +615,6 @@ async fn run_launch_scoped(
     p: ResolvedLaunch,
     launch_id: String,
 ) -> Result<(), String> {
-    // 旧启动入口仍传 memoryMin；当前只保留兼容字段，不生成隐藏的 -Xms。
-    let _legacy_memory_min = p.memory_min.as_str();
     named_profiles::validate_name(&p.version)?;
     let base = match p.game_dir.as_ref() {
         Some(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
@@ -663,8 +630,6 @@ async fn run_launch_scoped(
     let global: serde_json::Value =
         serde_json::from_str(&game::game_settings_get(app.clone())?).unwrap_or_default();
     let local = runtime_settings::read_local(&base, &p.version);
-    let legacy: serde_json::Value =
-        serde_json::from_str(&settings_get(app.clone())?).unwrap_or_default();
     let isolation = runtime_settings::resolve_isolation(&global, &local);
     let directory = runtime_settings::game_directory(&base, &p.version, isolation);
     instances::reject_links(&directory)?;
@@ -681,7 +646,6 @@ async fn run_launch_scoped(
     let settings = runtime_settings::resolve_with_memory(
         &global,
         &local,
-        legacy.get("memoryMb").and_then(serde_json::Value::as_u64),
         total_memory,
         available_memory,
         mod_count,
@@ -1172,16 +1136,7 @@ fn launch_from_startup_arguments(app: &AppHandle) {
                 );
             }
             launch_game(
-                app.clone(),
-                Some(version),
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(root),
-                None,
-                Some(launch_id.clone()),
+                app.clone(), Some(version), None, None, None, Some(root), Some(launch_id.clone()),
             )
             .await
         }
@@ -1206,40 +1161,23 @@ fn launch_from_startup_arguments(app: &AppHandle) {
 }
 
 #[cfg(any(windows, test))]
-fn diagnostics_enabled(
-    primary: Option<&std::ffi::OsStr>,
-    legacy: Option<&std::ffi::OsStr>,
-) -> bool {
-    // 旧别名沿用“设置即开启”；新别名非空才优先，并允许 "0" 显式关闭。
-    primary
-        .filter(|value| !value.to_string_lossy().trim().is_empty())
-        .map_or(legacy.is_some(), |value| value != "0")
+fn diagnostics_enabled(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| {
+        let value = value.to_string_lossy();
+        !value.trim().is_empty() && value.trim() != "0"
+    })
 }
 
 #[cfg(test)]
-mod diagnostics_alias_tests {
+mod diagnostics_tests {
     use super::diagnostics_enabled;
     use std::ffi::OsStr;
 
     #[test]
-    fn primary_diagnostics_alias_overrides_legacy_presence() {
-        for legacy in [None, Some(""), Some("0"), Some("1"), Some(" \t\r\n")] {
-            let legacy = legacy.map(OsStr::new);
-            assert!(diagnostics_enabled(Some(OsStr::new("1")), legacy));
-            assert!(!diagnostics_enabled(Some(OsStr::new("0")), legacy));
-        }
-    }
-
-    #[test]
-    fn empty_primary_diagnostics_alias_falls_back_to_legacy_presence() {
-        for primary in [None, Some(""), Some(" "), Some(" \t\r\n")] {
-            for legacy in [None, Some(""), Some("0"), Some("1"), Some(" \t\r\n")] {
-                assert_eq!(
-                    diagnostics_enabled(primary.map(OsStr::new), legacy.map(OsStr::new)),
-                    legacy.is_some(),
-                    "primary={primary:?}, legacy={legacy:?}"
-                );
-            }
+    fn diagnostics_require_a_nonzero_nonblank_value() {
+        assert!(diagnostics_enabled(Some(OsStr::new("1"))));
+        for value in [None, Some(""), Some("0"), Some(" "), Some(" 0 ")] {
+            assert!(!diagnostics_enabled(value.map(OsStr::new)));
         }
     }
 }
@@ -1295,7 +1233,6 @@ pub fn run() {
                             }
                             if diagnostics_enabled(
                                 std::env::var_os("NICKEL_DIAG").as_deref(),
-                                std::env::var_os("NOWHERE_DIAG").as_deref(),
                             ) {
                                 eprintln!("[dwm] 窗口样式 {}", dwm::describe_window(hwnd));
                             }
@@ -1649,12 +1586,12 @@ mod tests {
     fn resolved_memory_plan_preview_non_isolated_liteloader_counts_nested_mods()
     -> Result<(), String> {
         let base =
-            std::env::temp_dir().join(format!("nowhere-memory-preview-{}", store::random_token()));
+            std::env::temp_dir().join(format!("nickel-memory-preview-{}", store::random_token()));
         let version = "Lite";
         let directory = base.join("versions").join(version);
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         std::fs::write(
-            directory.join("nowhere.profile.json"),
+            directory.join("nickel.profile.json"),
             serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": 1,
                 "name": version,
@@ -1671,7 +1608,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "id": version,
                 "inheritsFrom": "1.12.2",
-                "nowhereProfile": {
+                "nickelProfile": {
                     "minecraftVersion": "1.12.2",
                     "loader": "LiteLoader",
                     "loaderVersion": "1.12.2-SNAPSHOT-r0"

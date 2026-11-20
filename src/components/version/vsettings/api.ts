@@ -29,7 +29,7 @@ import {
 /** 版本详情（`version_detail` 的返回结构）。 */
 export interface VersionDetail {
   id: string;
-  /** 实际 Minecraft 版本；命名实例从 nowhereProfile/inheritsFrom 归纳。 */
+  /** 实际 Minecraft 版本；命名实例从 nickelProfile/inheritsFrom 归纳。 */
   minecraftVersion: string | null;
   dir: string;
   type: string;
@@ -448,7 +448,7 @@ export async function renameVersion(
 ): Promise<void> {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   await invoke("version_rename", { dir, versionId, ...patch });
-  window.dispatchEvent(new Event("nowhere:instances-changed"));
+  window.dispatchEvent(new Event("nickel:instances-changed"));
   const selected = getLaunchInstance();
   if (selected?.root === dir && selected.versionId === versionId) {
     setLaunchInstance({ ...selected, displayName: patch.name || versionId });
@@ -468,7 +468,7 @@ export async function deleteVersion(
   const focus = getVersionFocus();
   if (focus?.root === dir && focus.versionId === versionId)
     setVersionFocus(null);
-  window.dispatchEvent(new Event("nowhere:instances-changed"));
+  window.dispatchEvent(new Event("nickel:instances-changed"));
 }
 
 /** 补全文件使用统一队列；取消等待项返回 null，不产生失败提示。 */

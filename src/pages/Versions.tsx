@@ -75,7 +75,7 @@ function StateNotice({
       <div className="vs-notice__title">{title}</div>
       <p className="vs-notice__hint">{hint}</p>
       {detail ? (
-        <div className="vs-notice__detail nw-mono">{detail}</div>
+        <div className="vs-notice__detail ni-mono">{detail}</div>
       ) : null}
       {actions ? <div className="vs-notice__actions">{actions}</div> : null}
     </div>
@@ -394,7 +394,7 @@ export default function Versions() {
             >
               返回
             </Button>
-            <div className="nw-eyebrow">Instances</div>
+            <div className="ni-eyebrow">Instances</div>
             <h1 className="vs-head__title">实例与版本</h1>
             <div className="vs-head__meta">
               <IconFolder aria-hidden />

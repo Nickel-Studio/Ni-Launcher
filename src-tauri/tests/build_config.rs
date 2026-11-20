@@ -105,7 +105,7 @@ fn invalid_optional_fields_use_defaults_without_discarding_a_valid_client() {
         assert_eq!(
             project(&source.to_string()).unwrap()["microsoft"],
             json!({
-                "clientId": "fixture-client", "authority": "consumers", "redirectUri": "nowhere://auth"
+                "clientId": "fixture-client", "authority": "consumers", "redirectUri": "nickel://auth"
             })
         );
     }

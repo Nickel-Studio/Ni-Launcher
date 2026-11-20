@@ -69,7 +69,7 @@ export function setSkinSession(session: SkinSession | null): void {
  * 缓存后「切换角色」弹窗可以立刻渲染（头像按 uuid 另行加载），不再等网络。
  * 缓存只含公开的 id / name，不含任何令牌。
  */
-const PROFILE_KEY_PREFIX = "nowhere.skinProfiles.";
+const PROFILE_KEY_PREFIX = "nickel.skinProfiles.";
 
 export function readCachedProfiles(accountId: string): SkinProfile[] {
   if (!accountId) return [];

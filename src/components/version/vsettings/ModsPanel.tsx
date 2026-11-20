@@ -688,13 +688,13 @@ export function ModsPanel({
               {detail.updateAvailable ? " · 可更新" : ""}
             </dd>
             <dt>物理文件</dt>
-            <dd className="vst-mods__paths nw-mono">
+            <dd className="vst-mods__paths ni-mono">
               {detail.physicalPaths.map((path) => (
                 <span key={path}>{path}</span>
               ))}
             </dd>
             <dt>路径</dt>
-            <dd className="nw-mono">{detail.path}</dd>
+            <dd className="ni-mono">{detail.path}</dd>
             {detail.tags.length > 0 ? (
               <>
                 <dt>标签</dt>

@@ -122,7 +122,7 @@ export function ThemeArtwork({ accent, placement = "background", decoration = "l
   const glow = `theme-glow-${id}`;
   return (
     <svg
-      className={`nw-theme-artwork nw-theme-artwork--${placement} ${className}`}
+      className={`ni-theme-artwork ni-theme-artwork--${placement} ${className}`}
       data-motif={motif}
       viewBox={placement === "background" ? "0 0 1200 800" : "0 0 240 64"}
       preserveAspectRatio={placement === "background" ? "xMidYMid slice" : "xMidYMid meet"}

@@ -117,11 +117,11 @@ window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
 window.__TAURI_INTERNALS__ = {
   invoke: async (command, args = {}) => {
     if (command === "settings_get") {
-      return window.localStorage.getItem("nowhere.settings") ?? "{}";
+      return window.localStorage.getItem("nickel.settings") ?? "{}";
     }
     if (command === "settings_set") return null;
     if (command === "accounts_list") {
-      const raw = window.localStorage.getItem("nowhere.accounts");
+      const raw = window.localStorage.getItem("nickel.accounts");
       return raw ? JSON.parse(raw) : [];
     }
     if (command === "accounts_set_active" || command === "accounts_upsert") {
@@ -253,29 +253,29 @@ async function runRegression(): Promise<void> {
       "(prefers-reduced-motion: reduce)"
     ).matches;
 
-    const page = required<HTMLElement>(document, ".nw-pager__page");
+    const page = required<HTMLElement>(document, ".ni-pager__page");
     page.scrollTop = 120;
     check(
       "Pager 切换前滚动位置已建立",
       page.scrollTop > 0,
       `${page.scrollTop}`
     );
-    const pagerRoot = required<HTMLElement>(document, ".nw-pager");
+    const pagerRoot = required<HTMLElement>(document, ".ni-pager");
     findByText<HTMLButtonElement>(
       pagerRoot,
-      ".nw-pager__item",
+      ".ni-pager__item",
       "预览分区"
     ).click();
     if (!reducedMotion) {
       await waitFor(
-        () => pagerRoot.querySelector(".nw-swap__layer--out"),
+        () => pagerRoot.querySelector(".ni-swap__layer--out"),
         "Pager outgoing layer"
       );
     }
     await waitFor(
       () =>
         pagerRoot
-          .querySelector(".nw-pager__item[data-active='true']")
+          .querySelector(".ni-pager__item[data-active='true']")
           ?.textContent?.includes("预览分区"),
       "Pager active 切换"
     );
@@ -284,7 +284,7 @@ async function runRegression(): Promise<void> {
       page.scrollTop === 0,
       `${page.scrollTop}`
     );
-    const incoming = required<HTMLElement>(pagerRoot, ".nw-swap__layer--in");
+    const incoming = required<HTMLElement>(pagerRoot, ".ni-swap__layer--in");
     const pagerAnimation = getComputedStyle(incoming).animationName;
     expect(
       reducedMotion
@@ -292,15 +292,15 @@ async function runRegression(): Promise<void> {
         : "Pager 切换使用 keyed 淡入/位移",
       reducedMotion
         ? pagerAnimation === "none"
-        : pagerAnimation.includes("nw-swap-in"),
+        : pagerAnimation.includes("ni-swap-in"),
       pagerAnimation
     );
 
     const seg = required<HTMLElement>(
       document,
-      "[data-fixture='segmented'] .nw-seg"
+      "[data-fixture='segmented'] .ni-seg"
     );
-    const pill = required<HTMLElement>(seg, ".nw-seg__pill");
+    const pill = required<HTMLElement>(seg, ".ni-seg__pill");
     await waitFor(() => pill.dataset.ready === "true", "Segmented pill ready");
     const beforeTransform = pill.style.transform;
     const firstTab = required<HTMLButtonElement>(seg, "[role='tab']");
@@ -356,14 +356,14 @@ async function runRegression(): Promise<void> {
     );
     const modalAnimation = getComputedStyle(dialog).animationName;
     const backdropAnimation = getComputedStyle(
-      required<HTMLElement>(document, ".nw-modal__backdrop")
+      required<HTMLElement>(document, ".ni-modal__backdrop")
     ).animationName;
     expect(
       reducedMotion ? "reduced-motion 关闭 Modal 动画" : "Modal 有进场动画",
       reducedMotion
         ? modalAnimation === "none" && backdropAnimation === "none"
-        : modalAnimation.includes("nw-modal-in") &&
-            backdropAnimation.includes("nw-fade"),
+        : modalAnimation.includes("ni-modal-in") &&
+            backdropAnimation.includes("ni-fade"),
       `${modalAnimation} / ${backdropAnimation}`
     );
     expect("Modal 打开后焦点在弹窗内", dialog.contains(document.activeElement));
@@ -386,11 +386,11 @@ async function runRegression(): Promise<void> {
 
     const trigger = required<HTMLButtonElement>(
       document,
-      "[data-fixture='overlays'] .nw-select__trigger"
+      "[data-fixture='overlays'] .ni-select__trigger"
     );
     trigger.click();
     const menu = await waitFor(
-      () => document.querySelector<HTMLElement>(".nw-select__menu"),
+      () => document.querySelector<HTMLElement>(".ni-select__menu"),
       "Select 打开"
     );
     const selectAnimation = getComputedStyle(menu).animationName;
@@ -398,7 +398,7 @@ async function runRegression(): Promise<void> {
       reducedMotion ? "reduced-motion 关闭 Select 动画" : "Select 有弹出动画",
       reducedMotion
         ? selectAnimation === "none"
-        : selectAnimation.includes("nw-pop"),
+        : selectAnimation.includes("ni-pop"),
       selectAnimation
     );
     expect(
@@ -413,7 +413,7 @@ async function runRegression(): Promise<void> {
       })
     );
     await waitFor(
-      () => !document.querySelector(".nw-select__menu"),
+      () => !document.querySelector(".ni-select__menu"),
       "Select 关闭"
     );
     expect("Select 关闭后焦点回到 trigger", document.activeElement === trigger);
@@ -513,7 +513,7 @@ async function runRegression(): Promise<void> {
     );
     expect(
       "Vanilla Collapse 使用共享高度机制",
-      collapse.classList.contains("nw-collapse")
+      collapse.classList.contains("ni-collapse")
     );
 
     const launchButton = required<HTMLButtonElement>(
@@ -525,7 +525,7 @@ async function runRegression(): Promise<void> {
     // R7 起启动失败收敛为 LaunchErrorDialog（Modal portal 到 body），不再是行内通知。
     const homeError = await waitFor(
       () =>
-        document.querySelector<HTMLElement>(".nw-modal .launch-error__message"),
+        document.querySelector<HTMLElement>(".ni-modal .launch-error__message"),
       "Home 启动错误弹窗"
     );
     expect(
@@ -535,7 +535,7 @@ async function runRegression(): Promise<void> {
     expect(
       "Home 弹窗标题为启动失败",
       document
-        .querySelector(".nw-modal__title")
+        .querySelector(".ni-modal__title")
         ?.textContent?.includes("启动失败") === true
     );
     expect(
@@ -546,7 +546,7 @@ async function runRegression(): Promise<void> {
     );
     // 关闭弹窗，归还焦点，避免影响后续断言。
     const dismissButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".nw-modal__foot button")
+      document.querySelectorAll<HTMLButtonElement>(".ni-modal__foot button")
     ).find((button) => button.textContent?.trim() === "知道了");
     dismissButton?.click();
 
@@ -617,7 +617,7 @@ function Fixture() {
             </div>
             <div className="fixture-pager-host">
               <PagerLayout
-                className="nw-pager--fill"
+                className="ni-pager--fill"
                 items={PAGER_ITEMS}
                 active={pagerPage}
                 onSelect={setPagerPage}

@@ -31,7 +31,7 @@ export const InstanceCard = memo(function InstanceCard({
 }: InstanceCardProps) {
   return (
     <article
-      className={`vs-card nw-card${selected ? " is-selected" : ""}${
+      className={`vs-card ni-card${selected ? " is-selected" : ""}${
         entry.hasJson ? "" : " is-broken"
       }`}
       style={{ "--vs-index": index } as CSSProperties}

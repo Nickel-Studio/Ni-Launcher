@@ -27,10 +27,10 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   ref
 ) {
   const cls = [
-    "nw-card",
-    `nw-card--pad-${padding}`,
-    interactive && "nw-card--interactive",
-    glass && "nw-card--glass",
+    "ni-card",
+    `ni-card--pad-${padding}`,
+    interactive && "ni-card--interactive",
+    glass && "ni-card--glass",
     className,
   ]
     .filter(Boolean)
@@ -41,15 +41,15 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   return (
     <div ref={ref} className={cls} {...rest}>
       {hasHead ? (
-        <div className="nw-card__head">
-          <div className="nw-card__titles">
-            {title != null ? <h3 className="nw-card__title">{title}</h3> : null}
+        <div className="ni-card__head">
+          <div className="ni-card__titles">
+            {title != null ? <h3 className="ni-card__title">{title}</h3> : null}
             {subtitle != null ? (
-              <div className="nw-card__subtitle">{subtitle}</div>
+              <div className="ni-card__subtitle">{subtitle}</div>
             ) : null}
           </div>
           {actions != null ? (
-            <div className="nw-card__actions">{actions}</div>
+            <div className="ni-card__actions">{actions}</div>
           ) : null}
         </div>
       ) : null}

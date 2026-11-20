@@ -1217,10 +1217,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "通过 NOWHERE_INSTALLER_SAMPLES 指定已经下载的安装器样例目录"]
+    #[ignore = "通过 NICKEL_INSTALLER_SAMPLES 指定已经下载的安装器样例目录"]
     async fn real_installer_profiles_preserve_managed_contract() {
         let sample_dir = PathBuf::from(
-            std::env::var_os("NOWHERE_INSTALLER_SAMPLES").expect("explicit local samples"),
+            std::env::var_os("NICKEL_INSTALLER_SAMPLES").expect("explicit local samples"),
         );
         for name in ["forge-1.12.2", "forge-1.20.1", "neoforge-20.4"] {
             let installer = sample_dir.join(format!("{name}-sample.jar"));
@@ -1288,13 +1288,13 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "显式 NOWHERE_INSTALLER_SAMPLES / NOWHERE_INSTALLER_E2E；使用已有 Java 并下载真实游戏输入"]
+    #[ignore = "显式 NICKEL_INSTALLER_SAMPLES / NICKEL_INSTALLER_E2E；使用已有 Java 并下载真实游戏输入"]
     async fn real_modern_installer_processor_chain() {
         use crate::net::transfer::{CancellationToken, SourcePolicy, TransferContext};
         let sample_dir = PathBuf::from(
-            std::env::var_os("NOWHERE_INSTALLER_SAMPLES").expect("explicit local samples"),
+            std::env::var_os("NICKEL_INSTALLER_SAMPLES").expect("explicit local samples"),
         );
-        let name = std::env::var("NOWHERE_INSTALLER_E2E").expect("explicit sample name");
+        let name = std::env::var("NICKEL_INSTALLER_E2E").expect("explicit sample name");
         let (mc, kind) = match name.as_str() {
             "forge-1.20.1" => ("1.20.1", LoaderType::Forge),
             "neoforge-20.4" => ("1.20.4", LoaderType::NeoForge),
@@ -1401,11 +1401,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "显式 NOWHERE_INSTALLER_SAMPLES；定向下载真实 NeoForge profile 的两个小依赖"]
+    #[ignore = "显式 NICKEL_INSTALLER_SAMPLES；定向下载真实 NeoForge profile 的两个小依赖"]
     async fn real_neoforge_dependency_candidates() {
         use crate::net::transfer::{self, CancellationToken, SourcePolicy, TransferContext};
         let sample_dir = PathBuf::from(
-            std::env::var_os("NOWHERE_INSTALLER_SAMPLES").expect("explicit local samples"),
+            std::env::var_os("NICKEL_INSTALLER_SAMPLES").expect("explicit local samples"),
         );
         let installer = sample_dir.join("neoforge-20.4-sample.jar");
         let profile = read_install_profile(installer.to_str().unwrap())

@@ -1,4 +1,4 @@
-# NoWheRE vendored fork of `minecraft-java-rs-core` 0.4.1
+# Nickel vendored fork of `minecraft-java-rs-core` 0.4.1
 #
 # 上游 0.4.1 把 Mojang 官方下载地址硬编码在源码中，且未暴露任何可注入的
 # base URL / 镜像配置（详见 src/mirror.rs 顶部说明）。为了支持「下载源切换」
@@ -11,7 +11,7 @@
 name = "minecraft-java-rs-core"
 version = "0.4.1"
 edition = "2021"
-description = "Core library for launching Minecraft Java Edition (NoWheRE vendored fork with BMCLAPI support)"
+description = "Core library for launching Minecraft Java Edition (Nickel vendored fork with BMCLAPI support)"
 license = "MIT"
 repository = "https://github.com/fitzxel/minecraft-java-rs-core"
 

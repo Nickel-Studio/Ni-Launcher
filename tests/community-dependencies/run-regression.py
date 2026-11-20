@@ -128,7 +128,7 @@ def frame_state(page, remember=False):
         filter: node.querySelector('.pd-pill[aria-pressed="true"]')?.textContent,
         groups: [...node.querySelectorAll('.pd-group')].map(group => [group.querySelector('.pd-group__title').textContent, group.dataset.open]),
         dependencies: [...node.querySelectorAll('.pd-deps__toggle')].map(toggle => [toggle.getAttribute('aria-label'), toggle.getAttribute('aria-expanded')]),
-        top: document.querySelector('.nw-content').scrollTop,
+        top: document.querySelector('.ni-content').scrollTop,
         focus: document.activeElement?.getAttribute('aria-label')
       };
     }""", remember)
@@ -148,10 +148,10 @@ def search_state(page, remember=False):
         sameDOM: host === window.__rememberedSearch,
         query: host.querySelector('input[type="search"]').value,
         mcVersion: host.querySelector('input[aria-label="MC 版本"]').value,
-        loader: host.querySelector('.cv-loader .nw-select__trigger').textContent,
-        source: host.querySelector('.cv-toolbar__source .nw-select__trigger').textContent,
+        loader: host.querySelector('.cv-loader .ni-select__trigger').textContent,
+        source: host.querySelector('.cv-toolbar__source .ni-select__trigger').textContent,
         page: host.querySelector('.cv-pager__page')?.textContent,
-        top: host.querySelector('.nw-pager__page').scrollTop,
+        top: host.querySelector('.ni-pager__page').scrollTop,
         results: [...host.querySelectorAll('.mr-card__name')].map(node => node.textContent),
         focus: document.activeElement?.getAttribute('aria-label')
       };
@@ -184,8 +184,8 @@ def functional(page):
     mc = page.get_by_role("combobox", name="MC 版本", exact=True)
     mc.fill("1.20.1")
     mc.press("Enter")
-    select_option(page, ".cv-loader .nw-select__trigger", "NeoForge")
-    select_option(page, ".cv-toolbar__source .nw-select__trigger", "Modrinth")
+    select_option(page, ".cv-loader .ni-select__trigger", "NeoForge")
+    select_option(page, ".cv-toolbar__source .ni-select__trigger", "Modrinth")
     page.wait_for_function("window.__communityDependencies.calls.filter(c => c.command === 'modrinth_search').at(-1)?.args.query === 'Nickel retained search'")
     page.get_by_role("button", name="下一页", exact=True).click()
     expect(page.locator(".cv-pager__page")).to_have_text("2")
@@ -193,7 +193,7 @@ def functional(page):
     card = page.get_by_role("button", name="查看 Modrinth dependency regression 的版本", exact=True)
     card.scroll_into_view_if_needed()
     card.focus()
-    page.locator(".nw-pager__page").evaluate("node => { node.scrollTop = 160; }")
+    page.locator(".ni-pager__page").evaluate("node => { node.scrollTop = 160; }")
     saved_search = search_state(page, True)
     check("检索保留状态验收使用非零滚动与第二页", saved_search["top"] > 0 and saved_search["page"] == "2", saved_search)
     card.click()
@@ -298,7 +298,7 @@ def functional(page):
     check("返回检索保持原 DOM、关键词、MC 条件、加载器、来源、第二页、结果和滚动", restored_search["sameDOM"]
           and all(saved_search[key] == restored_search[key] for key in ("query", "mcVersion", "loader", "source", "page", "results", "focus"))
           and abs(saved_search["top"] - restored_search["top"]) <= 2, {"before": saved_search, "after": restored_search})
-    select_option(page, ".cv-toolbar__source .nw-select__trigger", "CurseForge")
+    select_option(page, ".cv-toolbar__source .ni-select__trigger", "CurseForge")
     open_project(page, "CurseForge dependency regression")
     show_all_groups(page)
     expand_history(page)
@@ -352,7 +352,7 @@ def metadata_failure(page):
     open_mod(page)
     for source, title, version_id in (("Modrinth", "Modrinth dependency regression", "MainMRCurrent"), ("CurseForge", "CurseForge dependency regression", "50000")):
         if source == "CurseForge":
-            select_option(page, ".cv-toolbar__source .nw-select__trigger", source)
+            select_option(page, ".cv-toolbar__source .ni-select__trigger", source)
         open_project(page, title)
         block = expand_dependencies(page, version_id)
         check(f"{source} 旧响应缺少前置元数据时按精确版本读取且失败可重试", "Required metadata network failure" in block.inner_text()

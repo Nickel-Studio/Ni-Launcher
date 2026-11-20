@@ -412,7 +412,7 @@ export default function Resources() {
         inert={Boolean(detail)}
       >
         <PagerLayout
-          className="nw-pager--fill"
+          className="ni-pager--fill"
           items={navItems}
           active={page}
           onSelect={setPage}

@@ -486,7 +486,7 @@ function Fixture() {
         version={version}
         source="official"
         fileSource="official"
-        instanceDir="C:/NoWheRE-regression"
+        instanceDir="C:/Nickel-regression"
         onBack={() => {}}
       />
     </div>
@@ -915,7 +915,7 @@ async function runRegression(): Promise<void> {
     expect(
       "manualOnly 行保留另存入口",
       neoCard.querySelectorAll(
-        ".van-builds--all .van-build__actions .nw-iconbtn"
+        ".van-builds--all .van-build__actions .ni-iconbtn"
       ).length === 98
     );
 
@@ -1122,7 +1122,7 @@ async function runRegression(): Promise<void> {
     expect(
       "Forge + OptiFine 保留真实另存入口",
       manualOptifineCard.querySelectorAll(
-        ".van-builds--all .van-build__actions .nw-iconbtn"
+        ".van-builds--all .van-build__actions .ni-iconbtn"
       ).length === 2
     );
 

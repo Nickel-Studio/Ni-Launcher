@@ -36,11 +36,11 @@ export function Slider({
     : `${Number.isInteger(bounded) ? bounded : bounded.toFixed(2)}${suffix}`;
   const style = { "--_p": `${pct}%` } as CSSProperties;
   return (
-    <div className={["nw-slider-row", className].filter(Boolean).join(" ")}>
+    <div className={["ni-slider-row", className].filter(Boolean).join(" ")}>
       <input
         id={id}
         type="range"
-        className="nw-slider"
+        className="ni-slider"
         min={min}
         max={max}
         step={step}
@@ -51,7 +51,7 @@ export function Slider({
         aria-valuetext={shown}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      {showValue ? <span className="nw-slider-row__val">{shown}</span> : null}
+      {showValue ? <span className="ni-slider-row__val">{shown}</span> : null}
     </div>
   );
 }

@@ -325,9 +325,9 @@ export function useInstanceScan(dir: string): UseInstanceScan {
   const reload = useCallback(() => setNonce((value) => value + 1), []);
 
   useEffect(() => {
-    window.addEventListener("nowhere:instances-changed", reload);
+    window.addEventListener("nickel:instances-changed", reload);
     return () =>
-      window.removeEventListener("nowhere:instances-changed", reload);
+      window.removeEventListener("nickel:instances-changed", reload);
   }, [reload]);
 
   useEffect(() => {

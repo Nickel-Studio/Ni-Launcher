@@ -101,7 +101,7 @@
   background: var(--surface);
   box-shadow: var(--shadow-inset-top);
   transition: background var(--t) var(--ease);
-  animation: nw-fade-up var(--t) var(--ease-out) both;
+  animation: ni-fade-up var(--t) var(--ease-out) both;
 }
 .mr-card:hover {
   background: var(--surface-2);
@@ -270,7 +270,7 @@
   font-size: var(--fs-md);
   line-height: var(--lh-snug);
   color: var(--text-dim);
-  animation: nw-fade-up var(--t) var(--ease-out) both;
+  animation: ni-fade-up var(--t) var(--ease-out) both;
 }
 
 .mr-page__notice[role="alert"] {

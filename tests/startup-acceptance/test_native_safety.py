@@ -167,7 +167,7 @@ class NativeSafetyTests(unittest.TestCase):
     def test_private_webview_environment_drops_ambient_secrets(self):
         sandbox = self.prepare()
         session = sandbox.root / "session"
-        parent = {"Path": "synthetic-path", "SystemRoot": "C:\\Windows", "APPDATA": "outside-profile", "VITE_FIXTURE_SECRET": "do-not-propagate", "API_TOKEN": "do-not-propagate", "NICKEL_SECRETS": "outside.json", "NOWHERE_SECRETS": "outside-legacy.json", "NICKEL_BUILD_SECRETS": "outside-build.json", "NICKEL_MSA_CLIENT_ID": "do-not-propagate", "NICKEL_CURSEFORGE_API_KEY": "do-not-propagate", "NICKEL_DIAG": "1", "NOWHERE_DIAG": "1", "HTTP_PROXY": "outside-proxy", "PYTHONPATH": "outside-modules", "WEBVIEW2_USER_DATA_FOLDER": "outside-webview", "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "outside-debug-flags", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER": "outside-pipe"}
+        parent = {"Path": "synthetic-path", "SystemRoot": "C:\\Windows", "APPDATA": "outside-profile", "VITE_FIXTURE_SECRET": "do-not-propagate", "API_TOKEN": "do-not-propagate", "NICKEL_SECRETS": "outside.json", "NICKEL_BUILD_SECRETS": "outside-build.json", "NICKEL_MSA_CLIENT_ID": "do-not-propagate", "NICKEL_CURSEFORGE_API_KEY": "do-not-propagate", "NICKEL_DIAG": "1", "HTTP_PROXY": "outside-proxy", "PYTHONPATH": "outside-modules", "WEBVIEW2_USER_DATA_FOLDER": "outside-webview", "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "outside-debug-flags", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER": "outside-pipe"}
         before = dict(parent)
         environment = native.isolated_environment(sandbox, session, 45678, parent)
         self.assertEqual(parent, before)
@@ -426,7 +426,7 @@ class NativeSafetyTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as stdout, redirect_stderr(io.StringIO()) as stderr:
             reference = native.load_microsoft_reference(source)
             challenge = reference.challenge()
-        expected = json.dumps([challenge["salt"], "synthetic-client", "consumers", "nowhere://auth"], separators=(",", ":")).encode("utf-8")
+        expected = json.dumps([challenge["salt"], "synthetic-client", "consumers", "nickel://auth"], separators=(",", ":")).encode("utf-8")
         self.assertTrue(challenge["digest"] == hashlib.sha256(expected).hexdigest())
         self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
         self.assertNotIn("synthetic-client", repr(reference))
@@ -620,11 +620,11 @@ class NativeSafetyTests(unittest.TestCase):
 
     def test_controller_environment_removes_protocol_logging_and_restores_parent(self):
         directory = self.root / "private-controller"
-        with patch.dict(os.environ, {"DEBUG": "pw:protocol", "PWDEBUG": "1", "NODE_OPTIONS": "--inspect", "NICKEL_SECRETS": "synthetic-private-marker", "NOWHERE_SECRETS": "synthetic-private-marker"}):
+        with patch.dict(os.environ, {"DEBUG": "pw:protocol", "PWDEBUG": "1", "NODE_OPTIONS": "--inspect", "NICKEL_SECRETS": "synthetic-private-marker"}):
             before = dict(os.environ)
             with self.assertRaises(RuntimeError):
                 with native.PrivateControllerEnvironment(directory):
-                    for key in ["DEBUG", "PWDEBUG", "NODE_OPTIONS", "NICKEL_SECRETS", "NOWHERE_SECRETS"]:
+                    for key in ["DEBUG", "PWDEBUG", "NODE_OPTIONS", "NICKEL_SECRETS"]:
                         self.assertNotIn(key, os.environ)
                     for key in ["TEMP", "TMP", "HOME", "APPDATA", "LOCALAPPDATA", "WEBVIEW2_USER_DATA_FOLDER"]:
                         self.assertTrue(Path(os.environ[key]).is_relative_to(directory))

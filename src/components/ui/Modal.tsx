@@ -76,7 +76,7 @@ export function Modal({
     const trigger = triggerRef.current;
     const isTopmost = () =>
       Array.from(
-        document.querySelectorAll(".nw-modal[aria-modal='true']")
+        document.querySelectorAll(".ni-modal[aria-modal='true']")
       ).pop() === dialog;
     const focusFirst = () =>
       (focusableElements(dialog)[0] ?? dialog).focus({ preventScroll: true });
@@ -143,7 +143,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="nw-modal__backdrop"
+      className="ni-modal__backdrop"
       onMouseDown={(event) => {
         if (
           dismissible &&
@@ -155,7 +155,7 @@ export function Modal({
     >
       <div
         ref={dialogRef}
-        className={["nw-modal", className].filter(Boolean).join(" ")}
+        className={["ni-modal", className].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title != null ? titleId : undefined}
@@ -165,15 +165,15 @@ export function Modal({
         style={{ maxWidth: width }}
       >
         {(title != null || description != null) && (
-          <div className="nw-modal__head">
+          <div className="ni-modal__head">
             <div>
               {title != null ? (
-                <div id={titleId} className="nw-modal__title">
+                <div id={titleId} className="ni-modal__title">
                   {title}
                 </div>
               ) : null}
               {description != null ? (
-                <div id={descriptionId} className="nw-modal__desc">
+                <div id={descriptionId} className="ni-modal__desc">
                   {description}
                 </div>
               ) : null}
@@ -186,9 +186,9 @@ export function Modal({
           </div>
         )}
         {children != null ? (
-          <div className="nw-modal__body">{children}</div>
+          <div className="ni-modal__body">{children}</div>
         ) : null}
-        {footer != null ? <div className="nw-modal__foot">{footer}</div> : null}
+        {footer != null ? <div className="ni-modal__foot">{footer}</div> : null}
       </div>
     </div>,
     document.body

@@ -169,7 +169,7 @@ export function CommunitySearchPage({
       scrollTimer.current = null;
       const anchor = listAnchorRef.current;
       if (!anchor || anchor.getClientRects().length === 0) return;
-      const scroller = anchor.closest<HTMLElement>(".nw-pager__page");
+      const scroller = anchor.closest<HTMLElement>(".ni-pager__page");
       if (!scroller) return;
       if (reduced) {
         scroller.scrollTop = 0;

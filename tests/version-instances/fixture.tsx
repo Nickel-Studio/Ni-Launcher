@@ -33,7 +33,7 @@ import {
 } from "../../src/components/version/vsettings/panels";
 import type { InstanceEntry } from "../../src/components/version/instancesApi";
 
-const ROOT = "C:\\NoWheRE-regression\\.minecraft";
+const ROOT = "C:\\Nickel-regression\\.minecraft";
 
 /** 实例设置视觉检查固定夹具：覆盖继承、显式清空与覆盖三种状态。 */
 const VERSION_SETTINGS_FIXTURE = {

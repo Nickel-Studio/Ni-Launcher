@@ -2,9 +2,9 @@
 //!
 //! 扫描与删除分离，用户确认后重新收集候选文件再逐项删除。
 //! 范围严格限定在：
-//! - 每个游戏目录的 `logs/`（保留当前 `nowhere-launcher.log`）与 `crash-reports/`；
+//! - 每个游戏目录的 `logs/`（保留当前 `nickel-launcher.log`）与 `crash-reports/`；
 //! - 游戏目录顶层的 `hs_err_pid*.log`、`replay_pid*.log` 与 `authlib-injector.log`；
-//! - 配置目录的日志归档与原子写残留（`.nowhere-*.part`、`instances.json.tmp-*`）。
+//! - 配置目录的日志归档与原子写残留（`.nickel-*.part`、`instances.json.tmp-*`）。
 //!
 //! 不递归 `versions/`、`mods/`、`saves/` 等目录。游戏根、`logs/`、`crash-reports/`
 //! 自身是符号链接 / Windows 重解析点时跳过，不跟随到游戏目录之外；但允许它们的**祖先**
@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Serialize;
 use tauri::AppHandle;
 
-const LAUNCHER_LOG_NAME: &str = "nowhere-launcher.log";
+const LAUNCHER_LOG_NAME: &str = "nickel-launcher.log";
 
 /// 同一时间只允许一个清理任务，避免重复点击并发删除。
 static JUNK_BUSY: AtomicBool = AtomicBool::new(false);
@@ -270,7 +270,7 @@ fn collect_root_files(files: &mut Vec<PathBuf>, seen: &mut BTreeSet<String>, dir
 }
 
 fn is_config_temp(name: &str) -> bool {
-    (name.starts_with(".nowhere-") && name.ends_with(".part"))
+    (name.starts_with(".nickel-") && name.ends_with(".part"))
         || name.starts_with("instances.json.tmp-")
 }
 
@@ -383,7 +383,7 @@ mod tests {
     use super::*;
 
     fn temp_root(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("nowhere-junk-{tag}-{}", crate::store::random_token()))
+        std::env::temp_dir().join(format!("nickel-junk-{tag}-{}", crate::store::random_token()))
     }
 
     #[test]
@@ -438,11 +438,11 @@ mod tests {
 
     #[test]
     fn config_temp_matches_atomic_write_leftovers() {
-        assert!(is_config_temp(".nowhere-abc.part"));
+        assert!(is_config_temp(".nickel-abc.part"));
         assert!(is_config_temp("instances.json.tmp-abc"));
         assert!(!is_config_temp("settings.json"));
-        assert!(!is_config_temp("nowhere.settings.json"));
-        assert!(!is_config_temp(".nowhere-abc.tmp"));
+        assert!(!is_config_temp("nickel.settings.json"));
+        assert!(!is_config_temp(".nickel-abc.tmp"));
     }
 
     #[test]
@@ -677,9 +677,9 @@ mod tests {
         // 配置目录：启动器日志与原子写残留。
         fs::create_dir_all(config.join("logs")).unwrap();
         fs::write(config.join("logs").join(LAUNCHER_LOG_NAME), "current").unwrap();
-        fs::write(config.join("logs/nowhere-launcher.log.1"), "old").unwrap();
+        fs::write(config.join("logs/nickel-launcher.log.1"), "old").unwrap();
         fs::write(config.join("instances.json.tmp-abc"), "{}").unwrap();
-        fs::write(config.join(".nowhere-export-x.part"), "zip").unwrap();
+        fs::write(config.join(".nickel-export-x.part"), "zip").unwrap();
         fs::write(config.join("settings.json"), "{}").unwrap();
 
         let files = collect_files_in([isolated.clone()], Some(config.clone()));
@@ -694,9 +694,9 @@ mod tests {
         assert!(names.contains(&"crash-1.txt".to_string()));
         assert!(names.contains(&"hs_err_pid123.log".to_string()));
         assert!(names.contains(&"authlib-injector.log".to_string()));
-        assert!(names.contains(&"nowhere-launcher.log.1".to_string()));
+        assert!(names.contains(&"nickel-launcher.log.1".to_string()));
         assert!(names.contains(&"instances.json.tmp-abc".to_string()));
-        assert!(names.contains(&".nowhere-export-x.part".to_string()));
+        assert!(names.contains(&".nickel-export-x.part".to_string()));
         assert!(!names.iter().any(|name| name == "keep.jar"));
         assert!(!names.iter().any(|name| name == "keep.dat"));
         assert!(!names.iter().any(|name| name == "options.txt"));

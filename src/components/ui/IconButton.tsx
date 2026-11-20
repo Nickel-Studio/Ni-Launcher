@@ -30,9 +30,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     ref
   ) {
     const cls = [
-      "nw-iconbtn",
-      `nw-iconbtn--${variant}`,
-      size !== "md" && `nw-iconbtn--${size}`,
+      "ni-iconbtn",
+      `ni-iconbtn--${variant}`,
+      size !== "md" && `ni-iconbtn--${size}`,
       className,
     ]
       .filter(Boolean)

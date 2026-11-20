@@ -20,11 +20,11 @@ function Shell({ blocked }: { blocked: boolean }) {
   const { route } = useAppNav();
 
   return (
-    <div className="nw-shell" inert={blocked}>
+    <div className="ni-shell" inert={blocked}>
       <BackgroundLayer />
       <TitleBar />
-      <div className="nw-body">
-        <main className="nw-content">
+      <div className="ni-body">
+        <main className="ni-content">
           <AnimatedSwap swapKey={route}>
             {route === "home" ? (
               <Home />

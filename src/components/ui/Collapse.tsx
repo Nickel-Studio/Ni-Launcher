@@ -34,8 +34,8 @@ export function Collapse({
     <div
       {...rest}
       className={[
-        "nw-collapse",
-        staggered && "nw-collapse--staggered",
+        "ni-collapse",
+        staggered && "ni-collapse--staggered",
         className,
       ]
         .filter(Boolean)
@@ -45,7 +45,7 @@ export function Collapse({
       aria-hidden={!open}
       style={{ ...style, height: open ? height : 0 }}
     >
-      <div ref={contentRef} className="nw-collapse__content">
+      <div ref={contentRef} className="ni-collapse__content">
         {children}
       </div>
     </div>

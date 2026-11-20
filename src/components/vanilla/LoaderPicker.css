@@ -7,8 +7,8 @@
 }
 
 /* Pager 的 AnimatedSwap 中间层为 auto 高度，100% 无法穿透。
-   与 nw-pager--fill 共用内容区高度公式；长页仍由 Pager 正常滚动，底部操作不悬浮。 */
-.nw-pager--fill .van-picker {
+   与 ni-pager--fill 共用内容区高度公式；长页仍由 Pager 正常滚动，底部操作不悬浮。 */
+.ni-pager--fill .van-picker {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
 }
 
@@ -276,13 +276,13 @@
   gap: 2px;
   flex: 0 0 auto;
 }
-.van-build__actions .nw-iconbtn {
+.van-build__actions .ni-iconbtn {
   color: var(--text-dim);
 }
-.van-build[data-selected="true"] .nw-iconbtn {
+.van-build[data-selected="true"] .ni-iconbtn {
   color: var(--accent);
 }
-.van-build__actions .nw-iconbtn:hover:not(:disabled) {
+.van-build__actions .ni-iconbtn:hover:not(:disabled) {
   color: var(--text);
   background: var(--fill-3);
 }
@@ -302,14 +302,14 @@
   margin-top: auto;
   padding-top: var(--space-5);
 }
-.van-picker__download.nw-btn {
+.van-picker__download.ni-btn {
   min-height: 44px;
   padding: 0 24px;
   border-radius: var(--radius-pill);
   font-size: var(--fs-md);
   font-weight: 600;
 }
-.van-picker__download.nw-btn svg {
+.van-picker__download.ni-btn svg {
   width: 21px;
   height: 21px;
 }

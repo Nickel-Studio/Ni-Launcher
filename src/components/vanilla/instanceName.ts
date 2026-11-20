@@ -8,7 +8,7 @@ export function instanceNameError(name: string): string {
   if (/^(con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(name.split(".")[0].trimEnd())) {
     return "这是系统保留的文件名，请换一个名称。";
   }
-  if (["nowhere.profile", "gamedata", "nowhere.settings"].includes(name.toLowerCase())) {
+  if (["nickel.profile", "gamedata", "nickel.settings"].includes(name.toLowerCase())) {
     return "名称与实例数据文件冲突，请换一个名称。";
   }
   return "";

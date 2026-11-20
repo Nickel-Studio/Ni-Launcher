@@ -15,12 +15,12 @@ export function BackgroundLayer() {
 
   return (
     <div
-      className="nw-bg"
+      className="ni-bg"
       aria-hidden="true"
       style={style}
       data-user-background={hasUserBackground}
     >
-      <div className="nw-bg__mesh" />
+      <div className="ni-bg__mesh" />
       {!hasUserBackground ? (
         <ThemeArtwork
           accent={settings.accent}
@@ -29,12 +29,12 @@ export function BackgroundLayer() {
       ) : null}
       {url ? (
         <div
-          className="nw-bg__image"
+          className="ni-bg__image"
           style={{ backgroundImage: `url(${JSON.stringify(url)})` }}
         />
       ) : null}
-      <div className="nw-bg__scrim" />
-      <div className="nw-bg__grain" />
+      <div className="ni-bg__scrim" />
+      <div className="ni-bg__grain" />
     </div>
   );
 }

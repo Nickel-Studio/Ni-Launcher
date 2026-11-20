@@ -10,9 +10,8 @@ use tauri::AppHandle;
 
 use crate::{app_paths, instances, modpacks, named_profiles, pack_export::PackExportRequest};
 
-// marker 文件名与 format 是持久化协议，更名时保留原命名空间。
-pub const MANIFEST_FILE: &str = "nowhere.portable.json";
-pub const FORMAT: &str = "nowhere-portable";
+pub const MANIFEST_FILE: &str = "nickel.portable.json";
+pub const FORMAT: &str = "nickel-portable";
 pub const SCHEMA_VERSION: u32 = 1;
 const PAYLOAD_FILE: &str = "pack.mrpack";
 const PERSONALIZATION_FILE: &str = "personalization.json";
@@ -20,8 +19,6 @@ const INSTANCE_SETTINGS_FILE: &str = "instance-settings.json";
 const GUIDE_FILE: &str = "使用说明.txt";
 const WINDOWS_LAUNCHER: &str = "Nickel.exe";
 const UNIX_LAUNCHER: &str = "Nickel-launcher";
-const LEGACY_WINDOWS_LAUNCHER: &str = "NoWheRE.exe";
-const LEGACY_UNIX_LAUNCHER: &str = "NoWheRE-launcher";
 const MANIFEST_MAX_BYTES: u64 = 64 * 1024;
 const BACKGROUND_MAX_BYTES: u64 = 32 * 1024 * 1024;
 // 与本地标准整合包导入的 4 GiB 文件配额一致；外层 ZIP 只提高 mrpack 单条目配额。
@@ -240,13 +237,9 @@ pub(crate) fn validate_manifest(manifest: &PortableManifest) -> Result<(), Strin
             return Err("便携整合包名称或版本无效，请重新导出".into());
         }
     }
-    // 数据目录、载荷、外观及可执行文件必须属于同一布局，不能交叉使用新旧路径。
-    let (windows_launcher, unix_launcher) = match manifest.data_directory.as_str() {
-        app_paths::DATA_DIRECTORY => (WINDOWS_LAUNCHER, UNIX_LAUNCHER),
-        app_paths::LEGACY_DATA_DIRECTORY => (LEGACY_WINDOWS_LAUNCHER, LEGACY_UNIX_LAUNCHER),
-        _ => return Err("便携整合包目录不符合约定，请完整解压原始 ZIP".into()),
-    };
-    if manifest.payload != data_path_for(&manifest.data_directory, PAYLOAD_FILE)
+    // 固定包内布局，拒绝跨目录载荷或可执行文件。
+    if manifest.data_directory != app_paths::DATA_DIRECTORY
+        || manifest.payload != data_path_for(&manifest.data_directory, PAYLOAD_FILE)
         || manifest.game_directory != app_paths::GAME_DIRECTORY
         || manifest.personalization.as_ref().is_some_and(|path| {
             path != &data_path_for(&manifest.data_directory, PERSONALIZATION_FILE)
@@ -256,8 +249,8 @@ pub(crate) fn validate_manifest(manifest: &PortableManifest) -> Result<(), Strin
     }
     if let Some(launcher) = &manifest.launcher {
         let valid_path = match launcher.os.as_str() {
-            "windows" => launcher.path == windows_launcher,
-            "linux" => launcher.path == unix_launcher,
+            "windows" => launcher.path == WINDOWS_LAUNCHER,
+            "linux" => launcher.path == UNIX_LAUNCHER,
             _ => false,
         };
         if !valid_path
@@ -822,7 +815,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let root = std::env::temp_dir()
-                .join(format!("nowhere-portable-{}", crate::store::random_token()));
+                .join(format!("nickel-portable-{}", crate::store::random_token()));
             std::fs::create_dir_all(&root).unwrap();
             Self(root)
         }
@@ -1188,69 +1181,57 @@ mod tests {
     }
 
     #[test]
-    fn launcher_licenses_follow_new_and_legacy_windows_and_linux_layouts() {
+    fn launcher_licenses_follow_windows_and_linux_layouts() {
         let fixture = Fixture::new();
         let cancel = CancellationToken::new();
-        for (directory, windows_launcher, unix_launcher) in [
-            (app_paths::DATA_DIRECTORY, WINDOWS_LAUNCHER, UNIX_LAUNCHER),
-            (
-                app_paths::LEGACY_DATA_DIRECTORY,
-                LEGACY_WINDOWS_LAUNCHER,
-                LEGACY_UNIX_LAUNCHER,
-            ),
-        ] {
-            for (os, name) in [("windows", windows_launcher), ("linux", unix_launcher)] {
-                let case = format!("{directory}-{os}");
-                let root = fixture.0.join(&case);
-                let mut snapshot = fixture_snapshot(&root, false, false);
-                if directory != app_paths::DATA_DIRECTORY {
-                    std::fs::rename(root.join(app_paths::DATA_DIRECTORY), root.join(directory))
-                        .unwrap();
-                }
-                snapshot.manifest.data_directory = directory.into();
-                snapshot.manifest.payload = data_path_for(directory, PAYLOAD_FILE);
-                snapshot.manifest.launcher = Some(PortableLauncher {
-                    path: name.into(),
-                    os: os.into(),
-                    arch: "x86_64".into(),
-                });
-                std::fs::write(root.join(name), b"tiny executable fixture").unwrap();
-                snapshot.files = vec![
-                    (
-                        snapshot.manifest.payload.clone(),
-                        snapshot.manifest.payload.clone(),
-                    ),
-                    (name.into(), name.into()),
-                ];
-                for (path, _) in &mut snapshot.inline_entries {
-                    *path = data_path_for(directory, INSTANCE_SETTINGS_FILE);
-                }
-                let archive = fixture.0.join(format!("{case}.zip"));
-                snapshot.write(&archive, &cancel, |_, _, _| {}).unwrap();
-                assert_launcher_distribution(&archive, true, &cancel);
-                let manifest: PortableManifest = serde_json::from_slice(
-                    &read_zip_entry(&archive, MANIFEST_FILE, MANIFEST_MAX_BYTES, &cancel).unwrap(),
-                )
-                .unwrap();
-                assert_eq!(manifest, snapshot.manifest);
-                assert!(
-                    read_zip_entry(&archive, &manifest.payload, MANIFEST_MAX_BYTES, &cancel)
-                        .is_ok()
-                );
-                assert_eq!(
-                    read_zip_entry(&archive, name, MANIFEST_MAX_BYTES, &cancel).unwrap(),
-                    b"tiny executable fixture"
-                );
-                assert!(
-                    read_zip_entry(
-                        &archive,
-                        &data_path_for(directory, INSTANCE_SETTINGS_FILE),
-                        MANIFEST_MAX_BYTES,
-                        &cancel
-                    )
-                    .is_ok()
-                );
+        let directory = app_paths::DATA_DIRECTORY;
+        for (os, name) in [("windows", WINDOWS_LAUNCHER), ("linux", UNIX_LAUNCHER)] {
+            let case = format!("{directory}-{os}");
+            let root = fixture.0.join(&case);
+            let mut snapshot = fixture_snapshot(&root, false, false);
+            snapshot.manifest.data_directory = directory.into();
+            snapshot.manifest.payload = data_path_for(directory, PAYLOAD_FILE);
+            snapshot.manifest.launcher = Some(PortableLauncher {
+                path: name.into(),
+                os: os.into(),
+                arch: "x86_64".into(),
+            });
+            std::fs::write(root.join(name), b"tiny executable fixture").unwrap();
+            snapshot.files = vec![
+                (
+                    snapshot.manifest.payload.clone(),
+                    snapshot.manifest.payload.clone(),
+                ),
+                (name.into(), name.into()),
+            ];
+            for (path, _) in &mut snapshot.inline_entries {
+                *path = data_path_for(directory, INSTANCE_SETTINGS_FILE);
             }
+            let archive = fixture.0.join(format!("{case}.zip"));
+            snapshot.write(&archive, &cancel, |_, _, _| {}).unwrap();
+            assert_launcher_distribution(&archive, true, &cancel);
+            let manifest: PortableManifest = serde_json::from_slice(
+                &read_zip_entry(&archive, MANIFEST_FILE, MANIFEST_MAX_BYTES, &cancel).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(manifest, snapshot.manifest);
+            assert!(
+                read_zip_entry(&archive, &manifest.payload, MANIFEST_MAX_BYTES, &cancel)
+                    .is_ok()
+            );
+            assert_eq!(
+                read_zip_entry(&archive, name, MANIFEST_MAX_BYTES, &cancel).unwrap(),
+                b"tiny executable fixture"
+            );
+            assert!(
+                read_zip_entry(
+                    &archive,
+                    &data_path_for(directory, INSTANCE_SETTINGS_FILE),
+                    MANIFEST_MAX_BYTES,
+                    &cancel
+                )
+                .is_ok()
+            );
         }
     }
 
@@ -1327,73 +1308,24 @@ mod tests {
     }
 
     #[test]
-    fn manifest_accepts_complete_new_and_legacy_layouts_but_rejects_mixed_paths() {
-        assert_eq!(MANIFEST_FILE, "nowhere.portable.json");
-        assert_eq!(FORMAT, "nowhere-portable");
-        assert_eq!(app_paths::DATA_DIRECTORY, "Nickel");
-        assert_eq!(WINDOWS_LAUNCHER, "Nickel.exe");
-        assert_eq!(UNIX_LAUNCHER, "Nickel-launcher");
-        for (directory, windows_launcher, unix_launcher, other_directory, other_launcher) in [
-            (
-                app_paths::DATA_DIRECTORY,
-                WINDOWS_LAUNCHER,
-                UNIX_LAUNCHER,
-                app_paths::LEGACY_DATA_DIRECTORY,
-                LEGACY_WINDOWS_LAUNCHER,
-            ),
-            (
-                app_paths::LEGACY_DATA_DIRECTORY,
-                LEGACY_WINDOWS_LAUNCHER,
-                LEGACY_UNIX_LAUNCHER,
-                app_paths::DATA_DIRECTORY,
-                WINDOWS_LAUNCHER,
-            ),
-        ] {
-            let manifest = manifest_for_layout(directory);
-            validate_manifest(&manifest).unwrap();
-            for (os, path) in [("windows", windows_launcher), ("linux", unix_launcher)] {
-                let mut with_launcher = manifest.clone();
-                with_launcher.launcher = Some(PortableLauncher {
-                    path: path.into(),
-                    os: os.into(),
-                    arch: "x86_64".into(),
-                });
-                validate_manifest(&with_launcher).unwrap();
-            }
-            let mut mixed = manifest.clone();
-            mixed.payload = data_path_for(other_directory, PAYLOAD_FILE);
-            assert!(validate_manifest(&mixed).is_err());
-            mixed = manifest.clone();
-            mixed.personalization = Some(data_path_for(other_directory, PERSONALIZATION_FILE));
-            assert!(validate_manifest(&mixed).is_err());
-            for path in [
-                other_launcher,
-                "../Nickel.exe",
-                "Nickel/../Nickel.exe",
-                "C:/Nickel.exe",
-                "Nickel.exe:stream",
-            ] {
-                mixed = manifest.clone();
-                mixed.launcher = Some(PortableLauncher {
-                    path: path.into(),
-                    os: "windows".into(),
-                    arch: "x86_64".into(),
-                });
-                assert!(validate_manifest(&mixed).is_err(), "{path}");
-            }
-            for path in [
-                "../Nickel",
-                "Nickel/../NoWheRE",
-                "Nickel/",
-                "C:/Nickel",
-                "nickel",
-            ] {
-                mixed = manifest.clone();
-                mixed.data_directory = path.into();
-                mixed.payload = data_path_for(path, PAYLOAD_FILE);
-                mixed.personalization = Some(data_path_for(path, PERSONALIZATION_FILE));
-                assert!(validate_manifest(&mixed).is_err(), "{path}");
-            }
+    fn manifest_requires_the_canonical_layout() {
+        let manifest = manifest_for_layout(app_paths::DATA_DIRECTORY);
+        validate_manifest(&manifest).unwrap();
+        for (os, path) in [("windows", WINDOWS_LAUNCHER), ("linux", UNIX_LAUNCHER)] {
+            let mut value = manifest.clone();
+            value.launcher = Some(PortableLauncher { path: path.into(), os: os.into(), arch: "x86_64".into() });
+            validate_manifest(&value).unwrap();
+        }
+        for directory in ["Other", "../Nickel", "Nickel/../Other", "Nickel/", "C:/Nickel", "nickel"] {
+            let mut value = manifest_for_layout(directory);
+            assert!(validate_manifest(&value).is_err());
+            value.data_directory = app_paths::DATA_DIRECTORY.into();
+            assert!(validate_manifest(&value).is_err());
+        }
+        for path in ["Other.exe", "../Nickel.exe", "Nickel/../Nickel.exe", "C:/Nickel.exe", "Nickel.exe:stream"] {
+            let mut value = manifest.clone();
+            value.launcher = Some(PortableLauncher { path: path.into(), os: "windows".into(), arch: "x86_64".into() });
+            assert!(validate_manifest(&value).is_err(), "{path}");
         }
     }
 
@@ -1408,34 +1340,30 @@ mod tests {
             serde_json::to_value(&selected).unwrap(),
             json!({ "themeMode": "dark", "accent": "mono", "backgroundBlur": 0.0, "backgroundOpacity": 0.5 })
         );
-        for (directory, other_directory) in [
-            (app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY),
-            (app_paths::LEGACY_DATA_DIRECTORY, app_paths::DATA_DIRECTORY),
+        let directory = app_paths::DATA_DIRECTORY;
+        let manifest = manifest_for_layout(directory);
+        for value in [
+            json!({"accessToken": "credential"}),
+            json!({"preLaunchCommand": "run"}),
+            json!({"backgroundImage": "C:/Users/private/image.png"}),
+            json!({"backgroundImage": "../image.png"}),
+            json!({"backgroundImage": data_path_for(directory, "background.svg")}),
+            json!({"backgroundImage": data_path_for("Other", "background.png")}),
+            json!({"backgroundImage": format!("{directory}/../background.png")}),
+            json!({"backgroundOpacity": 2}),
+            json!({"accent": "not-a-color"}),
         ] {
-            let manifest = manifest_for_layout(directory);
-            for value in [
-                json!({"accessToken": "credential"}),
-                json!({"preLaunchCommand": "run"}),
-                json!({"backgroundImage": "C:/Users/private/image.png"}),
-                json!({"backgroundImage": "../image.png"}),
-                json!({"backgroundImage": data_path_for(directory, "background.svg")}),
-                json!({"backgroundImage": data_path_for(other_directory, "background.png")}),
-                json!({"backgroundImage": format!("{directory}/../background.png")}),
-                json!({"backgroundOpacity": 2}),
-                json!({"accent": "not-a-color"}),
-            ] {
-                assert!(
-                    serde_json::from_value::<PortablePersonalization>(value)
-                        .map(|v| v.validate(&manifest).is_err())
-                        .unwrap_or(true)
-                );
-            }
-            let settings: PortablePersonalization = serde_json::from_value(
-                json!({"backgroundImage": data_path_for(directory, "background.png")}),
-            )
-            .unwrap();
-            settings.validate(&manifest).unwrap();
+            assert!(
+                serde_json::from_value::<PortablePersonalization>(value)
+                    .map(|v| v.validate(&manifest).is_err())
+                    .unwrap_or(true)
+            );
         }
+        let settings: PortablePersonalization = serde_json::from_value(
+            json!({"backgroundImage": data_path_for(directory, "background.png")}),
+        )
+        .unwrap();
+        settings.validate(&manifest).unwrap();
     }
 
 
@@ -1445,22 +1373,21 @@ mod tests {
             "hue": 312.5, "saturation": 82.0, "lightness": 46.5,
             "titlebarHueShift": -72.0, "decoration": "folds", "decorationOpacity": 0.72,
         });
-        for directory in [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY] {
-            let manifest = manifest_for_layout(directory);
-            for accent in ACCENTS {
-                let selected = select_personalization(&json!({
-                    "themeMode": "light", "accent": accent, "customTheme": custom,
-                    "titlebarTint": true,
-                }));
-                let encoded = serde_json::to_value(&selected).unwrap();
-                assert_eq!(encoded["accent"], *accent);
-                assert_eq!(encoded["customTheme"], custom);
-                assert_eq!(encoded["titlebarTint"], true);
-                let decoded: PortablePersonalization = serde_json::from_value(encoded.clone()).unwrap();
-                decoded.validate(&manifest).unwrap();
-                assert_eq!(decoded.resolved_value(Path::new("."), &manifest).unwrap(), encoded);
-                assert_eq!(decoded, selected);
-            }
+        let directory = app_paths::DATA_DIRECTORY;
+        let manifest = manifest_for_layout(directory);
+        for accent in ACCENTS {
+            let selected = select_personalization(&json!({
+                "themeMode": "light", "accent": accent, "customTheme": custom,
+                "titlebarTint": true,
+            }));
+            let encoded = serde_json::to_value(&selected).unwrap();
+            assert_eq!(encoded["accent"], *accent);
+            assert_eq!(encoded["customTheme"], custom);
+            assert_eq!(encoded["titlebarTint"], true);
+            let decoded: PortablePersonalization = serde_json::from_value(encoded.clone()).unwrap();
+            decoded.validate(&manifest).unwrap();
+            assert_eq!(decoded.resolved_value(Path::new("."), &manifest).unwrap(), encoded);
+            assert_eq!(decoded, selected);
         }
     }
 
@@ -1524,20 +1451,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn personalization_theme_legacy_data_keeps_optional_fields_absent() {
-        for directory in [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY] {
-            let manifest = manifest_for_layout(directory);
-            for accent in &ACCENTS[..6] {
-                let legacy = json!({"themeMode": "dark", "accent": accent, "backgroundBlur": 0.0});
-                let decoded: PortablePersonalization = serde_json::from_value(legacy.clone()).unwrap();
-                decoded.validate(&manifest).unwrap();
-                assert_eq!(decoded.custom_theme, None);
-                assert_eq!(decoded.titlebar_tint, None);
-                assert_eq!(decoded.resolved_value(Path::new("."), &manifest).unwrap(), legacy);
-            }
-        }
-    }
+
 
     #[test]
     fn personalization_theme_zip_roundtrip_exports_only_appearance() {
@@ -1600,71 +1514,7 @@ mod tests {
     }
 
 
-    #[test]
-    fn legacy_bootstrap_keeps_payload_settings_and_background_in_original_directory() {
-        let fixture = Fixture::new();
-        let root = fixture.0.join("legacy");
-        let snapshot = fixture_snapshot(&root, false, false);
-        let mut manifest = snapshot.manifest;
-        manifest.data_directory = app_paths::LEGACY_DATA_DIRECTORY.into();
-        manifest.payload = data_path_for(&manifest.data_directory, PAYLOAD_FILE);
-        manifest.personalization = Some(data_path_for(
-            &manifest.data_directory,
-            PERSONALIZATION_FILE,
-        ));
-        manifest.launcher = Some(PortableLauncher {
-            path: LEGACY_WINDOWS_LAUNCHER.into(),
-            os: "windows".into(),
-            arch: "x86_64".into(),
-        });
-        std::fs::rename(
-            root.join(app_paths::DATA_DIRECTORY),
-            root.join(app_paths::LEGACY_DATA_DIRECTORY),
-        )
-        .unwrap();
-        let background = data_path_for(&manifest.data_directory, "background.png");
-        std::fs::write(root.join(&background), b"\x89PNG\r\n\x1a\nlegacy fixture").unwrap();
-        std::fs::write(
-            root.join(manifest.personalization.as_ref().unwrap()),
-            serde_json::to_vec(&json!({"themeMode":"light", "backgroundImage":background}))
-                .unwrap(),
-        )
-        .unwrap();
-        std::fs::write(
-            root.join(app_paths::LEGACY_DATA_DIRECTORY)
-                .join(INSTANCE_SETTINGS_FILE),
-            br#"{"memoryMb":4096}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            root.join(MANIFEST_FILE),
-            serde_json::to_vec(&manifest).unwrap(),
-        )
-        .unwrap();
-        let bootstrap = load_bootstrap(&root).unwrap().unwrap();
-        assert_eq!(bootstrap.manifest, manifest);
-        assert_eq!(
-            bootstrap.data_directory,
-            std::fs::canonicalize(&root)
-                .unwrap()
-                .join(app_paths::LEGACY_DATA_DIRECTORY)
-        );
-        assert_eq!(
-            instance_settings_for_payload(&bootstrap.payload_path)
-                .unwrap()
-                .unwrap()["memoryMb"],
-            4096
-        );
-        let settings = bootstrap.personalization.unwrap();
-        let resolved = settings
-            .resolved_value(&bootstrap.root, &bootstrap.manifest)
-            .unwrap();
-        assert_eq!(
-            PathBuf::from(resolved["backgroundImage"].as_str().unwrap()),
-            bootstrap.root.join(background)
-        );
-        assert!(!root.join(app_paths::DATA_DIRECTORY).exists());
-    }
+
 
     #[test]
     fn sidecar_snapshot_does_not_follow_source_changes_and_cancellation_creates_no_zip() {
@@ -1707,7 +1557,7 @@ mod tests {
         );
         for bundle in [
             "Applications/Nickel.app/Contents/MacOS/ni-launcher",
-            "Applications/NoWheRE.app/Contents/MacOS/nowhere",
+            "Applications/Nickel.app/Contents/MacOS/ni-launcher",
         ] {
             assert!(
                 launcher_path_for(Path::new(bundle), false, "macos")

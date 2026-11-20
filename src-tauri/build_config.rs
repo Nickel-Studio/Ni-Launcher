@@ -36,7 +36,7 @@ fn project_value(value: &Value) -> Value {
         microsoft.insert("clientId".into(), Value::String(client));
         for (key, fallback) in [
             ("authority", "consumers"),
-            ("redirectUri", "nowhere://auth"),
+            ("redirectUri", "nickel://auth"),
         ] {
             microsoft.insert(
                 key.into(),
@@ -91,7 +91,7 @@ mod tests {
     fn only_four_public_build_fields_are_embedded() {
         let input = serde_json::json!({
             "$comment": "do not embed", "accounts": ["private"],
-            "microsoft": {"clientId": "fixture-client", "authority": "common", "redirectUri": "nowhere://auth",
+            "microsoft": {"clientId": "fixture-client", "authority": "common", "redirectUri": "nickel://auth",
                 "objectId": "private-object", "tenantId": "private-tenant", "clientSecret": "private-secret", "refreshToken": "private-token"},
             "curseforge": {"apiKey": "fixture-key", "password": "private-password"}
         });
@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(
             output,
             serde_json::json!({
-                "microsoft": {"clientId":"fixture-client", "authority":"common", "redirectUri":"nowhere://auth"},
+                "microsoft": {"clientId":"fixture-client", "authority":"common", "redirectUri":"nickel://auth"},
                 "curseforge":{"apiKey":"fixture-key"}
             })
         );

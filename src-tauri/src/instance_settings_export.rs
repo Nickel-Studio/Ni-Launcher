@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 use crate::{instances, named_profiles};
 
-pub const SETTINGS_FILE_NAME: &str = "nowhere.settings.json";
+pub const SETTINGS_FILE_NAME: &str = "nickel.settings.json";
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
 const MAX_SERVER_TEXT_BYTES: usize = 4096;
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn apply_to_instance_preserves_unknown_and_never_overwrites_corruption() {
-        let root = std::env::temp_dir().join(format!("nowhere-instance-settings-{}", crate::store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-instance-settings-{}", crate::store::random_token()));
         let instance = root.join("versions/example");
         std::fs::create_dir_all(&instance).unwrap();
         let path = instance.join(SETTINGS_FILE_NAME);

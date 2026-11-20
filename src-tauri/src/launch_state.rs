@@ -36,7 +36,7 @@ mod tests {
     use super::*;
     #[test]
     fn running_child_blocks_root_until_exit() {
-        let root = std::env::temp_dir().join(format!("nowhere-running-{}", crate::store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-running-{}", crate::store::random_token()));
         let child = root.join("versions").join("test");
         std::fs::create_dir_all(&child).unwrap();
         let running = begin(&child).unwrap();

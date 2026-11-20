@@ -634,7 +634,6 @@ async fn install_base_with_artifact(
     let resolved = crate::ResolvedLaunch {
         version: version.into(),
         username: String::new(),
-        memory_min: memory.min,
         memory_max: memory.max,
         game_dir: Some(game_dir.to_string_lossy().into()),
     };
@@ -1829,7 +1828,7 @@ mod tests {
         .unwrap();
         let artifact = loader_catalog::liteloader_install::artifact(&entries[0]);
         let root = std::env::temp_dir().join(format!(
-            "nowhere-liteloader-finalizer-{}",
+            "nickel-liteloader-finalizer-{}",
             store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -1862,7 +1861,7 @@ mod tests {
         .unwrap();
         let artifact = loader_catalog::liteloader_install::artifact(&entries[0]);
         let base = std::env::temp_dir().join(format!(
-            "nowhere-liteloader-non-isolated-{}",
+            "nickel-liteloader-non-isolated-{}",
             store::random_token()
         ));
         let game_dir = base.join("versions/Lite");
@@ -1893,7 +1892,7 @@ mod tests {
         .unwrap();
         let artifact = loader_catalog::optifine_install::artifact(&entries[0]);
         let root = std::env::temp_dir().join(format!(
-            "nowhere-optifine-launchwrapper-{}",
+            "nickel-optifine-launchwrapper-{}",
             store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -1923,7 +1922,7 @@ mod tests {
         .unwrap();
         let artifact = loader_catalog::optifine_install::artifact(&entries[0]);
         let root = std::env::temp_dir().join(format!(
-            "nowhere-optifine-installer-{}",
+            "nickel-optifine-installer-{}",
             store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -1994,7 +1993,7 @@ mod tests {
 
     #[test]
     fn cancelled_tasks_protect_directory_until_writer_finishes() {
-        let root = std::env::temp_dir().join(format!("nowhere-task-{}", store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-task-{}", store::random_token()));
         let (_, directory) =
             named_profiles::reserve(&root, "Pending world", "1.20.1", None, "").unwrap();
         let guard = app_tasks::test_reserve(&directory);
@@ -2107,7 +2106,7 @@ mod tests {
     #[test]
     fn probe_reports_unverified_for_missing_binary() {
         let missing =
-            std::env::temp_dir().join(format!("nowhere-java-missing-{}", store::random_token()));
+            std::env::temp_dir().join(format!("nickel-java-missing-{}", store::random_token()));
         let probe = probe_java(&missing);
         assert!(probe.version.is_empty());
         assert_eq!(probe.vendor, VENDOR_UNVERIFIED);
@@ -2190,7 +2189,7 @@ mod tests {
 
         // 未知 which → 可读错误
         let err = folder_target_with_resource(
-            "C:/nowhere-does-not-exist",
+            "C:/nickel-does-not-exist",
             "NOPE",
             None,
             |_, _| unreachable!(),
@@ -2203,7 +2202,7 @@ mod tests {
     #[test]
     fn shortcuts_use_effective_resource_root_for_all_isolation_combinations() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-shortcuts-{}", store::random_token()));
+            std::env::temp_dir().join(format!("nickel-shortcuts-{}", store::random_token()));
         let (_, named) =
             crate::named_profiles::reserve(&root, "My world", "1.21.4", None, "").unwrap();
         let legacy = root.join("versions/1.20.1");
@@ -2252,14 +2251,14 @@ mod tests {
     #[test]
     fn liteloader_mod_shortcut_uses_minecraft_specific_directory() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-lit-shortcut-{}",
+            "nickel-lit-shortcut-{}",
             store::random_token()
         ));
         let version = "Lite world";
         let directory = root.join("versions").join(version);
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
-            directory.join("nowhere.profile.json"),
+            directory.join("nickel.profile.json"),
             serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": 1,
                 "name": version,
@@ -2276,7 +2275,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "id": version,
                 "inheritsFrom": "1.12.2",
-                "nowhereProfile": {
+                "nickelProfile": {
                     "minecraftVersion": "1.12.2",
                     "loader": "LiteLoader",
                     "loaderVersion": "1.12.2-SNAPSHOT-r0"

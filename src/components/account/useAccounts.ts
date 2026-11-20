@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../lib/settings";
 import { type Account, type AccountType } from "./types";
 
-const LIST_KEY = "nowhere.accounts";
-const ACTIVE_KEY = "nowhere.accounts.active";
+const LIST_KEY = "nickel.accounts";
+const ACTIVE_KEY = "nickel.accounts.active";
 
 /* --------------------------------------------------------- normalization */
 function normalizeAccount(raw: unknown): Account | null {

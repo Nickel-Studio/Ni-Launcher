@@ -26,7 +26,7 @@ impl TestDir {
             .unwrap_or(0);
         let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "nowhere-diagnostics-{tag}-{}-{stamp}-{id}",
+            "nickel-diagnostics-{tag}-{}-{stamp}-{id}",
             std::process::id()
         ));
         fs::create_dir_all(&path).unwrap_or_else(|error| {
@@ -401,7 +401,7 @@ fn log_store_reads_latest_crash_report_and_paths() {
     let paths = resolve_log_paths(dir.path());
     assert_eq!(
         paths.log_file,
-        dir.path().join("logs").join("nowhere-launcher.log")
+        dir.path().join("logs").join("nickel-launcher.log")
     );
     assert_eq!(
         paths.latest_game_log,

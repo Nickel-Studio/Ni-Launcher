@@ -53,9 +53,9 @@ async function runWindowCommand(
 /** Play the shell exit animation, then close the window (Tauri only). */
 async function closeWindow(): Promise<void> {
   if (!isTauri()) return;
-  const shell = document.querySelector<HTMLElement>(".nw-shell");
-  if (shell && !shell.classList.contains("nw-shell--leaving")) {
-    shell.classList.add("nw-shell--leaving");
+  const shell = document.querySelector<HTMLElement>(".ni-shell");
+  if (shell && !shell.classList.contains("ni-shell--leaving")) {
+    shell.classList.add("ni-shell--leaving");
     await new Promise((resolve) => window.setTimeout(resolve, EXIT_MS));
   }
   await runWindowCommand("window_close");
@@ -72,7 +72,7 @@ export function TitleBar() {
 
   return (
     <header
-      className="nw-titlebar"
+      className="ni-titlebar"
       data-tauri-drag-region
       data-tinted={settings.titlebarTint}
     >
@@ -81,17 +81,17 @@ export function TitleBar() {
         placement="titlebar"
         decoration={settings.customTheme.decoration}
       />
-      <div className="nw-titlebar__left" data-tauri-drag-region>
-        <span className="nw-brand">
-          <span className="nw-brand__text" data-tauri-drag-region>
+      <div className="ni-titlebar__left" data-tauri-drag-region>
+        <span className="ni-brand">
+          <span className="ni-brand__text" data-tauri-drag-region>
             {PRODUCT_NAME}
           </span>
         </span>
       </div>
 
-      <nav className="nw-titlebar__center" aria-label="主导航" ref={navRef}>
+      <nav className="ni-titlebar__center" aria-label="主导航" ref={navRef}>
         <span
-          className="nw-navtab__pill"
+          className="ni-navtab__pill"
           data-ready={pill.ready}
           style={{ transform: `translateX(${pill.left}px)`, width: pill.width }}
           aria-hidden="true"
@@ -101,7 +101,7 @@ export function TitleBar() {
             key={r}
             ref={registerTab(i)}
             type="button"
-            className="nw-navtab"
+            className="ni-navtab"
             data-active={route === r}
             aria-current={route === r ? "page" : undefined}
             onClick={() => setRoute(r)}
@@ -112,11 +112,11 @@ export function TitleBar() {
         ))}
       </nav>
 
-      <div className="nw-titlebar__right">
+      <div className="ni-titlebar__right">
         <Tooltip label="最小化">
           <button
             type="button"
-            className="nw-winbtn"
+            className="ni-winbtn"
             aria-label="最小化"
             onClick={() => void runWindowCommand("window_minimize")}
           >
@@ -126,7 +126,7 @@ export function TitleBar() {
         <Tooltip label="关闭">
           <button
             type="button"
-            className="nw-winbtn nw-winbtn--close"
+            className="ni-winbtn ni-winbtn--close"
             aria-label="关闭"
             onClick={() => void closeWindow()}
           >

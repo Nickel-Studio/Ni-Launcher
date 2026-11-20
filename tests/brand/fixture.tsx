@@ -35,7 +35,7 @@ host.__TAURI_INTERNALS__ = {
   convertFileSrc: (path) => path,
 };
 host.__brandRegression = { checks, opened, setFailOpen: (value) => { failOpen = value; } };
-localStorage.setItem("nowhere.settings", JSON.stringify(DEFAULT_SETTINGS));
+localStorage.setItem("nickel.settings", JSON.stringify(DEFAULT_SETTINGS));
 setRoute("more");
 createRoot(document.getElementById("root")!).render(
   <SettingsProvider>
@@ -65,7 +65,7 @@ async function run(): Promise<void> {
   about.click();
   const page = await waitFor(() => document.querySelector<HTMLElement>(".mo-about"));
   check("完整名称", page.querySelector(".mo-about__name")?.textContent === "Nickel");
-  check("标题栏名称", document.querySelector(".nw-brand__text")?.textContent === "Nickel");
+  check("标题栏名称", document.querySelector(".ni-brand__text")?.textContent === "Nickel");
   check("关于页无技术栈", !/Tauri|React|TypeScript|Rust/.test(page.textContent ?? ""));
   check("开发者与鸣谢", ["ItzArona", "ItzPlana", "龙猫腾跃", "PCL 启动器", "PCL-CE", "LinuxDO", "ShittimChests"].every((name) => page.textContent?.includes(name)));
   check("文字鸣谢不含按钮", !page.querySelector('[aria-label="龙猫腾跃"] button'));

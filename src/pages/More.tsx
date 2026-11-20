@@ -543,7 +543,7 @@ export default function More() {
 
   return (
     <PagerLayout
-      className="nw-pager--fill"
+      className="ni-pager--fill"
       items={SECTIONS}
       active={active}
       onSelect={setActive}

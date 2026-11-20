@@ -1244,7 +1244,7 @@ pub async fn pack_export_save(
     task.describe_kind(app_tasks::TaskKind::Export, &request.name);
     let id = task.id.clone();
     tauri::async_runtime::spawn(async move {
-        let temporary = parent.join(format!(".nowhere-export-{}.part", task.id));
+        let temporary = parent.join(format!(".nickel-export-{}.part", task.id));
         let staged = temporary.clone();
         let result = export_to_staging(app, request, staged, &task).await;
         task.finish_transaction(
@@ -1321,7 +1321,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let root = std::env::temp_dir().join(format!(
-                "nowhere-r6-export-{}",
+                "nickel-r6-export-{}",
                 crate::store::random_token()
             ));
             std::fs::create_dir_all(&root).unwrap();
@@ -1350,13 +1350,13 @@ mod tests {
         .unwrap();
         std::fs::write(directory.join("config/accounts.json"), b"must not export").unwrap();
         std::fs::write(directory.join("servers.dat"), b"private servers").unwrap();
-        std::fs::write(directory.join("nowhere.profile.json"), serde_json::to_vec(&json!({
+        std::fs::write(directory.join("nickel.profile.json"), serde_json::to_vec(&json!({
             "schemaVersion":1,"name":version_id,"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9","ready":true
         })).unwrap()).unwrap();
         std::fs::write(directory.join(format!("{version_id}.json")), serde_json::to_vec(&json!({
             "id":version_id,"type":"release","inheritsFrom":"1.20.1",
-            "nowhereProfile":{"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9"},
-            "nowhereCustom":{"name":"显示名称不等于目录"}
+            "nickelProfile":{"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9"},
+            "nickelCustom":{"name":"显示名称不等于目录"}
         })).unwrap()).unwrap();
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
@@ -1461,7 +1461,7 @@ mod tests {
             .unwrap();
             if named {
                 std::fs::write(
-                    directory.join("nowhere.profile.json"),
+                    directory.join("nickel.profile.json"),
                     serde_json::to_vec(&json!({
                         "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
                         "loader": null, "loaderVersion": "", "ready": true
@@ -1580,7 +1580,7 @@ mod tests {
             "config/service/secrets.json",
             "mods/.env",
             "config/api-token.txt",
-            "nowhere.profile.json",
+            "nickel.profile.json",
             "options.txt/file",
         ] {
             assert!(group_for(path).is_none(), "{path}");
@@ -1631,7 +1631,7 @@ mod tests {
         std::fs::write(directory.join("XaeroWaypoints/waypoints.txt"), b"waypoint").unwrap();
         std::fs::write(directory.join("XaeroWorldMap/region.dat"), b"map").unwrap();
         std::fs::write(
-            directory.join("nowhere.settings.json"),
+            directory.join("nickel.settings.json"),
             serde_json::to_vec(&json!({
                 "windowTitle": "安全标题", "memoryMode": "custom", "memoryMb": 6144,
                 "jvmArgs": "-XX:+UseG1GC", "javaPath": "C:/Users/private/java.exe",
@@ -1641,7 +1641,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            directory.join("nowhere.profile.json"),
+            directory.join("nickel.profile.json"),
             serde_json::to_vec(&json!({
                 "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
                 "loader": null, "loaderVersion": "", "ready": true
@@ -1652,7 +1652,7 @@ mod tests {
         std::fs::write(
             directory.join(format!("{version_id}.json")),
             serde_json::to_vec(&json!({
-                "id": "1.20.1", "type": "release", "nowhereCustom": {"name": "设置预览"}
+                "id": "1.20.1", "type": "release", "nickelCustom": {"name": "设置预览"}
             }))
             .unwrap(),
         )
@@ -1696,7 +1696,7 @@ mod tests {
                 .preview
                 .files
                 .iter()
-                .all(|file| file.path != "nowhere.settings.json")
+                .all(|file| file.path != "nickel.settings.json")
         );
         let selections: Vec<_> = instance
             .preview

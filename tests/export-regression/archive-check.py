@@ -15,7 +15,7 @@ PERSONAL_GROUPS = {
     "jeiPersonal", "emiPersonal", "patchouliPersonal", "screenshots", "maps",
     "saves", "schematics", "replays", "servers", "personal", "disabledMods",
 }
-PORTABLE_MARKER = "nowhere.portable.json"
+PORTABLE_MARKER = "nickel.portable.json"
 GUIDE_FILE = "\u4f7f\u7528\u8bf4\u660e.txt"
 
 

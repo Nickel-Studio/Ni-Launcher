@@ -49,11 +49,11 @@ export default function Settings() {
         {saveError}
       </p>
     ) : (
-      <LoadingCard className="nw-loading--viewport" label="正在载入设置..." />
+      <LoadingCard className="ni-loading--viewport" label="正在载入设置..." />
     );
   return (
     <PagerLayout
-      className="nw-pager--fill"
+      className="ni-pager--fill"
       items={sections}
       active={selected}
       onSelect={setActive}

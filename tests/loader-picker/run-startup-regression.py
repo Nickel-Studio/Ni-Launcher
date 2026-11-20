@@ -88,7 +88,7 @@ def new_app(browser, **config):
         # leaving 记录淡出开始时刻，确保不是提前淡出后才移除。
         check(
             "可见性查询悬挂时硬截止仍移除闪屏",
-            not page.locator("#nw-splash").count()
+            not page.locator("#ni-splash").count()
             and times.get("leaving", 0) - times["commit"] >= 5800
             and times["removed"] >= times.get("leaving", 0),
             times,
@@ -124,19 +124,19 @@ def new_app(browser, **config):
 def open_resources(page):
     page.get_by_role("button", name="资源", exact=True).click()
     page.locator(".van-page").wait_for(state="visible")
-    settle(page, ".nw-content")
+    settle(page, ".ni-content")
 
 
 def open_picker(page):
     open_resources(page)
     page.locator(".van-latest__card").first.click()
     page.locator(".van-picker__download").wait_for(state="visible")
-    settle(page, ".nw-content")
+    settle(page, ".ni-content")
 
 
 def footer_metrics(page):
     return page.evaluate("""() => {
-      const host = document.querySelector('.nw-pager__page');
+      const host = document.querySelector('.ni-pager__page');
       const picker = document.querySelector('.van-picker');
       const footer = picker.querySelector('.van-picker__foot');
       const button = footer.querySelector('.van-picker__download');
@@ -169,11 +169,11 @@ def check_footer(page, name):
 
 def mining_metrics(page):
     return page.evaluate("""() => {
-      const loading = document.querySelector('.van-page--loading .nw-loading');
-      const card = loading.querySelector('.nw-loading__card');
-      const clip = loading.querySelector('.nw-loading__clip');
+      const loading = document.querySelector('.van-page--loading .ni-loading');
+      const card = loading.querySelector('.ni-loading__card');
+      const clip = loading.querySelector('.ni-loading__clip');
       const art = loading.querySelector('svg');
-      const host = document.querySelector('.nw-pager__page');
+      const host = document.querySelector('.ni-pager__page');
       const header = document.querySelector('.van-page__head');
       return {
         loading: loading.getBoundingClientRect().toJSON(),
@@ -211,8 +211,8 @@ with sync_playwright() as playwright:
             page = new_app(browser, splash=splash_state)
             page.close()
         page = new_app(browser, motion="reduce")
-        shell = page.locator(".nw-shell")
-        shell.evaluate("element => element.classList.add('nw-shell--leaving')")
+        shell = page.locator(".ni-shell")
+        shell.evaluate("element => element.classList.add('ni-shell--leaving')")
         reduced_exit = shell.evaluate("element => ({transition: getComputedStyle(element).transitionDuration, transform: getComputedStyle(element).transform})")
         check("reduced-motion 关闭外壳退出缩放与过渡", reduced_exit["transition"] == "0s" and reduced_exit["transform"] == "none", reduced_exit)
         page.close()
@@ -227,9 +227,9 @@ with sync_playwright() as playwright:
             if motion == "reduce":
                 check("reduced-motion 停止全部挖矿循环", all(name == "none" for name in metrics["animations"]), metrics["animations"])
             else:
-                bounds = page.locator(".nw-loading__art").evaluate("""(svg) => {
+                bounds = page.locator(".ni-loading__art").evaluate("""(svg) => {
                   const clip = svg.parentElement.getBoundingClientRect();
-                  const pick = svg.querySelector('.nw-loading__pick');
+                  const pick = svg.querySelector('.ni-loading__pick');
                   const animation = pick.getAnimations()[0];
                   animation.pause();
                   const bounds = [];
@@ -258,10 +258,10 @@ with sync_playwright() as playwright:
         open_picker(page)
         page.locator(".van-loader[data-loader='forge'] .van-loader__head").click()
         page.locator(".van-builds--all .van-build").last.wait_for(state="attached")
-        settle(page, ".nw-content")
+        settle(page, ".ni-content")
         listing = page.locator(".van-loader[data-loader='forge'] .van-builds--all")
         listing.evaluate("element => element.scrollTop = element.scrollHeight")
-        page.locator(".nw-pager__page").evaluate("element => element.scrollTop = element.scrollHeight")
+        page.locator(".ni-pager__page").evaluate("element => element.scrollTop = element.scrollHeight")
         page.locator(".van-picker__download").focus()
         check_footer(page, "长内容")
         check("长构建列表末行可滚动到达", listing.evaluate("element => element.scrollTop + element.clientHeight >= element.scrollHeight - 1"))
@@ -271,7 +271,7 @@ with sync_playwright() as playwright:
 
         page = new_app(browser, catalog="pending")
         open_picker(page)
-        page.locator(".nw-pager__page").evaluate("element => element.scrollTop = element.scrollHeight")
+        page.locator(".ni-pager__page").evaluate("element => element.scrollTop = element.scrollHeight")
         check_footer(page, "加载器查询中")
         page.locator(".van-picker__download").click()
         page.wait_for_function("__startupRegression.calls.some(call => call.command === 'install_version')")

@@ -11,7 +11,7 @@
   /* 单行版本卡行高 42px；占位与真实行共用。 */
   --pd-row-height: 42px;
   padding-bottom: var(--space-6);
-  animation: nw-fade-up var(--t) var(--ease-out) both;
+  animation: ni-fade-up var(--t) var(--ease-out) both;
 }
 .pd-back__icon {
   transform: rotate(90deg);
@@ -33,7 +33,7 @@
   align-items: flex-start;
   gap: var(--space-4);
 }
-.pd-card__head > .nw-btn {
+.pd-card__head > .ni-btn {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -313,8 +313,8 @@
 .pd-pill:focus-visible,
 .pd-row:focus-visible,
 .pd-name-input:focus-visible,
-.pd-name-modal .nw-btn:focus-visible,
-.pd-error .nw-btn:focus-visible {
+.pd-name-modal .ni-btn:focus-visible,
+.pd-error .ni-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 calc(var(--space-1) / 2) var(--accent-ring);
 }
@@ -322,7 +322,7 @@
   .pd-card__head {
     flex-wrap: wrap;
   }
-  .pd-card__head > .nw-btn {
+  .pd-card__head > .ni-btn {
     margin-left: auto;
   }
   /* 窄屏隐藏大小与相对时间，保留显示名 / 版本号 / 状态。 */

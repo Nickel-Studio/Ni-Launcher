@@ -170,7 +170,7 @@ export default function VersionSettings() {
       </div>
 
       <PagerLayout
-        className="nw-pager--fill vst-pager"
+        className="ni-pager--fill vst-pager"
         items={SECTIONS}
         active={active}
         onSelect={setActive}

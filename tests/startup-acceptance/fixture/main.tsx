@@ -90,11 +90,11 @@ function GateFixture() {
     backend.event("on-ready");
     setReady(true);
   }, [generation]);
-  document.documentElement.classList.add("nw-app-ready");
+  document.documentElement.classList.add("ni-app-ready");
   return (
     <>
-      <div className="nw-shell" data-testid="fixture-shell" inert={!ready}>
-        <main className="nw-content">
+      <div className="ni-shell" data-testid="fixture-shell" inert={!ready}>
+        <main className="ni-content">
           <h1>Nickel acceptance fixture</h1>
           <p>
             Production startup components; simulated IPC, not a native process.
@@ -125,7 +125,7 @@ window.__startupFixture = {
     modalListeners: Object.fromEntries(
       [...trackedListeners].map(([type, listeners]) => [type, listeners.size])
     ),
-    shellInert: document.querySelector<HTMLElement>(".nw-shell")?.inert ?? null,
+    shellInert: document.querySelector<HTMLElement>(".ni-shell")?.inert ?? null,
     dialogs: document.querySelectorAll('[role="dialog"]').length,
   }),
   hideGate: () => hideGate(),

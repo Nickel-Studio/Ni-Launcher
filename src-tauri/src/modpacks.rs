@@ -189,8 +189,8 @@ pub fn validate_pack_path(path: &str) -> Result<(), PackError> {
         }
     }
     let root = components[0].to_ascii_lowercase();
-    if root.starts_with("nowhere.")
-        || root.starts_with(".nowhere")
+    if root.starts_with("nickel.")
+        || root.starts_with(".nickel")
         || matches!(
             root.as_str(),
             "gamedata.json"
@@ -1238,9 +1238,9 @@ async fn apply_overrides(
     let cancel = cancel.clone();
     tokio::task::spawn_blocking(move || {
         let mut protected = vec![
-            ".nowhere-pack.pending".into(),
+            ".nickel-pack.pending".into(),
             "gameData.json".into(),
-            "nowhere.settings.json".into(),
+            "nickel.settings.json".into(),
             "launcher_profiles.json".into(),
             "launcher_accounts.json".into(),
             "natives".into(),
@@ -1394,7 +1394,7 @@ mod tests {
     #[test]
     fn portable_instance_settings_merge_after_overrides_and_keep_unknown_keys() {
         let mut fixture = OverrideFixture::new(&[]);
-        let path = fixture.root.join("nowhere.settings.json");
+        let path = fixture.root.join("nickel.settings.json");
         std::fs::write(&path, br#"{"unknownFutureKey":"keep","windowTitle":"old"}"#).unwrap();
         fixture.plan.instance_settings = Some(json!({
             "windowTitle": "portable",
@@ -1525,7 +1525,7 @@ mod tests {
             "mods/x.",
             "CON",
             "mods/aux.jar",
-            "nowhere.profile.json",
+            "nickel.profile.json",
             "gameData.json",
             "versions/v.json",
             "libraries/x",
@@ -1544,9 +1544,9 @@ mod tests {
     #[test]
     fn pending_metadata_and_nested_control_paths_are_rejected() {
         for path in [
-            ".nowhere-pack.pending",
-            ".NOWHERE-PACK.PENDING/owner",
-            "nowhere.profile.json/child",
+            ".nickel-pack.pending",
+            ".NICKEL-PACK.PENDING/owner",
+            "nickel.profile.json/child",
             "launcher_accounts.json",
             "natives/native.dll",
         ] {

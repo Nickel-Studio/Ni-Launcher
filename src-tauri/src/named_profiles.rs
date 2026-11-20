@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{loader_catalog, store};
 
-const PROFILE_FILE: &str = "nowhere.profile.json";
+const PROFILE_FILE: &str = "nickel.profile.json";
 const PROFILE_SCHEMA: u32 = 1;
 const PROFILE_MAX_BYTES: u64 = 64 * 1024;
 const NAME_MAX_BYTES: usize = 160;
-const PACK_PENDING_FILE: &str = ".nowhere-pack.pending";
+const PACK_PENDING_FILE: &str = ".nickel-pack.pending";
 const MAX_PACK_NAME_ATTEMPTS: usize = 10_000;
 static RESERVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -166,8 +166,8 @@ impl ReservedProfile {
             .map_err(|e| format!("读取实例描述失败：{e}"))?;
         let mut descriptor: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| format!("读取实例描述失败：{e}"))?;
-        descriptor["nowhereCustom"] = serde_json::json!({ "name": display_name });
-        descriptor["nowherePack"] = source.clone();
+        descriptor["nickelCustom"] = serde_json::json!({ "name": display_name });
+        descriptor["nickelPack"] = source.clone();
         atomic_write(
             &descriptor_path,
             &serde_json::to_vec_pretty(&descriptor).map_err(|e| e.to_string())?,
@@ -217,7 +217,7 @@ impl ReservedProfile {
         // 空目录先移出 versions 再撤销标记；最后删除失败也不会被扫描为实例。
         let retired = self
             .root
-            .join(format!(".nowhere-pack-cleanup-{}", self.owner));
+            .join(format!(".nickel-pack-cleanup-{}", self.owner));
         if self.directory != retired {
             if std::fs::symlink_metadata(&retired).is_ok() {
                 return Err("实例清理目录已存在，请整理后重试".into());
@@ -303,7 +303,7 @@ pub fn validate_name(name: &str) -> Result<&str, String> {
     }
     // 外层 <name>.json 不能覆盖实例 profile、核心缓存或版本设置。
     let descriptor = format!("{name}.json");
-    if [PROFILE_FILE, "gameData.json", "nowhere.settings.json"]
+    if [PROFILE_FILE, "gameData.json", "nickel.settings.json"]
         .iter()
         .any(|file| descriptor.eq_ignore_ascii_case(file))
     {
@@ -480,11 +480,11 @@ impl NamedProfile {
             .ok_or("原版版本描述不是 JSON 对象")?;
         object.insert("id".into(), self.name.clone().into());
         object.insert("inheritsFrom".into(), self.minecraft_version.clone().into());
-        object.insert("nowhereProfile".into(), serde_json::json!({"minecraftVersion": self.minecraft_version, "loader": self.loader, "loaderVersion": self.loader_version}));
+        object.insert("nickelProfile".into(), serde_json::json!({"minecraftVersion": self.minecraft_version, "loader": self.loader, "loaderVersion": self.loader_version}));
         let descriptor_path = directory.join(format!("{}.json", self.name));
         if let Ok(existing) = std::fs::read_to_string(&descriptor_path) {
             if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&existing) {
-                for key in ["nowhereCustom", "nowherePack"] {
+                for key in ["nickelCustom", "nickelPack"] {
                     if let Some(value) = existing.get(key) {
                         object.insert(key.into(), value.clone());
                     }
@@ -543,7 +543,7 @@ pub fn apply_for_launch(
 
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("目标文件缺少父目录")?;
-    let temporary = parent.join(format!(".nowhere-{}.part", store::random_token()));
+    let temporary = parent.join(format!(".nickel-{}.part", store::random_token()));
     let result = (|| {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -574,7 +574,7 @@ mod tests {
     }
 
     fn root() -> PathBuf {
-        std::env::temp_dir().join(format!("nowhere-profiles-{}", store::random_token()))
+        std::env::temp_dir().join(format!("nickel-profiles-{}", store::random_token()))
     }
 
     #[test]
@@ -651,7 +651,6 @@ mod tests {
         let params = crate::ResolvedLaunch {
             version: "Fabric world".into(),
             username: "Player".into(),
-            memory_min: "1G".into(),
             memory_max: "2G".into(),
             game_dir: None,
         };
@@ -772,7 +771,7 @@ mod tests {
         let mut reserved = reserve_pack(&root, "Pack", "1.20.1", None, "").unwrap();
         let occupied = reserved
             .root
-            .join(format!(".nowhere-pack-cleanup-{}", reserved.owner));
+            .join(format!(".nickel-pack-cleanup-{}", reserved.owner));
         std::fs::write(&occupied, b"foreign").unwrap();
         assert!(reserved.cleanup().is_err());
         assert!(is_pending_pack(&reserved.directory));
@@ -849,8 +848,8 @@ mod tests {
                 &std::fs::read(item.directory.join(format!("{}.json", item.profile.name))).unwrap(),
             )
             .unwrap();
-            assert_eq!(descriptor["nowherePack"], source);
-            assert_eq!(descriptor["nowhereCustom"]["name"], "相同显示名");
+            assert_eq!(descriptor["nickelPack"], source);
+            assert_eq!(descriptor["nickelCustom"]["name"], "相同显示名");
             assert_eq!(descriptor["id"], item.profile.name);
         }
         let scan: serde_json::Value = serde_json::from_str(&crate::instances::instance_scan(
@@ -894,8 +893,8 @@ mod tests {
         for name in [
             "gameData",
             "GAMEDATA",
-            "nowhere.profile",
-            "nowhere.settings",
+            "nickel.profile",
+            "nickel.settings",
             "CON .txt",
         ] {
             assert!(validate_name(name).is_err(), "{name}");
@@ -945,13 +944,13 @@ mod tests {
         let descriptor_path = crate::instances::pick_version_json(&path, &profile.name).unwrap();
         let mut descriptor: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&descriptor_path).unwrap()).unwrap();
-        descriptor["nowhereCustom"] =
+        descriptor["nickelCustom"] =
             serde_json::json!({"name": "Display title", "favorite": true});
         std::fs::write(&descriptor_path, serde_json::to_vec(&descriptor).unwrap()).unwrap();
         profile.complete(&path, &data).unwrap();
         let repaired: serde_json::Value =
             serde_json::from_slice(&std::fs::read(descriptor_path).unwrap()).unwrap();
-        assert_eq!(repaired["nowhereCustom"], descriptor["nowhereCustom"]);
+        assert_eq!(repaired["nickelCustom"], descriptor["nickelCustom"]);
         assert!(
             profile
                 .complete(&path, &sample_data("1.20.1", None, None))

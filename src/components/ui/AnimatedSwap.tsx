@@ -82,11 +82,11 @@ export function AnimatedSwap({
   }, [outgoing, duration]);
 
   return (
-    <div className={["nw-swap", className].filter(Boolean).join(" ")}>
+    <div className={["ni-swap", className].filter(Boolean).join(" ")}>
       {outgoing && !reducedMotion ? (
         <div
           key={`out:${String(outgoing.key)}`}
-          className="nw-swap__layer nw-swap__layer--out"
+          className="ni-swap__layer ni-swap__layer--out"
           aria-hidden="true"
         >
           {outgoing.node}
@@ -94,7 +94,7 @@ export function AnimatedSwap({
       ) : null}
       <div
         key={`in:${String(swapKey)}`}
-        className="nw-swap__layer nw-swap__layer--in"
+        className="ni-swap__layer ni-swap__layer--in"
       >
         {children}
       </div>

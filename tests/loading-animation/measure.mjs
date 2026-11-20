@@ -11,8 +11,8 @@
  *
  * 测量口径（两个「中心」都显式定义，避免歧义）：
  *   ink          当前可见挖矿笔画（地面 / 矿块 / 镐子）的屏幕并集包围盒
- *   artSlot      .nw-loading__clip，即卡片分配给动画的内容区（留白裁切框）
- *   cardContent  .nw-loading__card 的 padding 内容框（动画 + 文案的完整内容区）
+ *   artSlot      .ni-loading__clip，即卡片分配给动画的内容区（留白裁切框）
+ *   cardContent  .ni-loading__card 的 padding 内容框（动画 + 文案的完整内容区）
  *   available    页面为加载态预留的区域（页头以下 / Pager 页面内容区）
  *
  * 判定：
@@ -170,7 +170,7 @@ const MEASURE_EXPRESSION = String.raw`(() => {
   };
   const showable = (element) => {
     if (!element) return false;
-    if (element.closest(".nw-swap__layer--out")) return false;
+    if (element.closest(".ni-swap__layer--out")) return false;
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   };
@@ -189,20 +189,20 @@ const MEASURE_EXPRESSION = String.raw`(() => {
     }
   });
 
-  const loaders = Array.from(document.querySelectorAll(".nw-loading"));
+  const loaders = Array.from(document.querySelectorAll(".ni-loading"));
   const loader = loaders.find((element) => showable(element)) || loaders[0];
   if (!loader) {
     return {
       ok: false,
-      reason: "no .nw-loading",
+      reason: "no .ni-loading",
       scenario: document.documentElement.dataset.scenario,
     };
   }
-  const card = loader.querySelector(".nw-loading__card");
-  const clip = loader.querySelector(".nw-loading__clip");
-  const svg = loader.querySelector(".nw-loading__art");
-  const label = loader.querySelector(".nw-loading__label");
-  const oreX = loader.querySelector(".nw-loading__ore-x");
+  const card = loader.querySelector(".ni-loading__card");
+  const clip = loader.querySelector(".ni-loading__clip");
+  const svg = loader.querySelector(".ni-loading__art");
+  const label = loader.querySelector(".ni-loading__label");
+  const oreX = loader.querySelector(".ni-loading__ore-x");
   const cardRect = rectOf(card);
   const cardContent = contentRectOf(card);
   const clipRect = rectOf(clip);
@@ -225,7 +225,7 @@ const MEASURE_EXPRESSION = String.raw`(() => {
     };
     const elements = Array.from(
       svg.querySelectorAll(
-        ".nw-loading__ground, .nw-loading__block path, .nw-loading__pick path"
+        ".ni-loading__ground, .ni-loading__block path, .ni-loading__pick path"
       )
     ).filter(visible);
     let box = null;
@@ -262,11 +262,11 @@ const MEASURE_EXPRESSION = String.raw`(() => {
   const ink = inkOf();
 
   // 采样一次完整的挥镐循环，确认裁切框不会切到镐头或碎屑。
-  const pick = svg.querySelector(".nw-loading__pick");
+  const pick = svg.querySelector(".ni-loading__pick");
   const swing = pick
     ? pick
         .getAnimations()
-        .find((animation) => animation.animationName === "nw-loading-swing")
+        .find((animation) => animation.animationName === "ni-loading-swing")
     : null;
   let inkTopMin = ink ? ink.top : null;
   let inkBottomMax = ink ? ink.bottom : null;
@@ -321,7 +321,7 @@ const MEASURE_EXPRESSION = String.raw`(() => {
       gap: round(gap),
       pageMinHeight: getComputedStyle(page).minHeight,
       pageHeight: pageRect.height,
-      pagerPageHeight: loader.closest(".nw-pager__page")?.getBoundingClientRect().height ?? null,
+      pagerPageHeight: loader.closest(".ni-pager__page")?.getBoundingClientRect().height ?? null,
     };
     pageCentered = PAGE_SCENARIOS.has(scenario);
   } else if (loader.closest(".vs-root--loading")) {
@@ -344,13 +344,13 @@ const MEASURE_EXPRESSION = String.raw`(() => {
       gap: round(gap),
     };
     pageCentered = PAGE_SCENARIOS.has(scenario);
-  } else if (loader.classList.contains("nw-loading--viewport")) {
-    const area = contentRectOf(loader.closest(".nw-content"));
-    available = { source: ".nw-content 内容框", ...area };
+  } else if (loader.classList.contains("ni-loading--viewport")) {
+    const area = contentRectOf(loader.closest(".ni-content"));
+    available = { source: ".ni-content 内容框", ...area };
     pageCentered = true;
-  } else if (loader.closest(".nw-pager__page")) {
-    const area = contentRectOf(loader.closest(".nw-pager__page"));
-    available = { source: ".nw-pager__page 内容框", ...area };
+  } else if (loader.closest(".ni-pager__page")) {
+    const area = contentRectOf(loader.closest(".ni-pager__page"));
+    available = { source: ".ni-pager__page 内容框", ...area };
     pageCentered = PAGE_SCENARIOS.has(scenario);
   } else {
     const area = contentRectOf(loader.parentElement);
@@ -382,7 +382,7 @@ const MEASURE_EXPRESSION = String.raw`(() => {
         document.body.scrollWidth > window.innerWidth,
     },
     loaderClass: loader.className,
-    errorState: loader.classList.contains("nw-loading--error"),
+    errorState: loader.classList.contains("ni-loading--error"),
     errorLabel: label?.textContent ?? "",
     errorXOpacity: oreX ? getComputedStyle(oreX).opacity : null,
     loader: loaderRect,
@@ -467,7 +467,7 @@ function evaluateAssertions(measurements) {
       );
     }
     if (item.scenario === "error") {
-      if (!item.errorState) failures.push(`${name}: 错误场景缺少 .nw-loading--error`);
+      if (!item.errorState) failures.push(`${name}: 错误场景缺少 .ni-loading--error`);
       if (item.errorLabel !== "网络故障") {
         failures.push(`${name}: 错误文案不是「网络故障」（${item.errorLabel}）`);
       }
@@ -478,7 +478,7 @@ function evaluateAssertions(measurements) {
   }
 
   const pageItems = measurements.filter(
-    (item) => item.pageCentered && !item.loaderClass.includes("nw-loading--inline")
+    (item) => item.pageCentered && !item.loaderClass.includes("ni-loading--inline")
   );
   const contentOffsets = pageItems.map(
     (item) => item.offsets.inkVsCardContentCenter
@@ -519,7 +519,7 @@ async function waitForScene(cdp, scenario) {
   }
   const debug = await cdp.send("Runtime.evaluate", {
     expression:
-      'JSON.stringify({url:location.href, ready:document.documentElement.dataset.ready, scenario:document.documentElement.dataset.scenario, loaders:document.querySelectorAll(".nw-loading").length, text:document.body.innerText.slice(0,600)})',
+      'JSON.stringify({url:location.href, ready:document.documentElement.dataset.ready, scenario:document.documentElement.dataset.scenario, loaders:document.querySelectorAll(".ni-loading").length, text:document.body.innerText.slice(0,600)})',
     returnByValue: true,
   });
   throw new Error(`场景等待超时：${scenario} ${debug.result?.value ?? ""}`);
@@ -527,7 +527,7 @@ async function waitForScene(cdp, scenario) {
 
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
-  const profile = path.join(os.tmpdir(), `nowhere-loading-edge-${Date.now()}`);
+  const profile = path.join(os.tmpdir(), `nickel-loading-edge-${Date.now()}`);
   const pageErrors = [];
   /** 减弱动效探针结果（循环动画应为 none / 0 running）。 */
   let reducedMotion = null;
@@ -630,10 +630,10 @@ async function main() {
     await sleep(300);
     const reducedProbe = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
-        const loader = document.querySelector(".nw-loading");
+        const loader = document.querySelector(".ni-loading");
         if (!loader) return { ok: false };
-        const pick = loader.querySelector(".nw-loading__pick");
-        const oreX = loader.querySelector(".nw-loading__ore-x");
+        const pick = loader.querySelector(".ni-loading__pick");
+        const oreX = loader.querySelector(".ni-loading__ore-x");
         const running = loader
           .getAnimations({ subtree: true })
           .filter((animation) => animation.playState === "running").length;
@@ -642,7 +642,7 @@ async function main() {
           running,
           pickAnimation: pick ? getComputedStyle(pick).animationName : null,
           loaderAnimation: getComputedStyle(loader).animationName,
-          error: loader.classList.contains("nw-loading--error"),
+          error: loader.classList.contains("ni-loading--error"),
           errorX: oreX ? getComputedStyle(oreX).opacity : null,
         };
       })()`,

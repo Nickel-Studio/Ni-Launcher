@@ -19,7 +19,7 @@ def inspect(archive):
         names = zipped.namelist()
         expected = {
             "report.json", "READ-ME.txt", "failure.txt", "logs/latest.log",
-            "logs/debug.log", "logs/nowhere-launcher.log.1",
+            "logs/debug.log", "logs/nickel-launcher.log.1",
             "crash-reports/crash-2026.txt",
         }
         check("exact source whitelist", set(names) == expected and len(names) == len(expected))
@@ -31,7 +31,7 @@ def inspect(archive):
         check("first and final log lines preserved", latest.startswith("BEGIN\n") and latest.endswith("END\n"))
         check("all twenty thousand ordinary lines preserved", latest.count("ordinary log line\n") == 20000)
         check("debug log complete", zipped.read("logs/debug.log") == b"all debug details\n")
-        check("historical log complete", zipped.read("logs/nowhere-launcher.log.1") == b"previous session\n")
+        check("historical log complete", zipped.read("logs/nickel-launcher.log.1") == b"previous session\n")
         crash = zipped.read("crash-reports/crash-2026.txt").decode("utf-8")
         check("crash stack retained", crash.startswith("full crash stack\n"))
         corpus = b"\n".join(zipped.read(name) for name in names)

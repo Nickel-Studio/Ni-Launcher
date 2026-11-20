@@ -362,7 +362,7 @@ mod tests {
         fs::write(root.join("logs/latest.log"), &log).unwrap();
         fs::write(root.join("logs/debug.log"), "all debug details\n").unwrap();
         fs::write(
-            root.join("logs/nowhere-launcher.log.1"),
+            root.join("logs/nickel-launcher.log.1"),
             "previous session\n",
         )
         .unwrap();

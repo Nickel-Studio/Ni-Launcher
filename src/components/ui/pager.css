@@ -3,7 +3,7 @@
    仅使用 tokens.css 的令牌；去线框化（填充式圆角 + 令牌色），不使用 1px 描边做主表现。
    ========================================================================== */
 
-.nw-pager {
+.ni-pager {
   display: flex;
   gap: var(--space-5);
   height: 100%;
@@ -13,7 +13,7 @@
 }
 
 /* ---- 侧边栏 ---- */
-.nw-pager__nav {
+.ni-pager__nav {
   flex: 0 0 auto;
   width: 208px;
   display: flex;
@@ -22,12 +22,12 @@
   min-height: 0;
 }
 
-.nw-pager__title {
+.ni-pager__title {
   color: var(--text-faint);
   padding: var(--space-2) var(--space-3) 0;
 }
 
-.nw-pager__list {
+.ni-pager__list {
   list-style: none;
   margin: 0;
   padding: var(--space-2);
@@ -38,7 +38,7 @@
   background: var(--fill-1);
 }
 
-.nw-pager__group {
+.ni-pager__group {
   padding: var(--space-3) var(--space-3) var(--space-1);
   color: var(--text-faint);
   font-size: var(--fs-2xs);
@@ -46,7 +46,7 @@
   text-transform: uppercase;
 }
 
-.nw-pager__item {
+.ni-pager__item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -64,27 +64,27 @@
   transition: background var(--t) var(--ease), color var(--t) var(--ease);
 }
 
-.nw-pager__item:hover {
+.ni-pager__item:hover {
   background: var(--fill-2);
   color: var(--text);
 }
 
-.nw-pager__item[data-active="true"] {
+.ni-pager__item[data-active="true"] {
   background: var(--accent-soft);
   color: var(--text);
   box-shadow: var(--shadow-inset-top);
 }
 
-.nw-pager__item[data-active="true"] .nw-pager__icon {
+.ni-pager__item[data-active="true"] .ni-pager__icon {
   color: var(--accent);
 }
 
-.nw-pager__item:focus-visible {
+.ni-pager__item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
-.nw-pager__icon {
+.ni-pager__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,19 +100,19 @@
 
 /* 各模块图标组件默认按 1em 绘制（13px），比侧栏图标的 18px 视觉栅格小一圈；
    这里统一放大到 18px，避免同一侧栏内图标大小参差。 */
-.nw-pager__icon svg {
+.ni-pager__icon svg {
   width: 18px;
   height: 18px;
 }
 
-.nw-pager__label {
+.ni-pager__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* ---- 右侧独立页（自行滚动，侧边栏固定） ---- */
-.nw-pager__page {
+.ni-pager__page {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -123,29 +123,29 @@
 }
 
 /* AnimatedSwap 的新旧层叠放；短页也撑满右侧滚动区，避免切换时高度跳变。 */
-.nw-pager__swap {
+.ni-pager__swap {
   min-height: 100%;
 }
 
 /* ---- 可选修饰：整片接管外壳内容区 ---- */
-/* 当 PagerLayout 直接放进应用外壳 `.nw-content`（它自带 --gutter 内边距，并负责滚动）时使用：
+/* 当 PagerLayout 直接放进应用外壳 `.ni-content`（它自带 --gutter 内边距，并负责滚动）时使用：
    1) 抵消外壳那层内边距 —— 否则会出现「外壳 gutter + 自身 padding」两层留白；
    2) 把高度锁到内容区的可视高度，让右侧独立页自己滚动、侧边栏固定不动，
       而不是把整个内容区变成一根长滚动条。
    内容区高度 = 视口 - 标题栏 - 上下 gutter，与 Home.css / Resources.css 的整屏高度算法一致。
-   这里用视口推算而不是 height: 100%：中间夹着的 .nw-swap（AnimatedSwap）是 auto 高度，
+   这里用视口推算而不是 height: 100%：中间夹着的 .ni-swap（AnimatedSwap）是 auto 高度，
    百分比高度在它身上无法解析。 */
-.nw-pager--fill {
+.ni-pager--fill {
   height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
   padding: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nw-pager__item {
+  .ni-pager__item {
     transition: none;
   }
 
-  .nw-pager__swap .nw-swap__layer {
+  .ni-pager__swap .ni-swap__layer {
     animation: none;
   }
 }

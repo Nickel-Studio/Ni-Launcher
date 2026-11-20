@@ -23,8 +23,8 @@ import type {
   ModMeta,
 } from "../../src/components/version/vsettings/mods";
 
-const ROOT = "C:\\NoWheRE-mods-regression\\.minecraft";
-const SECOND_ROOT = "C:\\NoWheRE-mods-regression\\second";
+const ROOT = "C:\\Nickel-mods-regression\\.minecraft";
+const SECOND_ROOT = "C:\\Nickel-mods-regression\\second";
 const VERSION = "命名实例";
 const ICON_DATA_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' rx='6' fill='%2333cc66'/%3E%3C/svg%3E";
@@ -279,9 +279,9 @@ const loading = () =>
     ?.getAttribute("aria-busy") === "true";
 const alert = () => document.querySelector('[role="alert"]')?.textContent ?? "";
 const errorCard = () =>
-  document.querySelector<HTMLElement>(".vst-mods .nw-loading--error");
+  document.querySelector<HTMLElement>(".vst-mods .ni-loading--error");
 const errorLabel = () =>
-  errorCard()?.querySelector(".nw-loading__label")?.textContent?.trim() ?? "";
+  errorCard()?.querySelector(".ni-loading__label")?.textContent?.trim() ?? "";
 
 async function run() {
   // ── 1. 首屏占位：文件名 + 同名简介 + 透明占位图 ──
@@ -416,13 +416,13 @@ async function run() {
   expect(
     "目录失败使用错误动画与短文案",
     errorLabel() === "非法调用" &&
-      errorCard()?.querySelector(".nw-loading__action button") !== null
+      errorCard()?.querySelector(".ni-loading__action button") !== null
   );
   expect("失败文案不出现连续句号", !errorLabel().includes("。。"));
   listHandler = async () => [mod("Retry")];
   (
     errorCard()?.querySelector<HTMLButtonElement>(
-      ".nw-loading__action button"
+      ".ni-loading__action button"
     ) ?? button("重新扫描")
   ).click();
   await waitFor(() => names().includes("Retry") && !loading(), "扫描重试");
@@ -544,9 +544,9 @@ async function run() {
   await freshMods();
   await waitFor(() => errorCard() !== null && !loading(), "错误态布局");
   const card = errorCard()!;
-  const label = card.querySelector<HTMLElement>(".nw-loading__label")!;
+  const label = card.querySelector<HTMLElement>(".ni-loading__label")!;
   const retry = card.querySelector<HTMLButtonElement>(
-    ".nw-loading__action button"
+    ".ni-loading__action button"
   )!;
   const cardRect = card.getBoundingClientRect();
   const labelRect = label.getBoundingClientRect();
@@ -556,7 +556,7 @@ async function run() {
   );
   expect(
     "错误动画与重试入口水平居中",
-    card.querySelector(".nw-loading__ore-x") !== null &&
+    card.querySelector(".ni-loading__ore-x") !== null &&
       Math.abs(
         (labelRect.left + labelRect.right) / 2 -
           (cardRect.left + cardRect.right) / 2

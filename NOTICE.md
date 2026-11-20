@@ -46,7 +46,7 @@ React、React DOM、scheduler、Tauri 与其他锁定依赖保留各自的版权
 
 ## 字体
 
-`src/assets/fonts/nowhere-line.woff2` 是 Noto Sans SC 的字符子集，保留 Adobe 的版权声明与 SIL Open Font License 1.1。详见 [字体说明](src/assets/fonts/NOTICE.md) 与 [完整 OFL](LICENSES/OFL-1.1.txt)。品牌横幅中的文字已栅格化，字体文件不随横幅分发。
+`src/assets/fonts/nickel-line.woff2` 是 Noto Sans SC 的字符子集，保留 Adobe 的版权声明与 SIL Open Font License 1.1。详见 [字体说明](src/assets/fonts/NOTICE.md) 与 [完整 OFL](LICENSES/OFL-1.1.txt)。品牌横幅中的文字已栅格化，字体文件不随横幅分发。
 
 ## 游戏纹理与外部标识
 

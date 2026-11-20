@@ -5,7 +5,7 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
-  animation: nw-fade-up var(--t) var(--ease-out) both;
+  animation: ni-fade-up var(--t) var(--ease-out) both;
 }
 .dd-page__bar {
   display: flex;
@@ -108,7 +108,7 @@
   background: var(--card-bg);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 .dd-card__head {
   display: flex;
@@ -124,12 +124,12 @@
   font: 650 var(--fs-lg) / var(--lh-snug) var(--font-display);
   overflow-wrap: anywhere;
 }
-.dd-cancel.nw-iconbtn {
+.dd-cancel.ni-iconbtn {
   flex: 0 0 auto;
   background: var(--fill-2);
   color: var(--text-dim);
 }
-.dd-cancel.nw-iconbtn:hover:not(:disabled) {
+.dd-cancel.ni-iconbtn:hover:not(:disabled) {
   color: var(--danger);
   background: var(--fill-hover);
 }
@@ -169,7 +169,7 @@
   font-size: var(--fs-lg);
 }
 .dd-stage__spin {
-  animation: nw-spin 1s linear infinite;
+  animation: ni-spin 1s linear infinite;
 }
 .dd-stage__name {
   flex: 1;
@@ -312,7 +312,7 @@
   .dd-stage__spin {
     animation: none;
   }
-  .dd-cancel.nw-iconbtn,
+  .dd-cancel.ni-iconbtn,
   .dd-failure__text {
     transition: none;
   }

@@ -1427,7 +1427,7 @@ mod tests {
     use super::*;
 
     fn fixture() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("nowhere-mods-{}", store::random_token()));
+        let path = std::env::temp_dir().join(format!("nickel-mods-{}", store::random_token()));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
@@ -2052,13 +2052,13 @@ mod tests {
         assert!(select_curseforge_update(&current, &[unsafe_name]).is_none());
     }
 
-    /// 真实 Mod 目录只读基准：`NOWHERE_MODS_SCAN_DIR` 指向实例 mods 文件夹。
+    /// 真实 Mod 目录只读基准：`NICKEL_MODS_SCAN_DIR` 指向实例 mods 文件夹。
     /// 不把本机路径写进仓库；默认跳过，避免 CI 依赖外部目录。
     #[test]
-    #[ignore = "需要 NOWHERE_MODS_SCAN_DIR 指向真实 Mod 目录"]
+    #[ignore = "需要 NICKEL_MODS_SCAN_DIR 指向真实 Mod 目录"]
     fn bench_real_mods_scan() {
-        let Some(folder) = std::env::var_os("NOWHERE_MODS_SCAN_DIR") else {
-            eprintln!("[bench] 未设置 NOWHERE_MODS_SCAN_DIR，跳过真实扫描基准");
+        let Some(folder) = std::env::var_os("NICKEL_MODS_SCAN_DIR") else {
+            eprintln!("[bench] 未设置 NICKEL_MODS_SCAN_DIR，跳过真实扫描基准");
             return;
         };
         let folder = PathBuf::from(folder);

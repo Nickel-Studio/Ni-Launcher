@@ -1,6 +1,6 @@
 # 字体许可
 
-`nowhere-line.woff2` 是 Noto Sans SC 的 WOFF2 字符子集，保留字体内部的 Noto 名称与以下版权声明：
+`nickel-line.woff2` 是 Noto Sans SC 的 WOFF2 字符子集，保留字体内部的 Noto 名称与以下版权声明：
 
 > © 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
 

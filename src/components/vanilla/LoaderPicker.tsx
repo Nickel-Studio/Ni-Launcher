@@ -761,7 +761,7 @@ function BuildRow({
             onClick={onSave}
           >
             {busy ? (
-              <span className="nw-btn__spinner" aria-hidden="true" />
+              <span className="ni-btn__spinner" aria-hidden="true" />
             ) : (
               <svg
                 viewBox="0 0 24 24"

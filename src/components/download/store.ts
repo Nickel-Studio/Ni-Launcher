@@ -245,7 +245,7 @@ function runTerminalEffects(
   if (terminalEffects.has(event.taskId)) return;
   terminalEffects.add(event.taskId);
   if (event.ok && item.task?.kind !== "installer") {
-    window.dispatchEvent(new CustomEvent("nowhere:instances-changed"));
+    window.dispatchEvent(new CustomEvent("nickel:instances-changed"));
   }
   if (event.ok && event.result) {
     setLaunchInstance({

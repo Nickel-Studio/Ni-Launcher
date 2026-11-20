@@ -66,8 +66,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   preLaunchCommand: "",
 };
 
-const KEY = "nowhere.gameSettings";
-const LEGACY_SETTINGS_KEY = "nowhere.settings";
+const KEY = "nickel.gameSettings";
 export const GAME_MEMORY_MIN_MB = 512;
 export const GAME_MEMORY_MAX_MB = 65536;
 
@@ -165,20 +164,6 @@ export async function loadGameSettings(): Promise<GameSettings> {
     ? await invoke<string>("game_settings_get")
     : window.localStorage.getItem(KEY);
   const raw = asRecord(JSON.parse(json || "{}"));
-  if (raw.memoryMb === undefined) {
-    const legacyJson = desktop
-      ? await invoke<string>("settings_get")
-      : window.localStorage.getItem(LEGACY_SETTINGS_KEY);
-    const legacy = asRecord(JSON.parse(legacyJson || "{}"));
-    if (
-      typeof legacy.memoryMb === "number" &&
-      Number.isFinite(legacy.memoryMb)
-    ) {
-      raw.memoryMb = legacy.memoryMb;
-      // 老版内存值表示手动分配；迁移时不能悄悄改成自动。
-      if (raw.memoryMode === undefined) raw.memoryMode = "custom";
-    }
-  }
   return normalizeGameSettings(raw);
 }
 

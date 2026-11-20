@@ -10,7 +10,7 @@
       // 首次绘制前读取原存储键，避免升级后丢失明暗模式和颜色主题。
       (function () {
         try {
-          var raw = localStorage.getItem("nowhere.settings");
+          var raw = localStorage.getItem("nickel.settings");
           var settings = raw ? JSON.parse(raw) : {};
           var mode = settings && settings.themeMode;
           var resolved = "dark";
@@ -41,7 +41,7 @@
         /* 透明窗口的圆角外侧必须保持透明。 */
         background: transparent;
       }
-      #nw-splash {
+      #ni-splash {
         position: fixed;
         inset: 0;
         z-index: var(--z-splash);
@@ -55,28 +55,28 @@
         background: var(--bg);
         transition: opacity var(--t-slow) var(--ease-out);
       }
-      #nw-splash.nw-splash--leaving {
+      #ni-splash.ni-splash--leaving {
         opacity: 0;
       }
-      .nw-splash__inner {
+      .ni-splash__inner {
         position: relative;
         display: grid;
         place-items: center;
-        animation: nw-splash-in var(--t-accent) var(--ease-out) both;
+        animation: ni-splash-in var(--t-accent) var(--ease-out) both;
       }
-      .nw-splash__mark {
+      .ni-splash__mark {
         display: grid;
         place-items: center;
         width: calc(var(--space-7) * 3);
         height: calc(var(--space-7) * 3);
       }
-      .nw-splash__mark img {
+      .ni-splash__mark img {
         display: block;
         width: 100%;
         height: 100%;
         object-fit: contain;
       }
-      .nw-splash__word {
+      .ni-splash__word {
         position: absolute;
         top: calc(100% + var(--space-5));
         left: 50%;
@@ -88,7 +88,7 @@
         white-space: nowrap;
         color: var(--text);
       }
-      .nw-splash__bar {
+      .ni-splash__bar {
         position: absolute;
         top: calc(100% + var(--space-8) + var(--space-4));
         left: 50%;
@@ -99,15 +99,15 @@
         overflow: hidden;
         background: var(--fill-2);
       }
-      .nw-splash__bar span {
+      .ni-splash__bar span {
         display: block;
         width: 40%;
         height: 100%;
         border-radius: inherit;
         background: var(--text);
-        animation: nw-splash-bar var(--t-mining) var(--ease-out) infinite;
+        animation: ni-splash-bar var(--t-mining) var(--ease-out) infinite;
       }
-      @keyframes nw-splash-in {
+      @keyframes ni-splash-in {
         from {
           opacity: 0;
           transform: translateY(var(--space-2));
@@ -117,7 +117,7 @@
           transform: none;
         }
       }
-      @keyframes nw-splash-bar {
+      @keyframes ni-splash-bar {
         from {
           margin-left: -42%;
         }
@@ -126,20 +126,20 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        #nw-splash {
+        #ni-splash {
           transition: none;
         }
-        .nw-splash__inner,
-        .nw-splash__bar span {
+        .ni-splash__inner,
+        .ni-splash__bar span {
           animation: none;
         }
       }
     </style>
   </head>
   <body>
-    <div id="nw-splash" role="status" aria-label="正在启动 Nickel">
-      <div class="nw-splash__inner">
-        <div class="nw-splash__mark">
+    <div id="ni-splash" role="status" aria-label="正在启动 Nickel">
+      <div class="ni-splash__inner">
+        <div class="ni-splash__mark">
           <img
             src="/src/assets/logo.png"
             alt=""
@@ -148,8 +148,8 @@
             draggable="false"
           />
         </div>
-        <div class="nw-splash__word">Nickel</div>
-        <div class="nw-splash__bar"><span></span></div>
+        <div class="ni-splash__word">Nickel</div>
+        <div class="ni-splash__bar"><span></span></div>
       </div>
     </div>
     <div id="root"></div>

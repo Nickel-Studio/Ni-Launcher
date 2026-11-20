@@ -843,7 +843,7 @@ def load_microsoft_reference(path=None):
         client = field("clientId")
         if not client or client == "00000000-0000-0000-0000-000000000000":
             raise ValueError()
-        expected = {"clientId": client, "authority": field("authority") or "consumers", "redirectUri": field("redirectUri") or "nowhere://auth"}
+        expected = {"clientId": client, "authority": field("authority") or "consumers", "redirectUri": field("redirectUri") or "nickel://auth"}
         return MicrosoftReference(expected)
     except Exception:
         raise SafetyError("Authorized Microsoft reference is unavailable or invalid; no values are reported") from None
@@ -1040,7 +1040,7 @@ class NativeSession:
                     if not production_page_url(href):
                         continue
                     try:
-                        if page.evaluate("Boolean(window.__TAURI_INTERNALS__ && document.querySelector('.nw-shell'))"):
+                        if page.evaluate("Boolean(window.__TAURI_INTERNALS__ && document.querySelector('.ni-shell'))"):
                             self.page = page
                             break
                     except Exception:
@@ -1060,7 +1060,7 @@ class NativeSession:
                 raise SafetyError("No live embedded production Tauri page was found; dev-server pages are not allowed")
             self.page.set_default_timeout(15000)
             from playwright.sync_api import expect
-            expect(self.page.locator("#nw-splash")).to_have_count(0, timeout=15000)
+            expect(self.page.locator("#ni-splash")).to_have_count(0, timeout=15000)
             self.page.wait_for_function("document.body.inert === false", timeout=15000)
             windows = native_windows(self.process.pid)
             check(bool(windows), "The release process has no visible native window")
@@ -1094,9 +1094,9 @@ class NativeSession:
             raise SafetyError("Live backend instance roots do not belong exclusively to the copied release")
         theme = self.page.evaluate("""() => {
             const root = document.documentElement;
-            const shell = document.querySelector('.nw-shell');
-            const titlebar = document.querySelector('.nw-titlebar');
-            const background = shell?.querySelector('.nw-bg');
+            const shell = document.querySelector('.ni-shell');
+            const titlebar = document.querySelector('.ni-titlebar');
+            const background = shell?.querySelector('.ni-bg');
             return {
                 darkTheme: root.dataset.theme === 'dark', nickelAccent: root.dataset.accent === 'nickel',
                 tintedTitlebar: titlebar?.dataset.tinted === 'true',
@@ -1116,7 +1116,7 @@ class NativeSession:
         return self.exit_info
 
     def close_normally(self):
-        self.page.locator(".nw-winbtn--close").click()
+        self.page.locator(".ni-winbtn--close").click()
         self.wait_exit()
 
     def cleanup(self):
@@ -1206,22 +1206,22 @@ def non_dismiss(session, title):
     from playwright.sync_api import expect
     page = session.page
     page.keyboard.press("Escape")
-    page.locator(".nw-modal__backdrop").click(position={"x": 4, "y": 4})
-    close = page.locator(".nw-winbtn--close").bounding_box()
+    page.locator(".ni-modal__backdrop").click(position={"x": 4, "y": 4})
+    close = page.locator(".ni-winbtn--close").bounding_box()
     check(close is not None, "Production shell close button was not found")
     page.mouse.click(close["x"] + close["width"] / 2, close["y"] + close["height"] / 2)
     expect(page.get_by_role("dialog", name=title, exact=True)).to_be_visible()
-    expect(page.locator(".startup-modal .nw-modal__head button")).to_have_count(0)
+    expect(page.locator(".startup-modal .ni-modal__head button")).to_have_count(0)
     for _ in range(6):
         page.keyboard.press("Tab")
         check(page.evaluate("document.querySelector('.startup-modal').contains(document.activeElement)"), "Keyboard focus escaped native onboarding")
     session.assert_live()
-    check(page.locator(".nw-shell").evaluate("shell => shell.inert"), "Dismissal unlocked the native shell")
+    check(page.locator(".ni-shell").evaluate("shell => shell.inert"), "Dismissal unlocked the native shell")
 
 
 def ready(session):
     from playwright.sync_api import expect
-    session.page.wait_for_function("document.querySelector('.nw-shell')?.inert === false")
+    session.page.wait_for_function("document.querySelector('.ni-shell')?.inert === false")
     expect(session.page.locator(".startup-modal")).to_have_count(0)
     session.assert_live()
 
@@ -1240,8 +1240,8 @@ def blocked_gate(session, title, eula=False):
     page = session.page
     expect(page.get_by_role("dialog", name=title, exact=True)).to_be_visible()
     expect(page.get_by_role("dialog")).to_have_count(1)
-    check(page.locator(".nw-shell").evaluate("shell => shell.inert"), "Native onboarding unlocked the shell before acknowledgment")
-    check(page.locator(".startup-modal").evaluate("dialog => !dialog.closest('.nw-shell') && dialog.parentElement.parentElement === document.body"), "Native onboarding is not a separate dialog outside the blocked shell")
+    check(page.locator(".ni-shell").evaluate("shell => shell.inert"), "Native onboarding unlocked the shell before acknowledgment")
+    check(page.locator(".startup-modal").evaluate("dialog => !dialog.closest('.ni-shell') && dialog.parentElement.parentElement === document.body"), "Native onboarding is not a separate dialog outside the blocked shell")
     finish_rejected = page.evaluate("""async () => {
         try { await window.__TAURI_INTERNALS__.invoke('onboarding_finish', {}); return false; }
         catch { return true; }
@@ -1261,7 +1261,7 @@ def blocked_gate(session, title, eula=False):
 
 def backend_rejection_without_renderer(session):
     page = session.page
-    check(page.locator(".nw-shell").evaluate("shell => shell.inert"), "Backend-only refusal unlocked the shell")
+    check(page.locator(".ni-shell").evaluate("shell => shell.inert"), "Backend-only refusal unlocked the shell")
     renderer = page.context.new_cdp_session(page)
     paused, resumed = threading.Event(), threading.Event()
     renderer.on("Debugger.paused", lambda _event: paused.set())
@@ -1361,7 +1361,7 @@ def run_native(playwright, source, evidence, protocol, expected_sha256, referenc
             full_record = first.local_record()
             check(full_record.get("changelogSeenVersion") == REQUIRED_VERSION, "Native acknowledgment was not persisted")
             page.get_by_role("button", name=SETTINGS, exact=True).click()
-            expect(page.locator('.nw-navtab[data-active="true"]')).to_have_text(SETTINGS)
+            expect(page.locator('.ni-navtab[data-active="true"]')).to_have_text(SETTINGS)
             page.screenshot(path=str(evidence_path(output / "shell-settings.png", new=True)))
             write_json(output / "complete-record.json", full_record)
             session.close_normally()
@@ -1420,7 +1420,7 @@ def run_native(playwright, source, evidence, protocol, expected_sha256, referenc
                 page.get_by_role("button", name=ACCEPT, exact=True).click()
                 expect(page.get_by_role("alert")).to_be_visible()
                 check(sandbox.local_record() == {}, "Failed native save persisted consent")
-                check(page.locator(".nw-shell").evaluate("shell => shell.inert"), "Failed native save unlocked the shell")
+                check(page.locator(".ni-shell").evaluate("shell => shell.inert"), "Failed native save unlocked the shell")
                 page.screenshot(path=str(evidence_path(output / "save-failure.png", new=True)))
             page.get_by_role("button", name=ACCEPT, exact=True).click()
             acknowledge(session)
@@ -1458,7 +1458,7 @@ def run_native(playwright, source, evidence, protocol, expected_sha256, referenc
             expect(page.get_by_role("dialog", name=EXIT_TITLE, exact=True)).to_be_visible()
             check(original_dialog.evaluate("dialog => !dialog.isConnected"), "Native refusal did not replace EULA with a separate dialog")
             check(session.status().get("exiting") is True, "UI refusal did not reach the real backend; frontend fallback must not hide this")
-            check(page.locator(".nw-shell").evaluate("shell => shell.inert"), "Refusal unlocked the native shell")
+            check(page.locator(".ni-shell").evaluate("shell => shell.inert"), "Refusal unlocked the native shell")
             button = page.locator(".startup-exit-button")
             expect(button).to_be_disabled()
             check(button.evaluate("button => button.tagName === 'BUTTON' && button.disabled"), "Native exit control must be a truly disabled button")
@@ -1478,7 +1478,7 @@ def run_native(playwright, source, evidence, protocol, expected_sha256, referenc
             check(button.text_content() == text_before, "Native screenshot sampling crossed a countdown tick; rerun this case")
             check(before == hover and png_before == png_hover, "Native refusal hover changed disabled appearance")
             page.keyboard.press("Escape")
-            page.locator(".nw-modal__backdrop").click(position={"x": 3, "y": 3})
+            page.locator(".ni-modal__backdrop").click(position={"x": 3, "y": 3})
             samples = []
             while not session.exited.is_set():
                 try:

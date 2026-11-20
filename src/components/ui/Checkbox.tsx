@@ -28,16 +28,16 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
         aria-checked={checked}
         disabled={disabled}
         data-checked={checked}
-        className={["nw-check", className].filter(Boolean).join(" ")}
+        className={["ni-check", className].filter(Boolean).join(" ")}
         onClick={(event) => {
           onClick?.(event);
           if (!event.defaultPrevented) onChange(!checked);
         }}
       >
-        <span className="nw-check__box" aria-hidden="true">
+        <span className="ni-check__box" aria-hidden="true">
           {checked ? <IconCheck /> : null}
         </span>
-        {label != null ? <span className="nw-check__label">{label}</span> : null}
+        {label != null ? <span className="ni-check__label">{label}</span> : null}
       </button>
     );
   }

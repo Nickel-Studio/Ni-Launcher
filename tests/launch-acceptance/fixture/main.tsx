@@ -37,7 +37,7 @@ const initialInstance: LaunchInstance = {
   icon: "grass",
 };
 setLaunchInstance(initialInstance);
-document.documentElement.classList.add("nw-app-ready");
+document.documentElement.classList.add("ni-app-ready");
 const root = createRoot(document.getElementById("root")!);
 let latest: UseLauncher | null = null;
 let closeCount = 0;
@@ -96,9 +96,9 @@ if (setup.mode === "hook") {
   root.render(
     <StrictMode>
       <SettingsProvider>
-        <div className="nw-shell">
-          <header className="nw-titlebar">Nickel</header>
-          <div className="nw-body"><main className="nw-content"><Home /></main></div>
+        <div className="ni-shell">
+          <header className="ni-titlebar">Nickel</header>
+          <div className="ni-body"><main className="ni-content"><Home /></main></div>
         </div>
       </SettingsProvider>
     </StrictMode>,

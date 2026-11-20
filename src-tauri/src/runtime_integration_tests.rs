@@ -4,13 +4,13 @@ use super::*;
 fn launch_options() -> LaunchOptions {
     build_options(&ResolvedLaunch {
         version: "1.20.4".into(), username: "Player".into(),
-        memory_min: "512M".into(), memory_max: "1G".into(), game_dir: None,
+        memory_max: "1G".into(), game_dir: None,
     }, std::env::temp_dir())
 }
 
 #[test]
 fn third_party_session_keeps_identity_and_requires_matching_server() {
-    let mut settings = runtime_settings::resolve(&serde_json::json!({}), &serde_json::json!({}), None, None).unwrap();
+    let mut settings = runtime_settings::resolve(&serde_json::json!({}), &serde_json::json!({}), None).unwrap();
     settings.server_login = "thirdParty".into();
     settings.auth_server = "https://example.org/yggdrasil/".into();
     let account = store::StoredAccount {
@@ -37,7 +37,7 @@ fn third_party_session_keeps_identity_and_requires_matching_server() {
 }
 #[tokio::test]
 async fn third_party_self_contained_profile_launches_without_mojang_manifest() {
-    let root = std::env::temp_dir().join(format!("nowhere-third-party-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("nickel-third-party-{}", std::process::id()));
     let directory = root.join("versions").join("Pack");
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(
@@ -88,7 +88,7 @@ async fn third_party_self_contained_profile_launches_without_mojang_manifest() {
 
 #[test]
 fn offline_launch_has_no_auth_server_or_new_prerequisite() {
-    let settings = runtime_settings::resolve(&serde_json::json!({}), &serde_json::json!({}), None, None).unwrap();
+    let settings = runtime_settings::resolve(&serde_json::json!({}), &serde_json::json!({}), None).unwrap();
     let mut options = launch_options();
     let identity = options.authenticator.uuid.clone();
     assert!(apply_account(&mut options, &settings, None).unwrap().is_none());
@@ -110,17 +110,17 @@ fn capabilities_use_frontend_contract_keys() {
 #[ignore = "真实 Wry 资源目录隔离与失效目标回归；显式单线程执行，不联网"]
 fn live_resource_context_isolation_and_missing_target() -> Result<(), String> {
     use tauri::Manager;
-    let identifier = format!("com.youtu.nowhere.r6resources.{}", store::random_token());
+    let identifier = format!("studio.nickel.launcher.r6resources.{}", store::random_token());
     let mut context = tauri::generate_context!();
     context.config_mut().app.windows.clear();
     context.config_mut().identifier = identifier;
     let app = tauri::Builder::default().any_thread().build(context).map_err(|e| e.to_string())?;
-    let root = std::env::temp_dir().join(format!("nowhere-r6-resource-{}", store::random_token()));
+    let root = std::env::temp_dir().join(format!("nickel-r6-resource-{}", store::random_token()));
     let version = "named-instance";
     let directory = root.join("versions").join(version);
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     std::fs::write(directory.join(format!("{version}.json")), serde_json::json!({
-        "id": "1.20.4", "type": "release", "nowhereCustom": {"name": "Display name"}
+        "id": "1.20.4", "type": "release", "nickelCustom": {"name": "Display name"}
     }).to_string()).map_err(|e| e.to_string())?;
     let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let result = (|| {
@@ -133,9 +133,9 @@ fn live_resource_context_isolation_and_missing_target() -> Result<(), String> {
             assert_eq!(value["displayName"], "Display name");
             assert_eq!(value["minecraftVersion"], "1.20.4");
         }
-        std::fs::write(directory.join("nowhere.settings.json"), r#"{"versionIsolation":true}"#).map_err(|e| e.to_string())?;
+        std::fs::write(directory.join("nickel.settings.json"), r#"{"versionIsolation":true}"#).map_err(|e| e.to_string())?;
         assert_eq!(runtime_settings::resource_directory(app.handle(), &root, version)?, directory);
-        std::fs::write(directory.join("nowhere.settings.json"), r#"{"versionIsolation":false}"#).map_err(|e| e.to_string())?;
+        std::fs::write(directory.join("nickel.settings.json"), r#"{"versionIsolation":false}"#).map_err(|e| e.to_string())?;
         assert_eq!(runtime_settings::resource_directory(app.handle(), &root, version)?, root);
         let missing = instances::resource_instance_context(app.handle().clone(), root.to_string_lossy().into_owned(), "missing".into())?;
         assert!(missing.is_none(), "失效目标不能回退到共享根目录");

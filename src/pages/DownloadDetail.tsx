@@ -103,14 +103,14 @@ function TaskCard({ item }: { item: DownloadState }) {
                 {!current ? (
                   <>
                     <IconCheck />
-                    <span className="nw-sr-only">已完成</span>
+                    <span className="ni-sr-only">已完成</span>
                   </>
                 ) : item.percent !== null ? (
-                  <span className="nw-mono">{Math.floor(item.percent)}%</span>
+                  <span className="ni-mono">{Math.floor(item.percent)}%</span>
                 ) : (
                   <>
                     <IconRefresh className="dd-stage__spin" />
-                    <span className="nw-sr-only">进行中</span>
+                    <span className="ni-sr-only">进行中</span>
                   </>
                 )}
               </span>
@@ -219,10 +219,10 @@ function QueuedCard({
       </header>
       <ol className="dd-stages">
         <li className="dd-stage" data-current="true">
-          <span className="dd-stage__status nw-mono">
-            <span className="nw-sr-only">队列第 </span>
+          <span className="dd-stage__status ni-mono">
+            <span className="ni-sr-only">队列第 </span>
             {position}
-            <span className="nw-sr-only"> 位</span>
+            <span className="ni-sr-only"> 位</span>
           </span>
           <span className="dd-stage__name">
             {queued.starting ? "正在启动任务" : "等待前一项完成"}
@@ -297,19 +297,19 @@ export default function DownloadDetail() {
             <div className="dd-overview">
               <div className="dd-stat">
                 <span className="dd-stat__label">总进度</span>
-                <strong className="dd-stat__value nw-mono">
+                <strong className="dd-stat__value ni-mono">
                   {formatOverviewPercent(overview.percent)}
                 </strong>
               </div>
               <div className="dd-stat">
                 <span className="dd-stat__label">下载速度</span>
-                <strong className="dd-stat__value nw-mono">
+                <strong className="dd-stat__value ni-mono">
                   {formatSpeed(overview.speedBps)}
                 </strong>
               </div>
               <div className="dd-stat">
                 <span className="dd-stat__label">剩余文件</span>
-                <strong className="dd-stat__value nw-mono">
+                <strong className="dd-stat__value ni-mono">
                   {overview.remainingFiles}
                 </strong>
               </div>

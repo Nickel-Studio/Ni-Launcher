@@ -218,7 +218,7 @@ function lastSearch(command: string) {
 }
 async function selectSource(label: string) {
   const trigger = document.querySelector<HTMLButtonElement>(
-    ".cv-toolbar__source .nw-select__trigger"
+    ".cv-toolbar__source .ni-select__trigger"
   );
   if (!trigger) throw new Error("缺少来源选择");
   trigger.click();

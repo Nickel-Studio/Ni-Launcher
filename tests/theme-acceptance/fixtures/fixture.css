@@ -32,7 +32,7 @@
   align-items: center;
   gap: var(--space-4);
 }
-.ta-controls .nw-slider-row {
+.ta-controls .ni-slider-row {
   min-width: 190px;
 }
 .ta-signal {

@@ -160,7 +160,7 @@ export function CustomThemePanel({ settings, update }: Props) {
         </Button>
       </div>
       <div className="st-preview-wrap">
-        <div className="st-preview-wrap__hint nw-eyebrow">实时预览</div>
+        <div className="st-preview-wrap__hint ni-eyebrow">实时预览</div>
         <ThemePreview />
       </div>
     </SettingsGroup>

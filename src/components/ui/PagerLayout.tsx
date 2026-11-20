@@ -56,12 +56,12 @@ export function PagerLayout({
   }, [active]);
 
   return (
-    <div className={className ? `nw-pager ${className}` : "nw-pager"}>
-      <nav className="nw-pager__nav" aria-label={navLabel}>
+    <div className={className ? `ni-pager ${className}` : "ni-pager"}>
+      <nav className="ni-pager__nav" aria-label={navLabel}>
         {navTitle !== undefined ? (
-          <div className="nw-pager__title nw-eyebrow">{navTitle}</div>
+          <div className="ni-pager__title ni-eyebrow">{navTitle}</div>
         ) : null}
-        <ul className="nw-pager__list">
+        <ul className="ni-pager__list">
           {items.map((item, index) => {
             const isActive = item.id === active;
             const group = item.group;
@@ -70,11 +70,11 @@ export function PagerLayout({
             return (
               <li key={item.id}>
                 {showGroup ? (
-                  <div className="nw-pager__group">{group}</div>
+                  <div className="ni-pager__group">{group}</div>
                 ) : null}
                 <button
                   type="button"
-                  className="nw-pager__item"
+                  className="ni-pager__item"
                   data-active={isActive}
                   aria-current={isActive ? "true" : undefined}
                   onClick={() => {
@@ -82,19 +82,19 @@ export function PagerLayout({
                   }}
                 >
                   {item.icon !== undefined ? (
-                    <span className="nw-pager__icon" aria-hidden="true">
+                    <span className="ni-pager__icon" aria-hidden="true">
                       {item.icon}
                     </span>
                   ) : null}
-                  <span className="nw-pager__label">{item.label}</span>
+                  <span className="ni-pager__label">{item.label}</span>
                 </button>
               </li>
             );
           })}
         </ul>
       </nav>
-      <section ref={pageRef} className="nw-pager__page" aria-live="polite">
-        <AnimatedSwap swapKey={active} className="nw-pager__swap">
+      <section ref={pageRef} className="ni-pager__page" aria-live="polite">
+        <AnimatedSwap swapKey={active} className="ni-pager__swap">
           {children}
         </AnimatedSwap>
       </section>

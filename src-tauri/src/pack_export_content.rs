@@ -99,7 +99,7 @@ pub(super) fn sensitive_path(path: &str) -> bool {
             .rsplit_once('.')
             .map_or(name.as_str(), |(stem, _)| stem);
         name.starts_with('.')
-            || name.starts_with("nowhere.")
+            || name.starts_with("nickel.")
             || super::credential_key(stem)
             || matches!(
                 stem,
