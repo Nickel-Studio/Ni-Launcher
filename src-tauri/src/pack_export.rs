@@ -491,6 +491,8 @@ fn embedded_credentials(text: &str) -> bool {
 enum CredentialToken {
     Text { value: String, quoted: bool },
     Assignment,
+    Open(u8),
+    Close(u8),
     Other,
 }
 
@@ -561,7 +563,9 @@ fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
             Some(CredentialToken::Other)
         }
         b'=' | b':' => Some(CredentialToken::Assignment),
-        b'{' | b'}' | b'[' | b']' | b'(' | b')' | b',' | b';' => Some(CredentialToken::Other),
+        b'{' | b'[' => Some(CredentialToken::Open(first)),
+        b'}' | b']' => Some(CredentialToken::Close(first)),
+        b'(' | b')' | b',' | b';' => Some(CredentialToken::Other),
         _ => {
             while bytes.get(*offset).is_some_and(|character| {
                 !character.is_ascii_whitespace()
@@ -598,6 +602,46 @@ fn credential_token(text: &str, offset: &mut usize) -> Option<CredentialToken> {
     }
 }
 
+fn credential_assignment_value(
+    token: CredentialToken,
+    text: &str,
+    offset: &mut usize,
+    script: bool,
+    depth: usize,
+) -> bool {
+    match token {
+        CredentialToken::Text { value, quoted } => {
+            let mut after = *offset;
+            if matches!(
+                credential_token(text, &mut after),
+                Some(CredentialToken::Assignment)
+            ) {
+                // Object keys (or the next YAML field after a null value) are not values.
+                return false;
+            }
+            (quoted || !script || value.parse::<u64>().is_ok()) && credential_value(&value)
+        }
+        CredentialToken::Open(open) => {
+            // Keep the sensitive-field context across nested collections. Reject
+            // malformed or excessively nested values rather than skipping them.
+            if depth >= 64 {
+                return true;
+            }
+            let close = if open == b'[' { b']' } else { b'}' };
+            while let Some(token) = credential_token(text, offset) {
+                if let CredentialToken::Close(end) = token {
+                    return end != close;
+                }
+                if credential_assignment_value(token, text, offset, script, depth + 1) {
+                    return true;
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 fn credential_text(text: &str, script: bool) -> bool {
     let mut offset = 0;
     while let Some(token) = credential_token(text, &mut offset) {
@@ -617,17 +661,8 @@ fn credential_text(text: &str, script: bool) -> bool {
         ) {
             continue;
         }
-        if let Some(CredentialToken::Text { value, quoted }) = credential_token(text, &mut next) {
-            let mut after = next;
-            if !quoted
-                && matches!(
-                    credential_token(text, &mut after),
-                    Some(CredentialToken::Assignment)
-                )
-            {
-                continue;
-            }
-            if (quoted || !script || value.parse::<u64>().is_ok()) && credential_value(&value) {
+        if let Some(token) = credential_token(text, &mut next) {
+            if credential_assignment_value(token, text, &mut next, script, 0) {
                 return true;
             }
         }
@@ -1320,10 +1355,8 @@ mod tests {
     struct Fixture(PathBuf);
     impl Fixture {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "nickel-r6-export-{}",
-                crate::store::random_token()
-            ));
+            let root = std::env::temp_dir()
+                .join(format!("nickel-r6-export-{}", crate::store::random_token()));
             std::fs::create_dir_all(&root).unwrap();
             Self(root)
         }

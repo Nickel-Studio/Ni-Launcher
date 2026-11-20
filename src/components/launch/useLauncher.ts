@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri, type SourcePolicy } from "../../lib/settings";
@@ -91,7 +101,7 @@ export interface UseLauncher extends LauncherState {
  * 前端不再保留第二份日志缓冲，避免出现与磁盘不一致的重复记录。
  * 所有字段解析均做兼容兜底，缺字段不崩溃。
  */
-export function useLauncher(): UseLauncher {
+function useLaunchController(): UseLauncher {
   const [state, setState] = useState<Omit<LauncherState, "percent">>({
     running: false,
     starting: false,
@@ -495,4 +505,18 @@ export function useLauncher(): UseLauncher {
     openLogs,
     exportErrorReport,
   };
+}
+
+const LauncherContext = createContext<UseLauncher | null>(null);
+
+// Own the subscription above keyed routes so navigation cannot abandon a launch.
+export function LauncherProvider({ children }: { children: ReactNode }) {
+  const launcher = useLaunchController();
+  return createElement(LauncherContext.Provider, { value: launcher }, children);
+}
+
+export function useLauncher(): UseLauncher {
+  const launcher = useContext(LauncherContext);
+  if (!launcher) throw new Error("useLauncher requires LauncherProvider");
+  return launcher;
 }

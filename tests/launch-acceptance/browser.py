@@ -315,6 +315,71 @@ def main():
 
         run_case("hook-unmount-pending-listen", {"mode": "hook", "listenDelayMs": 450}, delayed_listener)
 
+        def hook_navigation(page, output):
+            launch(page)
+            launch_id = calls(page, "launch_game")[-1]["payload"]["launchId"]
+            target = state(page)["reportTarget"]
+            event(page, {"type": "preparing", "launchId": launch_id, **target})
+            page.evaluate("window.__launchFixture.navigate('settings')")
+            expect(page.get_by_test_id("hook-state")).to_have_count(0)
+            check("navigation: controller remains subscribed", snapshot(page)["listeners"].get("launcher-event") == 1)
+            event(page, {"type": "progress", "launchId": launch_id, "downloaded": 30, "total": 100})
+            page.evaluate("window.__launchFixture.navigate('home')")
+            expect(page.get_by_test_id("hook-state")).to_be_visible()
+            check("navigation: preparing state and progress survive", state(page)["starting"] and state(page)["percent"] == 30 and state(page)["reportTarget"] == target, state(page))
+            event(page, {"type": "error", "launchId": "unrelated-launch", "message": "Wrong failure"})
+            check("navigation: foreign event remains rejected", state(page)["starting"] and not state(page)["error"])
+            page.evaluate("window.__launchFixture.cancel()")
+            check("navigation: cancel keeps original launch identity", calls(page, "launch_cancel")[-1]["payload"]["launchId"] == launch_id)
+            event(page, {"type": "error", "launchId": launch_id, "message": "Scoped failure after return"})
+            check("navigation: scoped error remains visible", state(page)["error"] == "Scoped failure after return" and not state(page)["starting"] and state(page)["reportTarget"] == target)
+
+        run_case("hook-navigation-preserves-progress-cancel-and-error", {"mode": "hook"}, hook_navigation)
+
+        def navigation_rejection(page, output):
+            launch(page)
+            target = state(page)["reportTarget"]
+            page.evaluate("window.__launchFixture.navigate('settings')")
+            expect(page.get_by_test_id("hook-state")).to_have_count(0)
+            page.evaluate("window.__launchFixture.release('navigation-launch')")
+            page.wait_for_timeout(100)
+            page.evaluate("window.__launchFixture.navigate('home')")
+            expect(page.get_by_test_id("hook-state")).to_be_visible()
+            check("navigation: invoke failure survives absent consumer", state(page)["error"] == "Failure while away" and state(page)["reportTarget"] == target and not state(page)["running"], state(page))
+
+        run_case("hook-navigation-pending-invoke-failure", {"mode": "hook", "responses": {"launch_game": [{"id": "navigation-launch", "hold": True, "error": "Failure while away"}]}}, navigation_rejection)
+
+        def home_navigation(page, output, started):
+            page.locator(".launch-button").click()
+            payload = calls(page, "launch_game")[-1]["payload"]
+            launch_id = payload["launchId"]
+            event(page, {"type": "preparing", "launchId": launch_id, "versionId": payload["versionId"], "gameDir": payload["gameDir"]})
+            if started:
+                event(page, {"type": "started", "launchId": launch_id})
+            page.get_by_role("button", name="\u8bbe\u7f6e", exact=True).click()
+            expect(page.locator(".home__card")).to_have_count(0)
+            check("home navigation: only one controller listener", snapshot(page)["listeners"].get("launcher-event") == 1)
+            page.evaluate("window.__launchFixture.select({ root: 'C:/launch-acceptance/different-instance', versionId: '1.21.4', displayName: 'Different instance', loader: 'vanilla', icon: 'grass' })")
+            if started:
+                event(page, {"type": "close", "launchId": launch_id, "code": 1})
+                event(page, {"type": "diagnostic", "launchId": launch_id, "category": "memory", "title": "Memory", "summary": "Failure while away", "message": "Allocate more memory and retry."})
+            else:
+                event(page, {"type": "error", "launchId": launch_id, "message": "Failure while away"})
+            page.get_by_role("button", name="\u9996\u9875", exact=True).click()
+            expect(page.get_by_role("dialog")).to_be_visible()
+            expect(page.locator(".launch-error__reason p")).to_have_text("Failure while away")
+            page.get_by_role("button", name=LOGS, exact=True).click()
+            page.get_by_role("button", name=EXPORT, exact=True).click()
+            expect(page.get_by_text(SUCCESS, exact=True)).to_be_visible()
+            for command in ["launch_log_open", "launch_error_report_export"]:
+                report = calls(page, command)[-1]["payload"]
+                check("home navigation: original report identity survives selection change", report["dir"] == payload["gameDir"] and report["versionId"] == payload["versionId"], report)
+            check("home navigation: report contains failure captured off page", "Failure while away" in calls(page, "launch_error_report_export")[-1]["payload"]["failure"])
+            check("home navigation: returning never relaunches", len(calls(page, "launch_game")) == 1)
+
+        for started in [False, True]:
+            run_case("home-navigation-" + ("running-close-diagnostic" if started else "preparing-error"), {"mode": "home", "responses": {"launch_error_report_export": [{"value": "C:/launch-acceptance/navigation-report.zip"}]}}, lambda page, output, started=started: home_navigation(page, output, started))
+
         def busy_export(page, output):
             export = page.get_by_role("button", name=EXPORT, exact=True)
             export.evaluate("button => { button.click(); button.click(); }")

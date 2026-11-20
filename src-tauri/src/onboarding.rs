@@ -55,9 +55,14 @@ fn read(path: &Path) -> Result<Record, String> {
     Ok(serde_json::from_slice(&bytes).unwrap_or_default())
 }
 
+fn valid_timestamp(time: u64) -> bool {
+    // IPC uses JavaScript numbers; match Number.isSafeInteger in onboarding.ts.
+    (1..=9_007_199_254_740_991).contains(&time)
+}
+
 fn accepted(record: &Record) -> bool {
     record.eula_version.as_deref() == Some(EULA_VERSION)
-        && record.eula_accepted_at.is_some_and(|time| time > 0)
+        && record.eula_accepted_at.is_some_and(valid_timestamp)
 }
 
 fn status(record: &Record) -> Status {
@@ -129,7 +134,7 @@ fn accept_at(
     let mut record = read(path)?;
     // Preserve the original signature when a lost IPC reply is retried.
     if !accepted(&record) {
-        if now == 0 {
+        if !valid_timestamp(now) {
             return Err("无法获取有效的签署时间，请检查系统时间后重试".into());
         }
         record.eula_version = Some(EULA_VERSION.into());
@@ -346,6 +351,43 @@ mod tests {
             let record = read(&fixture.record()).unwrap();
             assert!(!accepted(&record));
             assert_eq!(status(&record).eula_accepted_at, None);
+        }
+    }
+
+    #[test]
+    fn timestamp_boundaries_match_frontend_and_corrupt_records_can_be_resigned() {
+        let fixture = Fixture::new();
+        let pending = AtomicBool::new(false);
+        for time in [0, 1, 9_007_199_254_740_991, 9_007_199_254_740_992, u64::MAX] {
+            let record = Record {
+                eula_version: Some(EULA_VERSION.into()),
+                eula_accepted_at: Some(time),
+                changelog_seen_version: Some(env!("CARGO_PKG_VERSION").into()),
+            };
+            write(&fixture.record(), &record).unwrap();
+            let current = read(&fixture.record()).unwrap();
+            let valid = time == 1 || time == 9_007_199_254_740_991;
+            assert_eq!(accepted(&current), valid);
+            assert_eq!(status(&current).needs_eula, !valid);
+            assert_eq!(status(&current).eula_accepted_at, valid.then_some(time));
+            assert_eq!(require_record_accepted(&current, false).is_ok(), valid);
+            let resigned = accept_at(&fixture.record(), true, EULA_VERSION, 123, &pending).unwrap();
+            assert_eq!(
+                resigned.eula_accepted_at,
+                Some(if valid { time } else { 123 })
+            );
+            assert!(accepted(&read(&fixture.record()).unwrap()));
+            assert!(!status(&resigned).needs_changelog);
+        }
+    }
+
+    #[test]
+    fn invalid_current_time_never_writes_consent() {
+        let fixture = Fixture::new();
+        let pending = AtomicBool::new(false);
+        for time in [0, 9_007_199_254_740_992, u64::MAX] {
+            assert!(accept_at(&fixture.record(), true, EULA_VERSION, time, &pending).is_err());
+            assert!(!fixture.record().exists());
         }
     }
 

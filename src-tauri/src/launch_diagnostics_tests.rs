@@ -327,6 +327,64 @@ fn redaction_is_idempotent() {
 }
 
 #[test]
+fn quoted_redaction_respects_delimiters_escapes_and_line_boundaries() {
+    for (raw, expected) in [
+        (
+            r#"{"password":"probe'secret-tail"}"#,
+            r#"{"password":"***"}"#,
+        ),
+        (
+            r#"password='probe"secret-tail' next=visible"#,
+            "password='***' next=visible",
+        ),
+        (
+            r#"{"clientSecret":"probe\"secret-tail"}"#,
+            r#"{"clientSecret":"***"}"#,
+        ),
+        (
+            r#"{"apiKey":"probe\\secret-tail","next":"visible"}"#,
+            r#"{"apiKey":"***","next":"visible"}"#,
+        ),
+        (r#"password='probe\'secret-tail'"#, "password='***'"),
+        (
+            r#"password=`probe'"secret-tail` next=visible"#,
+            "password=`***` next=visible",
+        ),
+        (
+            "password=\"probe'secret-tail\nnext=visible",
+            "password=\"***\nnext=visible",
+        ),
+        (
+            r#"{"password":"probe\\","next":"visible"}"#,
+            r#"{"password":"***","next":"visible"}"#,
+        ),
+    ] {
+        let redacted = redact_sensitive_text(raw);
+        assert_eq!(redacted, expected, "{raw}");
+        assert_eq!(redact_sensitive_text(&redacted), redacted);
+    }
+}
+
+#[test]
+fn windows_user_paths_keep_plain_and_json_separator_widths() {
+    for user in ["PrivateReviewName", "测试用户", "User Name"] {
+        for prefix in [r"C:\Users\", r"C:\Documents and Settings\", r"c:\uSeRs\"] {
+            let raw = format!(r"{prefix}{user}\game");
+            let expected = format!(r"{prefix}***\game");
+            assert_eq!(redact_sensitive_text(&raw), expected);
+            let json = serde_json::json!({ "path": raw, "other": "visible" }).to_string();
+            let expected_json = serde_json::json!({ "path": expected, "other": "visible" });
+            let redacted = redact_sensitive_text(&json);
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&redacted).unwrap(),
+                expected_json
+            );
+            assert_eq!(redact_sensitive_text(&redacted), redacted);
+        }
+    }
+}
+
+#[test]
 fn log_store_append_and_read_tail_redacts() {
     let dir = TestDir::new("log-tail");
     let store = LaunchLogStore::new(dir.path());

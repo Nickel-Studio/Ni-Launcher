@@ -7,6 +7,7 @@ import { AnimatedSwap, BackgroundLayer, ToastHost } from "./components/ui";
 import { DownloadOverlay } from "./components/download";
 import { PortableBootstrap } from "./components/PortableBootstrap";
 import { StartupGate } from "./components/startup/StartupGate";
+import { LauncherProvider } from "./components/launch/useLauncher";
 import Home from "./pages/Home";
 import Resources from "./pages/Resources";
 import Settings from "./pages/Settings";
@@ -56,7 +57,9 @@ export default function App() {
   return (
     <SettingsProvider>
       <SplashScreen />
-      <Shell blocked={!ready} />
+      <LauncherProvider>
+        <Shell blocked={!ready} />
+      </LauncherProvider>
       <StartupGate onReady={finishStartup} />
       {ready ? <PortableBootstrap /> : null}
     </SettingsProvider>

@@ -821,6 +821,101 @@ fn cancelled_and_credential_bearing_directory_snapshots_are_not_exportable() {
 }
 
 #[test]
+fn credential_collections_are_rejected_before_either_snapshot_format() {
+    let cases = [
+        (
+            "config/service.toml",
+            r#"api_keys = ["private-collection-value"]"#,
+        ),
+        (
+            "config/service.json5",
+            "{apiKeys: ['private-collection-value'],}",
+        ),
+        (
+            "config/service.yaml",
+            r#"apiKeys: ["private-collection-value"]"#,
+        ),
+        (
+            "config/service.toml",
+            r#"api_keys = { primary = ["private-collection-value"] }"#,
+        ),
+        (
+            "config/service.json5",
+            "{apiKeys: [{primary: ['private-collection-value']}],}",
+        ),
+        (
+            "config/service.yaml",
+            "apiKeys: {primary: [null, 'private-collection-value']}",
+        ),
+        (
+            "config/service.json5",
+            r#"{apiKeys: [/* ] ignored */ "private\"collection-value"],}"#,
+        ),
+        (
+            "scripts/service.js",
+            "const apiKeys = [{primary: 'private-collection-value'}];",
+        ),
+    ];
+    for (relative, text) in cases {
+        let fixture = Fixture::new();
+        fixture.put(relative, text);
+        for (index, format) in [ExportFormat::Mrpack, ExportFormat::Portable]
+            .into_iter()
+            .enumerate()
+        {
+            let workspace = fixture.0.join(format!("collection-stage-{index}"));
+            std::fs::create_dir(&workspace).unwrap();
+            let request = fixture.request(format, vec![relative.into()]);
+            let error = snapshot_instance(
+                fixture.instance(),
+                &request,
+                &workspace,
+                &CancellationToken::new(),
+                |_, _, _| {},
+            )
+            .err()
+            .unwrap_or_else(|| panic!("accepted {relative}: {text}"));
+            assert!(
+                error.contains("真实凭据") && error.contains(relative),
+                "{error}"
+            );
+            assert!(!error.contains("private"));
+            assert!(!workspace.join("payload.mrpack").exists());
+        }
+    }
+}
+
+#[test]
+fn credential_collections_keep_empty_placeholder_and_description_values_safe() {
+    for text in [
+        "api_keys = []",
+        "api_keys = {}",
+        "{apiKeys: [{primary: []}, {}, [null, false, true]],}",
+        "apiKeys: {primary: ['', 'YOUR_API_KEY_HERE', '${API_KEY}', '***']}",
+        "api_keys = [# private-collection-value\n 'placeholder', {}]",
+        "{apiKeys: [/* private-collection-value */], description: 'apiKeys: documentation',}",
+        "const apiKeys = [process.env.API_KEY, {primary: process.env.OTHER_KEY}];",
+    ] {
+        assert!(
+            !credential_text(text, text.starts_with("const ")),
+            "rejected {text}"
+        );
+    }
+    for text in [
+        "api_keys = [",
+        "api_keys = [{]}",
+        "api_keys = ['unterminated",
+    ] {
+        assert!(
+            credential_text(text, false),
+            "accepted malformed value: {text}"
+        );
+    }
+    let deep = format!("api_keys = {}{}", "[".repeat(65), "]".repeat(65));
+    assert!(credential_text(&deep, false));
+}
+
+#[test]
 fn symlinks_inside_selected_directories_are_rejected_at_export_time() {
     let fixture = Fixture::new();
     fixture.put("config/safe.json", b"{}");

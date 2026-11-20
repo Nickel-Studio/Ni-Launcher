@@ -415,6 +415,46 @@ mod tests {
     }
 
     #[test]
+    fn report_redacts_complete_quoted_secrets_and_json_user_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "nickel-report-redaction-{}",
+            crate::store::random_token()
+        ));
+        let raw = serde_json::json!({
+            "password": "probe'secret-tail",
+            "clientSecret": "probe\"secret-tail",
+            "apiKey": "probe\\secret-tail",
+            "path": r"C:\Users\PrivateReviewName\game",
+            "message": "visible diagnostic"
+        })
+        .to_string();
+        let expected = serde_json::json!({
+            "password": "***", "clientSecret": "***", "apiKey": "***",
+            "path": r"C:\Users\***\game", "message": "visible diagnostic"
+        });
+        let files = [
+            "logs/latest.log",
+            "logs/debug.log",
+            "crash-reports/crash-quoted.txt",
+        ];
+        for relative in files {
+            let path = root.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, &raw).unwrap();
+        }
+        let output = root.join("report.zip");
+        assert!(export_report(&root, &output, &raw).unwrap().complete);
+        for relative in files {
+            let bytes =
+                read_zip_entry(&output, relative, MAX_FILE_BYTES, &CancellationToken::new())
+                    .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value, expected, "{relative}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn oversized_reports_fail_instead_of_silently_truncating() {
         let root = std::env::temp_dir().join(format!(
             "nickel-report-size-{}",

@@ -707,7 +707,7 @@ fn parse_key_value(
     let bytes = text.as_bytes();
     let mut index = skip_spaces(text, after_key);
 
-    let mut quoted_value = false;
+    let mut quote = None;
     if let Some(byte) = bytes.get(index).copied() {
         if byte == b'"' || byte == b'\'' {
             let after_quote = skip_spaces(text, index + 1);
@@ -716,7 +716,7 @@ fn parse_key_value(
             } else {
                 // accessToken 后直接跟引号时，引号开始值而非包围键。
                 index += 1;
-                quoted_value = true;
+                quote = Some(byte);
             }
         }
     }
@@ -733,11 +733,11 @@ fn parse_key_value(
         return None;
     }
 
-    if !quoted_value {
+    if quote.is_none() {
         if let Some(byte) = bytes.get(index).copied() {
             if byte == b'"' || byte == b'\'' || byte == b'`' {
                 index += 1;
-                quoted_value = true;
+                quote = Some(byte);
             }
         }
     }
@@ -756,8 +756,8 @@ fn parse_key_value(
     let end = if authorization && !bearer_value {
         // Basic / Digest 等认证头没有统一的 token 边界，整行打码更安全。
         scan_line_end(text, start)
-    } else if quoted_value {
-        scan_quoted_value_end(text, start)
+    } else if let Some(quote) = quote {
+        scan_quoted_value_end(text, start, quote)
     } else {
         scan_value_end(text, start)
     };
@@ -766,7 +766,7 @@ fn parse_key_value(
     }
 
     // 无分隔符时只接受较长的 token，避免把 `token is invalid` 中的 `is` 打码。
-    if !had_separator && !quoted_value && !allow_short_implicit && end - start < 8 {
+    if !had_separator && quote.is_none() && !allow_short_implicit && end - start < 8 {
         return None;
     }
 
@@ -814,13 +814,15 @@ fn scan_value_end(text: &str, start: usize) -> usize {
     index
 }
 
-fn scan_quoted_value_end(text: &str, start: usize) -> usize {
+fn scan_quoted_value_end(text: &str, start: usize, quote: u8) -> usize {
     let bytes = text.as_bytes();
     let mut index = start;
+    let mut escaped = false;
     while let Some(byte) = bytes.get(index).copied() {
-        if byte == b'"' || byte == b'\'' || byte == b'\n' || byte == b'\r' {
+        if byte == b'\n' || byte == b'\r' || (byte == quote && !escaped) {
             break;
         }
+        escaped = byte == b'\\' && !escaped;
         index += 1;
     }
     index
@@ -828,6 +830,8 @@ fn scan_quoted_value_end(text: &str, start: usize) -> usize {
 
 fn collect_user_path_spans(text: &str, spans: &mut Vec<RedactionSpan>) {
     const MARKERS: &[&str] = &[
+        "\\\\Users\\\\",
+        "\\\\Documents and Settings\\\\",
         "\\Users\\",
         "/Users/",
         "/home/",

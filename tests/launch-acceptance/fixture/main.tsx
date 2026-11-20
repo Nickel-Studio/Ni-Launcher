@@ -3,8 +3,11 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsProvider } from "../../../src/lib/settings";
 import { setLaunchInstance, getLaunchInstance, type LaunchInstance } from "../../../src/lib/instances";
-import { useLauncher, type UseLauncher, type LaunchArgs } from "../../../src/components/launch/useLauncher";
+import { LauncherProvider, useLauncher, type UseLauncher, type LaunchArgs } from "../../../src/components/launch/useLauncher";
 import { LaunchErrorDialog, launchErrorInfo } from "../../../src/components/launch/LaunchPanel";
+import { TitleBar } from "../../../src/components/TitleBar";
+import { AnimatedSwap } from "../../../src/components/ui";
+import { setRoute, useAppNav } from "../../../src/lib/nav";
 import { installBackend, type Setup } from "./ipc";
 import "../../../src/styles/tokens.css";
 import "../../../src/styles/global.css";
@@ -21,6 +24,7 @@ declare global {
       event: (payload: Record<string, unknown>) => Promise<void>;
       release: (id: string) => void;
       select: (instance: LaunchInstance) => void;
+      navigate: (route: "home" | "settings") => void;
       unmount: () => void;
       errorInfo: typeof launchErrorInfo;
     };
@@ -83,23 +87,39 @@ window.__launchFixture = {
   event: backend.emit,
   release: backend.release,
   select: setLaunchInstance,
+  navigate: setRoute,
   unmount: () => root.unmount(),
   errorInfo: launchErrorInfo,
 };
 
+function HookRoutes() {
+  const { route } = useAppNav();
+  return <AnimatedSwap swapKey={route}>
+    {route === "home" ? <HookHarness /> : <div data-testid="away">Settings</div>}
+  </AnimatedSwap>;
+}
+
 if (setup.mode === "hook") {
-  root.render(<StrictMode><HookHarness /></StrictMode>);
+  root.render(<StrictMode><LauncherProvider><HookRoutes /></LauncherProvider></StrictMode>);
 } else if (setup.mode === "dialog") {
   root.render(<StrictMode><DialogHarness /></StrictMode>);
 } else {
   const { Home } = await import("../../../src/pages/Home");
+  function HomeRoutes() {
+    const { route } = useAppNav();
+    return <div className="ni-shell">
+      <TitleBar />
+      <div className="ni-body"><main className="ni-content">
+        <AnimatedSwap swapKey={route}>
+          {route === "home" ? <Home /> : <div data-testid="away">Settings</div>}
+        </AnimatedSwap>
+      </main></div>
+    </div>;
+  }
   root.render(
     <StrictMode>
       <SettingsProvider>
-        <div className="ni-shell">
-          <header className="ni-titlebar">Nickel</header>
-          <div className="ni-body"><main className="ni-content"><Home /></main></div>
-        </div>
+        <LauncherProvider><HomeRoutes /></LauncherProvider>
       </SettingsProvider>
     </StrictMode>,
   );

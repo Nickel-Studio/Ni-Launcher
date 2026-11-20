@@ -24,6 +24,7 @@ import { Select } from "../../src/components/ui/Select";
 import { IconAlert } from "../../src/components/resources/icons";
 import { VanillaPage } from "../../src/components/vanilla/VanillaPage";
 import { Home } from "../../src/pages/Home";
+import { LauncherProvider } from "../../src/components/launch/useLauncher";
 import { SettingsProvider } from "../../src/lib/settings";
 
 type RegressionCheck = {
@@ -721,7 +722,9 @@ function Fixture() {
           >
             <div className="fixture-label">Home 启动错误弹窗</div>
             <div className="fixture-home-host">
-              <Home />
+              <LauncherProvider>
+                <Home />
+              </LauncherProvider>
             </div>
           </section>
         </div>
