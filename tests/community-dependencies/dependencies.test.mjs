@@ -65,7 +65,8 @@ before(async () => {
     root: process.cwd(),
     appType: "custom",
     logLevel: "silent",
-    server: { middlewareMode: true, hmr: false },
+    // Static SSR tests do not need to watch build caches or report directories.
+    server: { middlewareMode: true, hmr: false, watch: null },
   });
   parse = await server.ssrLoadModule("/src/components/modrinth/parse.ts");
   deps = await server.ssrLoadModule("/src/components/community/dependencies.ts");
