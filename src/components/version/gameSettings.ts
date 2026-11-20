@@ -28,7 +28,6 @@ export interface GameSettings extends Record<string, unknown> {
     | "custom"
     | "serial"
     | "parallel";
-  memoryOptimize: boolean;
   highPerformanceGpu: boolean;
   disableWrapper: boolean;
   disableLwjglAgent: boolean;
@@ -55,7 +54,6 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   memoryMode: "auto",
   memoryMb: 4096,
   memoryManagement: "g1-tuned",
-  memoryOptimize: false,
   highPerformanceGpu: false,
   disableWrapper: false,
   disableLwjglAgent: false,
@@ -135,7 +133,6 @@ export function normalizeGameSettings(input: unknown): GameSettings {
           raw.memoryManagement === "parallel"
         ? raw.memoryManagement
         : "g1-tuned",
-    memoryOptimize: raw.memoryOptimize === true,
     highPerformanceGpu: raw.highPerformanceGpu === true,
     disableWrapper: raw.disableWrapper === true,
     disableLwjglAgent: raw.disableLwjglAgent === true,

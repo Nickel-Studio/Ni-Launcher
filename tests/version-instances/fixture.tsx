@@ -49,7 +49,6 @@ const VERSION_SETTINGS_FIXTURE = {
   memoryMode: "custom",
   memoryMb: 6144,
   memoryManagement: null,
-  memoryOptimize: null,
   highPerformanceGpu: null,
   offlineSkin: null,
   offlineSkinName: null,
@@ -86,7 +85,6 @@ const GLOBAL_GAME_SETTINGS_FIXTURE = {
   memoryMode: "auto",
   memoryMb: 6144,
   memoryManagement: "g1-tuned",
-  memoryOptimize: true,
   highPerformanceGpu: false,
   disableWrapper: false,
   disableLwjglAgent: false,
@@ -295,7 +293,6 @@ window.__TAURI_INTERNALS__ = {
         availableMemoryMb: 10240,
         suggestedMemoryMb: 4096,
         capabilities: {
-          memoryOptimize: true,
           windowTitle: true,
           launchWrapper: true,
           lwjglAgent: true,

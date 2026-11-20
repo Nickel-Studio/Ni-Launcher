@@ -37,7 +37,6 @@ let savedSettings: Record<string, unknown> = {
   memoryMode: "custom",
   memoryMb: 8192,
   memoryManagement: "g1-tuned",
-  memoryOptimize: false,
   highPerformanceGpu: false,
   disableWrapper: false,
   disableLwjglAgent: false,
@@ -57,7 +56,6 @@ const runtimeInfo = () => ({
   capabilities: {
     windowTitle: true,
     processPriority: true,
-    memoryOptimize: true,
     offlineSkin: true,
     launchWrapper: true,
     lwjglAgent: true,

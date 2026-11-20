@@ -121,7 +121,6 @@ const runtime = () => ({
   suggestedMemoryMb: 4096,
   capabilities: {
     windowTitle: titleSupported,
-    memoryOptimize: true,
     processPriority: true,
     offlineSkin: true,
     launchWrapper: true,

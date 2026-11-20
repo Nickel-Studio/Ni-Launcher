@@ -413,9 +413,9 @@ try {
     JSON.stringify(settingsStructure.startup)
   );
   check(
-    "内存分配字段顺序为分配方式 → 最大内存 → 启动前优化内存",
+    "内存分配字段顺序为分配方式 → 最大内存",
     JSON.stringify(settingsStructure.memory) ===
-      JSON.stringify(["分配方式", "最大内存", "启动前优化内存"]),
+      JSON.stringify(["分配方式", "最大内存"]),
     JSON.stringify(settingsStructure.memory)
   );
   check(

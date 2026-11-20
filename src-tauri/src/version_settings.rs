@@ -53,7 +53,6 @@ pub struct VersionSettings {
     pub memory_mode: String,
     pub memory_mb: Option<u64>,
     pub memory_management: Option<String>,
-    pub memory_optimize: Option<bool>,
     pub high_performance_gpu: Option<bool>,
     pub offline_skin: Option<String>,
     pub offline_skin_name: Option<String>,
@@ -90,7 +89,6 @@ impl Default for VersionSettings {
             memory_mode: MEMORY_GLOBAL.to_string(),
             memory_mb: None,
             memory_management: None,
-            memory_optimize: None,
             high_performance_gpu: None,
             offline_skin: None,
             offline_skin_name: None,
@@ -131,7 +129,7 @@ fn merge_settings(defaults: serde_json::Value, stored: serde_json::Value) -> ser
         let inherits = value.is_null() || value.as_str() == Some(MEMORY_GLOBAL);
         let accepted = match key.as_str() {
             "versionIsolation" | "noModUpdates" | "disableModUpdates" | "disableFileCheck"
-            | "disableWrapper" | "disableLwjglAgent" | "memoryOptimize"
+            | "disableWrapper" | "disableLwjglAgent"
             | "highPerformanceGpu" | "offlineSkinSlim" => inherits || value.is_boolean(),
             "windowTitle" | "customInfo" | "javaPath" | "launcherVisibility"
             | "processPriority" | "windowMode" | "memoryManagement" | "offlineSkin"
@@ -319,7 +317,6 @@ const LEGACY_LAUNCHER_MAPPED_KEYS: &[&str] = &[
     "VersionAdvanceGC",
     "VersionRamType",
     "VersionRamCustom",
-    "VersionRamOptimize",
     "VersionArgumentJavaSelect",
     "VersionServerLogin",
     "VersionServerAuthServer",
@@ -494,17 +491,6 @@ pub(crate) fn legacy_launcher_effective_settings(
                 insert("memoryMode", "global".into());
             }
         },
-    }
-
-    // 内存优化：0 跟随全局 / 1 开启 / 2 关闭。
-    match setup.int_value("VersionRamOptimize") {
-        Some(1) => {
-            insert("memoryOptimize", true.into());
-        }
-        Some(2) => {
-            insert("memoryOptimize", false.into());
-        }
-        _ => {}
     }
 
     // 实例级 GC 的 0 继承根级设置；显式继承而根级缺失时采用优化 G1。
@@ -1296,7 +1282,6 @@ mod tests {
             "windowWidth": 1100,
             "windowHeight": 720,
             "memoryManagement": "auto-zgc",
-            "memoryOptimize": true,
             "highPerformanceGpu": false,
             "offlineSkin": "custom",
             "offlineSkinName": "skin",
@@ -1319,7 +1304,6 @@ mod tests {
             ("windowWidth", serde_json::json!(1100)),
             ("windowHeight", serde_json::json!(720)),
             ("memoryManagement", serde_json::json!("auto-zgc")),
-            ("memoryOptimize", serde_json::json!(true)),
             ("highPerformanceGpu", serde_json::json!(false)),
             ("offlineSkin", serde_json::json!("custom")),
             ("offlineSkinName", serde_json::json!("skin")),
@@ -1348,13 +1332,11 @@ mod tests {
             "memoryManagement": "default",
             "windowWidth": "wide",
             "serverLogin": false,
-            "memoryOptimize": "yes"
         });
         let merged = normalize_memory(merge_settings(default_settings_value(), stored));
         assert_eq!(merged["memoryManagement"], MEMORY_CUSTOM);
         assert!(merged["windowWidth"].is_null());
         assert!(merged["serverLogin"].is_null());
-        assert!(merged["memoryOptimize"].is_null());
     }
 
     #[test]

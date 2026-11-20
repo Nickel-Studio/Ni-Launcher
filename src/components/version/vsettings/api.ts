@@ -64,7 +64,6 @@ export interface VersionSettings extends Record<string, unknown> {
   memoryMode: MemoryMode;
   memoryMb: number | null;
   memoryManagement: GameSettings["memoryManagement"] | null;
-  memoryOptimize: boolean | null;
   highPerformanceGpu: boolean | null;
   offlineSkin: GameSettings["offlineSkin"] | null;
   offlineSkinName: string | null;
@@ -184,7 +183,6 @@ export const DEFAULT_SETTINGS: VersionSettings = {
   memoryMode: "global",
   memoryMb: null,
   memoryManagement: null,
-  memoryOptimize: null,
   highPerformanceGpu: null,
   offlineSkin: null,
   offlineSkinName: null,
@@ -355,7 +353,6 @@ export function normalizeSettings(raw: unknown): VersionSettings {
       record.memoryManagement === "default"
         ? "custom"
         : oneOf(record.memoryManagement, MEMORY_MANAGEMENT_VALUES),
-    memoryOptimize: settingBoolean(record.memoryOptimize),
     highPerformanceGpu: settingBoolean(record.highPerformanceGpu),
     offlineSkin: oneOf(record.offlineSkin, OFFLINE_SKIN_VALUES),
     offlineSkinName: settingString(record.offlineSkinName),

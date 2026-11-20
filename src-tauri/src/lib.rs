@@ -35,7 +35,6 @@ mod http; // 共享 HTTP 辅助（复用核心库 reqwest client）
 mod install; // 版本下载 / 加载器安装 / 安装事件流 / Java 探测
 mod installer_download; // 原生对话框另存为独立官方安装器
 mod instances; // 实例注册表（instances.json）/ 版本与本地资源扫描
-mod jrrp; // 今日人品（本地日期哈希）
 // 纯逻辑诊断 / 日志 API 同时供单元测试与后续导出使用；生产已消费分类与读取主入口。
 #[allow(dead_code)]
 mod launch_diagnostics;
@@ -48,7 +47,6 @@ mod launch_window;
 mod loader_availability;
 mod loader_catalog; // 完整加载器清单 / 请求级下载源 / 官方安装器地址
 mod media; // 本地图片 → dataURL（背景图兜底渲染）
-mod memory_optimize; // 主动内存优化（全进程工作集回收 / 分页回收 / 提权）
 mod memory_plan;
 mod modpacks;
 mod modrinth; // Modrinth 社区资源检索 / 安装（不经镜像，直连公开 API）
@@ -871,70 +869,6 @@ async fn run_launch_scoped(
             None
         }
     };
-    if settings.memory_optimize {
-        // 启动前不做分页回收（会丢弃全部文件缓存，代价过大）；
-        // Windows 会请求 UAC，macOS / Linux 只尝试免密 sudo，失败按「跳过并继续」处理。
-        ensure_launch_not_cancelled()?;
-        // 取消令牌必须在这里克隆：`TransferContext::current()` 是线程局部的，
-        // 进入 spawn_blocking 的线程后就取不到了。
-        let cancellation = minecraft_java_rs_core::net::transfer::TransferContext::current()
-            .cancellation()
-            .clone();
-        // 进程工作集回收是阻塞操作（Windows 还要等待 UAC），不能占住 async 运行时。
-        let outcome = tokio::task::spawn_blocking(move || {
-            let cancelled = || cancellation.is_cancelled();
-            let check: &dyn Fn() -> bool = &cancelled;
-            memory_optimize::run_before_launch(false, Some(check))
-        })
-        .await;
-        // 优化被取消时不要再用结果发事件（尤其不能报「已完成内存优化」）。
-        ensure_launch_not_cancelled()?;
-        match outcome {
-            Ok(report) => match report.status {
-                memory_optimize::MemoryOptimizeStatus::Success => {
-                    emit_launch_event(
-                        &app,
-                        &launch_id,
-                        FrontendEvent::Stage {
-                            message: "已完成内存优化，正在启动游戏".into(),
-                        },
-                    );
-                }
-                // 另一次优化正在进行：本次是被重入保护拦下的，与权限无关。
-                // 若归到「未授权」会误导用户去改权限设置，实际只需要等下一轮。
-                memory_optimize::MemoryOptimizeStatus::Busy => emit_launch_warning(
-                    &app,
-                    &launch_id,
-                    &log_path,
-                    "启动前内存优化跳过：另一次内存优化正在进行，本次跳过。游戏将继续启动".into(),
-                ),
-                // 其余状态沿用后端给出的可执行说明（拒绝 UAC / 权限不足 / 优化失败），
-                // 只有 message 缺失时才回退到通用文案；所有分支都不阻断启动。
-                memory_optimize::MemoryOptimizeStatus::PermissionDenied
-                | memory_optimize::MemoryOptimizeStatus::Skipped
-                | memory_optimize::MemoryOptimizeStatus::Failed => emit_launch_warning(
-                    &app,
-                    &launch_id,
-                    &log_path,
-                    format!(
-                        "启动前内存优化未执行：{}。游戏将继续启动",
-                        report
-                            .message
-                            .as_deref()
-                            .unwrap_or("当前系统未授予所需权限")
-                    ),
-                ),
-            },
-            Err(error) => emit_launch_warning(
-                &app,
-                &launch_id,
-                &log_path,
-                format!("启动前内存优化线程异常：{error}。游戏将继续启动"),
-            ),
-        }
-        // 阻塞优化可能持续数十秒；若用户在此期间取消，不要继续启动。
-        ensure_launch_not_cancelled()?;
-    }
     ensure_launch_not_cancelled()?;
     let mut child = launcher
         .launch(tx)
@@ -1312,11 +1246,6 @@ mod diagnostics_alias_tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 提权子进程入口：`--memory-optimize <结果文件> [--standby]`。
-    // 必须在初始化 Tauri 之前拦截，否则会弹出第二个窗口。
-    if memory_optimize::handle_cli_request() {
-        return;
-    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1448,11 +1377,6 @@ pub fn run() {
             runtime_settings::launch_log_open,
             error_report::launch_error_report_export,
             runtime_settings::version_server_open_registration,
-            // 主动内存优化（全进程工作集回收 / Windows 分页回收）
-            memory_optimize::memory_optimize_capability,
-            memory_optimize::memory_optimize_run,
-            // 星月图书馆（百宝箱）：今日人品 / 清理游戏垃圾
-            jrrp::jrrp_compute,
             game_junk::game_junk_scan,
             game_junk::game_junk_clean,
             // 实例（版本根目录）注册表
@@ -1825,12 +1749,8 @@ mod tests {
             "install::java_resolve,",
             "community_save_as::modrinth_save_as,",
             "community_save_as::curseforge_save_as,",
-            "jrrp::jrrp_compute,",
             "game_junk::game_junk_scan,",
             "game_junk::game_junk_clean,",
-            "memory_optimize::memory_optimize_capability,",
-            "memory_optimize::memory_optimize_run,",
-            // 本 PR 关键链路：微软登录 → 账号落盘 → 皮肤 / 启动 / 内存优化 / 清理。
             "accounts::accounts_list,",
             "accounts::accounts_upsert,",
             "accounts::accounts_remove,",

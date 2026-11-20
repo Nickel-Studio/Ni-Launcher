@@ -148,13 +148,6 @@
 }
 
 /* ---------- 星月图书馆（前沿计划 · 杂物间） ---------- */
-.mo-starlight {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
 .mo-starlight__actions {
   display: flex;
   flex-wrap: wrap;
@@ -164,31 +157,6 @@
 
 .mo-starlight__actions .nw-btn {
   min-width: 140px;
-}
-
-/* ---------- 今日人品结果 ---------- */
-.mo-jrrp {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0 var(--space-4);
-  text-align: center;
-}
-
-.mo-jrrp__value {
-  font-family: var(--font-display);
-  font-size: var(--fs-3xl);
-  font-weight: 700;
-  line-height: 1.05;
-  color: var(--text);
-}
-
-.mo-jrrp__comment {
-  margin: 0;
-  font-size: var(--fs-lg);
-  line-height: var(--lh-normal);
-  color: var(--text-dim);
 }
 
 /* ---------- 清理游戏垃圾确认 ---------- */
@@ -210,44 +178,6 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
   color: var(--text-dim);
-}
-
-.mo-starlight__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-dim);
-}
-
-/* 自建密码输入框：不依赖浏览器默认边框与字体。 */
-.mo-starlight__input {
-  width: 100%;
-  box-sizing: border-box;
-  height: 36px;
-  padding: 0 13px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--fill-2);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: var(--fs-md);
-  outline: none;
-  transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
-}
-
-.mo-starlight__input::placeholder {
-  color: var(--text-faint);
-}
-
-.mo-starlight__input:hover {
-  background: var(--fill-3);
-}
-
-.mo-starlight__input:focus,
-.mo-starlight__input:focus-visible {
-  background: var(--fill-3);
-  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .mo-about {

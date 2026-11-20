@@ -100,12 +100,9 @@ fn offline_launch_has_no_auth_server_or_new_prerequisite() {
 fn capabilities_use_frontend_contract_keys() {
     let value = serde_json::to_value(runtime_settings::game_runtime_info()).unwrap();
     let capabilities = &value["capabilities"];
-    // 完整内存优化在 Windows / macOS / Linux 均可运行（非 Windows 可能因缺少 sudo 跳过）。
-    assert_eq!(capabilities["memoryOptimize"], cfg!(any(windows, unix)));
     assert_eq!(capabilities["highPerformanceGpu"], cfg!(windows));
     assert_eq!(capabilities["launchWrapper"], cfg!(windows));
     assert_eq!(capabilities["lwjglAgent"], true);
-    assert!(capabilities.get("memoryOptimization").is_none());
 }
 
 #[cfg(windows)]

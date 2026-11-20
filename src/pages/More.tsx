@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import logoUrl from "../assets/logo.png";
 import aronaAvatar from "../assets/credits/itzarona.png";
@@ -10,7 +10,6 @@ import shittimChestsAvatar from "../assets/credits/shittimchests.png";
 import {
   Button,
   Card,
-  Checkbox,
   Modal,
   PagerLayout,
   Switch,
@@ -21,19 +20,11 @@ import { IconGlobe, IconNickel, IconSpark } from "../components/ui/icons";
 import { showToast } from "../lib/toast";
 import { formatBytes } from "../components/resources/format";
 import {
-  describeMemoryOptimizeError,
-  fetchMemoryOptimizeCapability,
-  runMemoryOptimize,
-  type MemoryOptimizeCapability,
-  type MemoryOptimizeReport,
-} from "../lib/memoryOptimize";
-import {
   cleanGameJunk,
   describeGameJunkError,
   scanGameJunk,
   type GameJunkScan,
 } from "../lib/gameJunk";
-import { describeJrrpError, fetchJrrp, type JrrpReport } from "../lib/jrrp";
 import { isTauri, useSettings } from "../lib/settings";
 import { setRoute } from "../lib/nav";
 import {
@@ -64,14 +55,6 @@ const SECTIONS: PagerItem[] = [
   { id: "frontier", label: "前沿计划", icon: <IconSpark /> },
   { id: "about", label: "关于", icon: <IconNickel /> },
 ];
-
-const MEMORY_OPTIMIZE_ACTION_HELP =
-  "把各个程序暂时用不到的内存回收给系统，通常需要几秒钟。Windows 会弹出管理员授权（UAC）；macOS / Linux 需要 sudo 或 su（root）权限。";
-
-const MEMORY_PURGE_HELP =
-  "额外清空系统的待命内存列表（被系统缓存的文件内容），可以腾出更多空闲内存；代价是这些文件下次需要重新从硬盘读取。仅 Windows 支持。";
-
-const JRRP_HELP = "按本地日期生成 1~100 的稳定人品值，同一天内不会变化。";
 
 const JUNK_CLEAN_HELP =
   "清理各个游戏目录的日志、崩溃报告、JVM 崩溃日志和启动器残留的临时文件。它们会在需要时自动重新生成，不会动到游戏本体、Mod、资源包和存档；清理前会先统计大小并让你确认。";
@@ -278,119 +261,10 @@ function Frontier() {
   );
 }
 
-/** 内存回收按平台申请管理员权限；密码仅用于本次后端命令。 */
 function StarlightLibrary() {
-  const { settings, update } = useSettings();
-  const [capability, setCapability] = useState<MemoryOptimizeCapability | null>(
-    null
-  );
-  const [running, setRunning] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [password, setPassword] = useState("");
-  const [jrrp, setJrrp] = useState<JrrpReport | null>(null);
-  const [jrrpOpen, setJrrpOpen] = useState(false);
-  const [jrrpLoading, setJrrpLoading] = useState(false);
   const [junk, setJunk] = useState<GameJunkScan | null>(null);
   const [junkOpen, setJunkOpen] = useState(false);
   const [junkRunning, setJunkRunning] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchMemoryOptimizeCapability()
-      .then((value) => {
-        if (!cancelled) setCapability(value);
-      })
-      .catch(() => {
-        // 浏览器预览等非 Tauri 环境：保持 null；点击时仍会尝试调用命令并报错。
-        if (!cancelled) setCapability(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 能力尚未返回时用 UA 兜底，避免 Windows 上分页回收开关先闪一下禁用态。
-  const guessedWindows =
-    typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
-  // 以能力返回的 supportsStandbyPurge 为准；未知时才退回平台猜测。
-  const standbySupported = capability?.supportsStandbyPurge ?? guessedWindows;
-
-  function present(report: MemoryOptimizeReport) {
-    if (report.status === "success") {
-      const freed = Math.max(0, report.availableDeltaBytes);
-      showToast(
-        freed >= 16 * 1024 * 1024
-          ? `内存优化完成，释放了 ${formatBytes(freed)} 内存`
-          : "内存优化完成，当前没有多少可以释放的内存",
-        "success"
-      );
-      return;
-    }
-    if (report.status === "busy") {
-      showToast("内存优化正在进行中，请稍等一下", "info");
-      return;
-    }
-    showToast(
-      report.message ??
-        (report.status === "permissionDenied"
-          ? "已取消管理员授权，内存优化未执行"
-          : "内存优化失败"),
-      "error"
-    );
-  }
-
-  async function execute(withPassword?: string) {
-    if (running) return;
-    setRunning(true);
-    try {
-      const purge = standbySupported && settings.memoryPurgeStandby;
-      present(await runMemoryOptimize(purge, withPassword));
-    } catch (error) {
-      showToast(`内存优化失败：${describeMemoryOptimizeError(error)}`, "error");
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  function start() {
-    if (running) return;
-    if (capability && !capability.available) {
-      showToast(capability.message ?? "无法运行完整内存优化", "error");
-      return;
-    }
-    if (capability?.needsPassword) {
-      setPassword("");
-      setPasswordOpen(true);
-      return;
-    }
-    void execute();
-  }
-
-  function closePassword() {
-    setPasswordOpen(false);
-    setPassword("");
-  }
-
-  function submitPassword() {
-    if (!password || running) return;
-    const value = password;
-    closePassword();
-    void execute(value);
-  }
-
-  async function showJrrp() {
-    if (jrrpLoading) return;
-    setJrrpLoading(true);
-    try {
-      const report = await fetchJrrp();
-      setJrrp(report);
-      setJrrpOpen(true);
-    } catch (error) {
-      showToast(`今日人品计算失败：${describeJrrpError(error)}`, "error");
-    } finally {
-      setJrrpLoading(false);
-    }
-  }
 
   async function prepareJunk() {
     if (junkRunning) return;
@@ -440,106 +314,17 @@ function StarlightLibrary() {
 
   return (
     <Card className="mo-card" padding="lg" title="星月图书馆">
-      <div className="mo-starlight">
-        <div className="mo-starlight__actions">
-          <Tooltip label={JRRP_HELP}>
-            <Button
-              variant="secondary"
-              disabled={jrrpLoading}
-              onClick={() => void showJrrp()}
-            >
-              今日人品
-            </Button>
-          </Tooltip>
-          <Tooltip label={MEMORY_OPTIMIZE_ACTION_HELP}>
-            <Button variant="primary" disabled={running} onClick={start}>
-              {running ? "优化中……" : "内存优化"}
-            </Button>
-          </Tooltip>
-          <Tooltip label={JUNK_CLEAN_HELP}>
-            <Button
-              variant="danger"
-              disabled={junkRunning}
-              onClick={() => void prepareJunk()}
-            >
-              {junkRunning ? "处理中……" : "清理游戏垃圾"}
-            </Button>
-          </Tooltip>
-        </div>
-        <Tooltip label={MEMORY_PURGE_HELP}>
-          <Checkbox
-            checked={standbySupported && settings.memoryPurgeStandby}
-            disabled={!standbySupported}
-            onChange={(checked) => update({ memoryPurgeStandby: checked })}
-            label="内存优化时清理待命内存列表"
-          />
+      <div className="mo-starlight__actions">
+        <Tooltip label={JUNK_CLEAN_HELP}>
+          <Button
+            variant="danger"
+            disabled={junkRunning}
+            onClick={() => void prepareJunk()}
+          >
+            {junkRunning ? "处理中……" : "清理游戏垃圾"}
+          </Button>
         </Tooltip>
       </div>
-
-      <Modal
-        open={passwordOpen}
-        onClose={closePassword}
-        title="需要管理员权限"
-        description="完整内存优化需要 sudo 或 su（root）权限。"
-        width={420}
-        footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={closePassword}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!password || running}
-              onClick={submitPassword}
-            >
-              开始优化
-            </Button>
-          </>
-        }
-      >
-        <label className="mo-starlight__field">
-          <span>sudo 密码或 su（root）密码</span>
-          <input
-            className="mo-starlight__input"
-            type="password"
-            value={password}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="输入密码后继续"
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                submitPassword();
-              }
-            }}
-          />
-        </label>
-      </Modal>
-
-      <Modal
-        open={jrrpOpen}
-        onClose={() => setJrrpOpen(false)}
-        title="今日人品"
-        width={380}
-        footer={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setJrrpOpen(false)}
-          >
-            确定
-          </Button>
-        }
-      >
-        {jrrp ? (
-          <div className="mo-jrrp">
-            <div className="mo-jrrp__value">{jrrp.value}</div>
-            <p className="mo-jrrp__comment">{jrrp.comment}</p>
-          </div>
-        ) : null}
-      </Modal>
 
       <Modal
         open={junkOpen}

@@ -31,7 +31,6 @@ pub struct EffectiveSettings {
     pub width: u32,
     pub height: u32,
     pub memory_mb: u64,
-    pub memory_optimize: bool,
     pub high_performance_gpu: bool,
     pub disable_wrapper: bool,
     pub disable_lwjgl_agent: bool,
@@ -292,10 +291,6 @@ pub fn resolve_with_memory(
         width,
         height,
         memory_mb,
-        memory_optimize: inherited(global, local, "memoryOptimize")
-            .and_then(Value::as_bool)
-            .or_else(|| inherited(global, local, "memoryOptimization").and_then(Value::as_bool))
-            .unwrap_or(false),
         high_performance_gpu: inherited(global, local, "highPerformanceGpu")
             .and_then(Value::as_bool)
             .unwrap_or(false),
@@ -465,9 +460,6 @@ pub fn version_server_open_registration(
     tauri_plugin_opener::open_url(url, None::<&str>)
         .map_err(|e| format!("打开{name}注册页面失败，请检查默认浏览器：{e}"))
 }
-
-// 主动内存优化已迁移到 `crate::memory_optimize`：全进程工作集回收、Windows 分页回收
-// 与提权路径都在那边统一实现，这里只保留内存容量读取等运行时信息。
 
 fn supports_quick_play(version: &str) -> bool {
     let mut parts = version.split('.');
@@ -701,9 +693,7 @@ pub fn game_runtime_info() -> RuntimeInfo {
         suggested_memory_mb: plan.suggested_memory_mb,
         capabilities: serde_json::json!({
             "windowTitle": cfg!(windows), "processPriority": cfg!(windows),
-            // 完整内存优化在 Windows / macOS / Linux 均可运行；非 Windows 可能因缺少
-            // sudo 能力按「跳过并继续」处理，因此这里仍视为支持（具体由能力命令告知）。
-            "memoryOptimize": cfg!(any(windows, unix)), "offlineSkin": true,
+            "offlineSkin": true,
             "launchWrapper": cfg!(windows), "lwjglAgent": true,
             "highPerformanceGpu": cfg!(windows)
         }),
@@ -805,9 +795,8 @@ pub fn launch_log_open(app: AppHandle, dir: String, version_id: String) -> Resul
         .map_err(|error| format!("打开日志目录失败：{error}"))
 }
 
-/// 物理内存（字节）。内存优化需要字节级精度来判断「释放了多少」。
 #[cfg(windows)]
-pub(crate) fn physical_memory_bytes() -> (Option<u64>, Option<u64>) {
+fn physical_memory_bytes() -> (Option<u64>, Option<u64>) {
     #[repr(C)]
     struct MemoryStatus {
         length: u32,

@@ -675,8 +675,6 @@ const MEMORY_MODE_HELP =
   "跟随全局使用全局设置；自动配置会根据安装的 Mod 量与电脑剩余内存动态调整；自定义使用下方滑块的值。";
 const MEMORY_SLIDER_HELP =
   "拖动滑块设置游戏最大内存；自动配置或跟随全局时由对应规则决定。";
-const MEMORY_OPTIMIZE_HELP =
-  "在启动游戏前，把各个程序暂时用不到的内存回收给系统。Windows 会请求管理员权限（UAC）；macOS / Linux 只尝试免密 sudo，未获得权限时跳过并继续启动。";
 const SERVER_LOGIN_HELP =
   "选择连接服务器时允许的登录方式；第三方登录需要填写 Yggdrasil 认证服务器。";
 const AUTH_SERVER_HELP = "填写第三方皮肤站的 Yggdrasil 认证地址。";
@@ -1051,26 +1049,6 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
           </Row>
         </Collapse>
 
-        <Row
-          label="启动前优化内存"
-          help={MEMORY_OPTIMIZE_HELP}
-          hint={
-            runtime?.capabilities.memoryOptimize === false
-              ? "当前平台不支持启动前内存优化"
-              : undefined
-          }
-        >
-          <InheritedBoolean
-            label="启动前优化内存"
-            value={settings.memoryOptimize}
-            globalValue={global.memoryOptimize}
-            disabled={
-              runtime?.capabilities.memoryOptimize === false &&
-              settings.memoryOptimize !== true
-            }
-            onChange={(value) => patch({ memoryOptimize: value })}
-          />
-        </Row>
         <Collapse open={Boolean(runtimeError || memoryPlanError)} staggered>
           <p className="vst-alert" role="alert">
             {[runtimeError, memoryPlanError].filter(Boolean).join("；")}

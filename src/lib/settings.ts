@@ -88,8 +88,6 @@ export interface AppSettings {
   memoryMb: number;
   /** 前沿计划：添加孤立 `.minecraft` 时用上级目录名作为展示名。 */
   instanceNamingOptimize: boolean;
-  /** 前沿计划：手动内存优化时是否同时清空系统待命内存列表（仅 Windows）。 */
-  memoryPurgeStandby: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -114,7 +112,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   littleskinServer: "https://littleskin.cn",
   memoryMb: 4096,
   instanceNamingOptimize: false,
-  memoryPurgeStandby: false,
 };
 
 export interface SettingsContextValue {
@@ -298,10 +295,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     typeof raw.instanceNamingOptimize === "boolean"
       ? raw.instanceNamingOptimize
       : DEFAULT_SETTINGS.instanceNamingOptimize;
-  out.memoryPurgeStandby =
-    typeof raw.memoryPurgeStandby === "boolean"
-      ? raw.memoryPurgeStandby
-      : DEFAULT_SETTINGS.memoryPurgeStandby;
   return out;
 }
 

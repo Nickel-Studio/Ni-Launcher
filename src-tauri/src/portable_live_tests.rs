@@ -892,7 +892,6 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
             settings["windowTitle"] = json!("Nickel native acceptance");
             settings["processPriority"] = json!("high");
             settings["highPerformanceGpu"] = json!(true);
-            settings["memoryOptimize"] = json!(true);
             settings["jvmArgs"] = json!("-Dnowhere.r6=accepted");
             settings["preLaunchCommand"] = json!(format!("(echo accepted& cd)>{before_name}"));
         }
@@ -901,8 +900,6 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
         let observed = lines.clone();
         let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let closed_event = closed.clone();
-        let memory_optimized = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let memory_event = memory_optimized.clone();
         let log_path = root.join(if native {
             "game-native.log"
         } else if observe {
@@ -917,10 +914,6 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
             let value: Value = serde_json::from_str(event.payload()).unwrap();
             if value["type"] == "close" {
                 closed_event.store(true, Ordering::Release);
-            }
-            if value["type"] == "stage" && value["message"] == "已回收启动器工作集，正在启动游戏"
-            {
-                memory_event.store(true, Ordering::Release);
             }
             if let Some(line) = value["line"].as_str() {
                 let _ = writeln!(log.lock().unwrap(), "{line}");
@@ -965,11 +958,11 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
                 let gpu = snapshot["gpu"].as_str().unwrap_or_default();
                 if snapshot["priority"] != "AboveNormal" || snapshot["title"] != "Nickel native acceptance"
                     || snapshot["jvmMarker"] != true || !gpu.split(';').any(|part| part == "GpuPreference=2")
-                    || !memory_optimized.load(Ordering::Acquire) || !before.contains("accepted")
+                    || !before.contains("accepted")
                     || !before.lines().any(|line| line.trim().eq_ignore_ascii_case(&expected_directory)) {
-                    return Err(format!("native flags mismatch: {snapshot}; memory={}; before={before:?}", memory_optimized.load(Ordering::Acquire)));
+                    return Err(format!("native flags mismatch: {snapshot}; before={before:?}"));
                 }
-                eprintln!("[native-flags] running={snapshot}; memoryOptimize=true; beforeLaunchCwd=true");
+                eprintln!("[native-flags] running={snapshot}; beforeLaunchCwd=true");
             }
             if observe {
                 // 有界保留本次子进程供原生角色界面观察；截图结论由人工核验，不由标记文件代替。

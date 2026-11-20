@@ -81,8 +81,6 @@ const CUSTOM_INFO_HELP =
   "显示在游戏主界面的左下角与 F3 调试页面的左上角；支持 {date}、{time} 等替换标记。";
 const MEMORY_MODE_HELP =
   "自动配置会根据安装的 Mod 量与电脑剩余内存动态调整；自定义使用下方滑块的值。";
-const MEMORY_OPTIMIZE_HELP =
-  "在启动游戏前，把各个程序暂时用不到的内存回收给系统，为 Minecraft 腾出空间；会让启动多花几秒钟。Windows 会请求管理员权限（UAC）；macOS / Linux 只尝试免密 sudo，未获得权限时跳过并继续启动。";
 const JVM_HELP =
   "启动 Minecraft 时使用的额外 JVM 参数，除非有确定把握，否则请不要修改。";
 const GAME_ARGS_HELP =
@@ -465,20 +463,6 @@ export function GamePanel() {
             onChange={(value) => patch({ memoryMb: value })}
           />
         )}
-        <div className="st-game__toggles">
-          <Tooltip label={MEMORY_OPTIMIZE_HELP}>
-            <Switch
-              label="启动游戏前进行内存优化"
-              description={capabilityHint("memoryOptimize")}
-              checked={settings.memoryOptimize === true}
-              disabled={
-                capabilityUnavailable("memoryOptimize") &&
-                settings.memoryOptimize !== true
-              }
-              onChange={(value) => patch({ memoryOptimize: value })}
-            />
-          </Tooltip>
-        </div>
         <GameMemory
           totalMemoryMb={runtime?.totalMemoryMb ?? null}
           availableMemoryMb={runtime?.availableMemoryMb ?? null}
