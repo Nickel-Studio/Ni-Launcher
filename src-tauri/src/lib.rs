@@ -814,7 +814,7 @@ async fn run_launch_scoped(
         runtime_settings::windows_build(),
     )?;
     launcher.set_launch_extras(agents.jvm_args, agents.wrapper);
-    // 启动前命令继续保持 README 冻结的 fail-closed / 60 秒语义。
+    // 启动前命令失败或超过 60 秒即终止准备，避免在前置条件未满足时启动游戏。
     runtime_settings::before_launch(&settings, &directory).await?;
     // 启动前命令可能耗时较长，执行下一步前先确认用户没有在等待期间取消。
     ensure_launch_not_cancelled()?;

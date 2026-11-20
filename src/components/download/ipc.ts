@@ -154,7 +154,7 @@ export async function saveLoaderInstallerManaged(
   return invoke<string | null>("save_loader_installer_managed", { ...args });
 }
 
-/** 开始安装；返回后端 taskId。 */
+/** 返回的是任务身份，不是安装完成结果；终态由安装事件通知。 */
 export async function installVersion(args: InstallArgs): Promise<string> {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   const raw = await invoke<string>("install_version", {
@@ -168,7 +168,6 @@ export async function installVersion(args: InstallArgs): Promise<string> {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
-/** 取消安装（`install_cancel`）。 */
 export async function cancelInstall(taskId: string): Promise<void> {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   await invoke("install_cancel", { taskId });

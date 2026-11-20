@@ -1477,7 +1477,7 @@ pub(crate) fn select_java_for_launch(
     Ok(java_selection::select(requirement, &candidates))
 }
 
-/// 前端预览与启动编排共用的 Java 解析命令。注册由 runtime-core-3 / Lead 负责。
+/// 前端预览与实际启动共用 Java 解析，避免两条路径选择不同运行时。
 #[tauri::command]
 pub async fn java_resolve(
     app: AppHandle,

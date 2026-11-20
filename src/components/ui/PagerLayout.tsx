@@ -5,18 +5,15 @@ import "./pager.css";
 /**
  * PagerLayout —— 「侧边栏选项 ↔ 右侧独立页」的通用页面骨架。
  *
- * 设计约定（R2 冻结）：
+ * 布局约定：
  *   - 侧边栏是**页面切换器**，不是滚动锚点导航：点击某个选项 = 右侧整页替换。
  *   - 右侧内容区自行滚动（内容可能很长），侧边栏保持固定，不随内容滚动。
  *   - 视觉语言与设置页既有的 .st-nav 一致：填充式圆角、激活项用颜色主题色（accent）柔光底，
  *     不使用 1px 描边作为主表现。
  *
- * 该组件由 Lead 作为「共享基础件」提供，任何页面都可以复用（设置 / 资源 / 版本设置 / 更多…）。
  */
 export interface PagerItem {
-  /** 唯一 id，用于 `active` 比较。 */
   id: string;
-  /** 选项文案（中文）。 */
   label: string;
   /** 可选图标（建议 16–18px 线性图标）。 */
   icon?: ReactNode;
@@ -34,7 +31,6 @@ export interface PagerLayoutProps {
   navTitle?: ReactNode;
   /** 右侧独立页内容。 */
   children: ReactNode;
-  /** 额外 class（可选）。 */
   className?: string;
 }
 

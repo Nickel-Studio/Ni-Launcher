@@ -817,7 +817,7 @@ mod tests {
         assert_eq!(selected.get("name").and_then(|s| s.as_str()), Some("Keyi"));
     }
 
-    /// 前后端线格式契约：判别字段必须是 `status`，变体与字段名必须与冻结契约一致。
+    /// 前后端线格式契约：判别字段必须是 `status`，变体与字段名必须与前端解析器一致。
     #[test]
     fn login_outcome_wire_contract() {
         let account = Account {

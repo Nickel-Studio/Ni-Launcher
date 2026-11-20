@@ -1,11 +1,6 @@
-# Nickel vendored fork of `minecraft-java-rs-core` 0.4.1
-#
-# 上游 0.4.1 把 Mojang 官方下载地址硬编码在源码中，且未暴露任何可注入的
-# base URL / 镜像配置（详见 src/mirror.rs 顶部说明）。为了支持「下载源切换」
-# 而又不做大改动，这里以本目录为本地 patch：仅新增 src/mirror.rs 并在两个
-# 网络收口点（net::http、net::downloader）做 URL 重写，其余逻辑与 0.4.1 完全一致。
-#
-# 依赖与原 crate 保持一致，避免引入任何新依赖。
+# Nickel-maintained fork of `minecraft-java-rs-core` 0.4.1.
+# Local changes cover download mirrors, shared transfer budgets, loader resolution,
+# archive validation and launch preparation; upstream attribution remains below.
 
 [package]
 name = "minecraft-java-rs-core"

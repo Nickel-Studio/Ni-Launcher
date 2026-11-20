@@ -52,7 +52,7 @@ function normalizeDir(dir: string): string {
 /**
  * 实例根目录注册表。
  *
- * 关键不变量（与需求冻结语义一致）：**激活目录 = `game.json` 的 `gameDir`**，
+ * 关键不变量：**激活目录 = `game.json` 的 `gameDir`**，
  * 注册表里的 `active` 只是它的镜像；两边任何不一致都在这里被纠正。
  */
 export function useInstanceRegistry(): UseInstanceRegistry {

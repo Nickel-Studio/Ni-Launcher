@@ -1,10 +1,9 @@
 ﻿/**
- * 版本设置独立页（R2 冻结：从弹窗改为独立页，无顶栏 tab 归属）。
+ * 版本设置独立页，无顶栏 tab 归属。
  *
  * 左侧 `PagerLayout`：概览 / 设置；右上角返回实例页。
  * 页面加载时从 `useVersionFocus()` 拿到目标实例（root + versionId），
- * 再用 `version_detail` / `version_settings_get` 拉取真实数据渲染；
- * 每个控件都对接真实命令并持久化，无假控件。
+ * 详情和设置请求共用该身份；显示名称不能替代 root + versionId。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { openResourceMods, useAppNav } from "../lib/nav";

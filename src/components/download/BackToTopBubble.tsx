@@ -49,7 +49,7 @@ export interface BackToTopBubbleProps {
 /**
  * 「回到顶部」气泡浮窗（可复用）。
  *
- * 冻结红线：只有图标、没有文字；页面滚动超过阈值后出现在右下角，
+ * 图标型按钮不占正文空间；页面滚动超过阈值后出现在右下角，
  * 点击平滑滚回顶部（`prefers-reduced-motion` 下改为瞬时跳转）。
  */
 export function BackToTopBubble({

@@ -187,7 +187,7 @@ function knownLoader(loader: string): boolean {
   );
 }
 
-/** 同版本内加载器卡顺序（用户裁定：Forge → NeoForge → Fabric）。 */
+/** 同版本卡片使用确定的加载器顺序，避免 API 返回顺序影响浏览。 */
 const LOADER_ORDER: Record<string, number> = {
   forge: 0,
   neoforge: 1,

@@ -23,7 +23,7 @@ export type Route =
   | "versionSettings"
   | "downloads";
 
-/** 顶栏 tab 路由；顺序 = 顶栏展示顺序。红线圈定这四项，不得增删。 */
+/** 顶栏路由顺序与 NAV_ITEMS 保持一致；独立页不占顶栏高亮。 */
 export const TAB_ROUTES: readonly Route[] = [
   "home",
   "resources",
@@ -111,11 +111,6 @@ export function getRoute(): Route {
   return currentRoute;
 }
 
-/**
- * Shared application navigation store.
- * Returns the active route and a setter. Any component calling this hook
- * (title bar tabs, page bodies...) stays in sync automatically.
- */
 export function useAppNav(): { route: Route; setRoute: (r: Route) => void } {
   const route = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return { route, setRoute };

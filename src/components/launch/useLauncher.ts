@@ -6,7 +6,7 @@ import { isTauri, type SourcePolicy } from "../../lib/settings";
 /** 后端 `launcher-event` 的原始 payload（字段做宽松兜底）。 */
 type RawPayload = Record<string, unknown>;
 
-/** 从 payload 中按候选键名取出第一个数字。 */
+/** 忽略缺失值和非有限数；数字字符串也可参与进度计算。 */
 function pickNumber(payload: RawPayload, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = payload[key];
@@ -19,7 +19,7 @@ function pickNumber(payload: RawPayload, keys: string[]): number | undefined {
   return undefined;
 }
 
-/** 从 payload 中按候选键名取出第一个字符串。 */
+/** 数字型状态码转为文本，其余非文本值视为缺失。 */
 function pickString(payload: RawPayload, keys: string[]): string | undefined {
   for (const key of keys) {
     const v = payload[key];

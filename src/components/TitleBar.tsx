@@ -25,9 +25,7 @@ interface NavItem {
 /**
  * 顶栏导航项 —— 与 `nav.ts` 的 `TAB_ROUTES` 一一对应（顺序一致）。
  *
- * 红线圈定：顶栏只有这四项，**不得新增任何 tab**；顶栏之外的页面一律是
- * 「无 tab 归属的独立页 + 页面内返回」，通过首页等入口进入。
- * 「更多」沿用原「版本」的图标 IconVersions（层叠方块），代表其余入口。
+ * 独立详情页不占顶栏高亮，通过页面内返回恢复来源页。
  */
 const NAV_ITEMS: NavItem[] = [
   { route: "home", label: "首页", Icon: IconHome },
