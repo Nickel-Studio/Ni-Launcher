@@ -365,7 +365,7 @@
   initial-value: transparent;
 }
 
-/* ---- Semantic aliases + teammate-facing aliases -------------------------- */
+/* ---- Shared semantic aliases for component text, shape and motion -------- */
 :root {
   /* text / accent aliases */
   --text-muted: var(--text-dim);
