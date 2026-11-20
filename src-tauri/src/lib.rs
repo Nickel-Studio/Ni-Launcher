@@ -1,6 +1,5 @@
 //! Nickel 后端入口：统一注册 IPC 命令并编排窗口、配置与启动生命周期。
 //! 业务模块共享配置根、任务取消上下文及脱敏事件边界。
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -42,6 +41,7 @@ mod launch_diagnostics;
 mod launch_diagnostics_tests;
 #[allow(dead_code)]
 mod launch_log_store;
+mod launch_output;
 mod launch_state;
 mod launch_window;
 mod loader_availability;
@@ -161,6 +161,11 @@ impl From<&LaunchEvent> for FrontendEvent {
                 message: "游戏文件准备完成".into(),
             },
             LaunchEvent::Data(line) => FrontendEvent::Log { line: line.clone() },
+            LaunchEvent::ProcessOutput { .. } | LaunchEvent::OutputClosed { .. } => {
+                FrontendEvent::Error {
+                    message: "进程输出必须经过会话日志处理".into(),
+                }
+            }
             LaunchEvent::Close(code) => FrontendEvent::Close { code: *code },
             LaunchEvent::Error(message) => FrontendEvent::Error {
                 message: message.clone(),
@@ -413,6 +418,10 @@ struct ScopedLaunchEvent<'a> {
 
 fn emit_launch_event(app: &AppHandle, launch_id: &str, mut event: FrontendEvent) {
     redact_frontend_event(&mut event);
+    emit_safe_launch_event(app, launch_id, event);
+}
+
+fn emit_safe_launch_event(app: &AppHandle, launch_id: &str, event: FrontendEvent) {
     let _ = app.emit("launcher-event", ScopedLaunchEvent { launch_id, event });
 }
 
@@ -699,133 +708,128 @@ async fn run_launch_scoped(
     );
     let auth_server = apply_active_account(&app, &mut options, &settings)?;
     let mut launcher = Launcher::new(options);
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<LaunchEvent>(1024);
-    let captured = Arc::new(Mutex::new(VecDeque::<String>::with_capacity(4000)));
+    let (tx, rx) = tokio::sync::mpsc::channel::<LaunchEvent>(1024);
+    let captured = Arc::new(Mutex::new(launch_output::OutputCapture::default()));
     let emit_app = app.clone();
     let emit_launch_id = launch_id.clone();
-    let capture_log = log_path.clone();
-    let capture_buffer = captured.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            let mut frontend = FrontendEvent::from(&event);
-            redact_frontend_event(&mut frontend);
-            let log_line = match &frontend {
-                FrontendEvent::Log { line } => Some(line.clone()),
-                FrontendEvent::Error { message } => Some(format!("[错误] {message}")),
-                FrontendEvent::Close { code } => Some(format!("—— 游戏已退出（退出码 {code}）——")),
-                _ => None,
-            };
-            if let Some(line) = log_line {
-                let _ = runtime_settings::append_launch_log(&capture_log, &line);
-                if let Ok(mut buffer) = capture_buffer.lock() {
-                    if buffer.len() >= 4000 {
-                        buffer.pop_front();
-                    }
-                    buffer.push_back(runtime_settings::bounded_log_line(&line));
-                }
-            }
-            emit_launch_event(&emit_app, &emit_launch_id, frontend);
-        }
-    });
-    launcher
-        .download_game(tx.clone())
-        .await
-        .map_err(|e| format!("准备游戏文件失败：{e}"))?;
-    let data = launcher
-        .game_data()
-        .ok_or("游戏文件准备后缺少启动数据，请补全实例")?;
-    let agents =
-        runtime_agents::prepare(&app, &settings, data, auth_server.as_deref(), &directory).await?;
-    let client_jar = launcher
-        .options()
-        .path
-        .join("versions")
-        .join(&data.minecraft_json.id)
-        .join(format!("{}.jar", data.minecraft_json.id));
-    let (mode, name, path, slim) = if launcher.options().bypass_offline {
-        (
-            settings.offline_skin.as_str(),
-            Some(settings.offline_skin_name.as_str()),
-            Some(settings.offline_skin_path.as_str()),
-            settings.offline_skin_slim,
-        )
-    } else {
-        ("random", None, None, false)
-    };
-    offline_skin::prepare(
-        &directory,
-        &client_jar,
-        &data.minecraft_version,
-        mode,
-        name,
-        path,
-        slim,
-    )
-    .await?;
-    let java = data.minecraft_java.path.clone();
-    let java_major = if settings.memory_management == "custom" {
-        0
-    } else {
-        let selected_major = java_selection
-            .path
-            .as_deref()
-            .filter(|selected| selected.eq_ignore_ascii_case(&java))
-            .and(java_selection.major);
-        if let Some(major) = selected_major.filter(|major| *major > 0) {
-            major
-        } else {
-            let context = minecraft_java_rs_core::net::transfer::TransferContext::current();
-            match runtime_agents::probe_java_major(
-                std::path::Path::new(&java),
-                context.cancellation(),
-            )
-            .await
-            {
-                Ok(major) => major,
-                Err(error) => {
-                    emit_launch_warning(
-                        &app,
-                        &launch_id,
-                        &log_path,
-                        format!("{error}；本次 GC 回退为标准 G1，游戏将继续启动"),
-                    );
-                    8
-                }
-            }
-        }
-    };
-    runtime_settings::configure_launcher(
-        &mut launcher,
-        directory.clone(),
-        &settings,
-        java_major,
-        runtime_settings::windows_build(),
+    let output_pump = launch_output::OutputPump::start(
+        launch_log_store::LaunchLogStore::instance(&directory),
+        rx,
+        captured.clone(),
+        move |event| emit_safe_launch_event(&emit_app, &emit_launch_id, event),
     )?;
-    launcher.set_launch_extras(agents.jvm_args, agents.wrapper);
-    // 启动前命令失败或超过 60 秒即终止准备，避免在前置条件未满足时启动游戏。
-    runtime_settings::before_launch(&settings, &directory).await?;
-    // 启动前命令可能耗时较长，执行下一步前先确认用户没有在等待期间取消。
-    ensure_launch_not_cancelled()?;
-    let gpu = match gpu_preferences::prepare(
-        std::path::Path::new(&java),
-        settings.high_performance_gpu,
-    ) {
-        Ok(guard) => guard,
+    let prepared = async {
+        launcher
+            .download_game(tx.clone())
+            .await
+            .map_err(|e| format!("准备游戏文件失败：{e}"))?;
+        let data = launcher
+            .game_data()
+            .ok_or("游戏文件准备后缺少启动数据，请补全实例")?;
+        let agents =
+            runtime_agents::prepare(&app, &settings, data, auth_server.as_deref(), &directory)
+                .await?;
+        let client_jar = launcher
+            .options()
+            .path
+            .join("versions")
+            .join(&data.minecraft_json.id)
+            .join(format!("{}.jar", data.minecraft_json.id));
+        let (mode, name, path, slim) = if launcher.options().bypass_offline {
+            (
+                settings.offline_skin.as_str(),
+                Some(settings.offline_skin_name.as_str()),
+                Some(settings.offline_skin_path.as_str()),
+                settings.offline_skin_slim,
+            )
+        } else {
+            ("random", None, None, false)
+        };
+        offline_skin::prepare(
+            &directory,
+            &client_jar,
+            &data.minecraft_version,
+            mode,
+            name,
+            path,
+            slim,
+        )
+        .await?;
+        let java = data.minecraft_java.path.clone();
+        let java_major = if settings.memory_management == "custom" {
+            0
+        } else {
+            let selected_major = java_selection
+                .path
+                .as_deref()
+                .filter(|selected| selected.eq_ignore_ascii_case(&java))
+                .and(java_selection.major);
+            if let Some(major) = selected_major.filter(|major| *major > 0) {
+                major
+            } else {
+                let context = minecraft_java_rs_core::net::transfer::TransferContext::current();
+                match runtime_agents::probe_java_major(
+                    std::path::Path::new(&java),
+                    context.cancellation(),
+                )
+                .await
+                {
+                    Ok(major) => major,
+                    Err(error) => {
+                        emit_launch_warning(
+                            &app,
+                            &launch_id,
+                            &log_path,
+                            format!("{error}；本次 GC 回退为标准 G1，游戏将继续启动"),
+                        );
+                        8
+                    }
+                }
+            }
+        };
+        runtime_settings::configure_launcher(
+            &mut launcher,
+            directory.clone(),
+            &settings,
+            java_major,
+            runtime_settings::windows_build(),
+        )?;
+        launcher.set_launch_extras(agents.jvm_args, agents.wrapper);
+        // 启动前命令失败或超过 60 秒即终止准备，避免在前置条件未满足时启动游戏。
+        runtime_settings::before_launch(&settings, &directory).await?;
+        // 启动前命令可能耗时较长，执行下一步前先确认用户没有在等待期间取消。
+        ensure_launch_not_cancelled()?;
+        let gpu = match gpu_preferences::prepare(
+            std::path::Path::new(&java),
+            settings.high_performance_gpu,
+        ) {
+            Ok(guard) => guard,
+            Err(error) => {
+                emit_launch_warning(
+                    &app,
+                    &launch_id,
+                    &log_path,
+                    format!("高性能 GPU 偏好未生效：{error}。游戏将继续启动"),
+                );
+                None
+            }
+        };
+        ensure_launch_not_cancelled()?;
+        let child = launcher
+            .launch(tx.clone())
+            .await
+            .map_err(|e| format!("启动失败：{e}"))?;
+        Ok::<_, String>((child, java, java_major, gpu))
+    }
+    .await;
+    drop(tx);
+    let (mut child, _java, java_major, gpu) = match prepared {
+        Ok(prepared) => prepared,
         Err(error) => {
-            emit_launch_warning(
-                &app,
-                &launch_id,
-                &log_path,
-                format!("高性能 GPU 偏好未生效：{error}。游戏将继续启动"),
-            );
-            None
+            output_pump.finish().await;
+            return Err(error);
         }
     };
-    ensure_launch_not_cancelled()?;
-    let mut child = launcher
-        .launch(tx)
-        .await
-        .map_err(|e| format!("启动失败：{e}"))?;
     if let Some(pid) = child.id() {
         #[cfg(all(test, windows))]
         if let Some(observer) = tauri::Manager::try_state::<portable_live_tests::LaunchPid>(&app) {
@@ -881,15 +885,12 @@ async fn run_launch_scoped(
                             FrontendEvent::Error { message: format!("等待游戏进程失败：{error}") },
                         ),
                     };
+                    // Pipe EOF and the session flush precede Close and diagnostic/export availability.
+                    output_pump.finish().await;
                     emit_launch_event(&app, &launch_id, event);
                     if exit_code != Some(0) {
-                        // 给 stdout/stderr 转发任务一个短暂排空窗口，再读取有界证据。
-                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                        let lines = captured
-                            .lock()
-                            .map(|buffer| buffer.iter().cloned().collect::<Vec<_>>())
-                            .unwrap_or_default();
-                        let process_output = lines.join("\n");
+                        let process_output = captured.lock()
+                            .map(|buffer| buffer.text()).unwrap_or_default();
                         let report = runtime_settings::analyze_launch_failure(
                             exit_code,
                             &process_output,

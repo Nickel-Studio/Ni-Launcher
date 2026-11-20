@@ -175,7 +175,11 @@ async fn pump_events(
                 task.file(&name, 1.0, true);
             }
             LaunchEvent::Error(message) => task.stage("重试下载", &message),
-            LaunchEvent::GameDownloadFinished | LaunchEvent::Data(_) | LaunchEvent::Close(_) => {}
+            LaunchEvent::GameDownloadFinished
+            | LaunchEvent::Data(_)
+            | LaunchEvent::ProcessOutput { .. }
+            | LaunchEvent::OutputClosed { .. }
+            | LaunchEvent::Close(_) => {}
         }
     }
 }

@@ -8,7 +8,7 @@ pub use events::LaunchEvent;
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::Sender;
 
 use crate::error::LaunchError;
@@ -513,7 +513,8 @@ impl Launcher {
     /// [`LaunchError::GameDataNotReady`] if neither is available.
     ///
     /// Stdout and stderr are piped; each line is forwarded as a
-    /// [`LaunchEvent::Data`] event. The caller is responsible for calling
+    /// [`LaunchEvent::ProcessOutput`] event followed by an ordered pipe EOF.
+    /// The caller is responsible for calling
     /// `child.wait()` and emitting [`LaunchEvent::Close`] when appropriate.
     pub async fn launch(
         &self,
@@ -754,10 +755,10 @@ impl Launcher {
             .map_err(|e| LaunchError::ProcessError(e.to_string()))?;
 
         if let Some(stdout) = child.stdout.take() {
-            tokio::spawn(forward_process_output(stdout, event_tx.clone()));
+            tokio::spawn(forward_process_output(stdout, event_tx.clone(), events::ProcessStream::Stdout));
         }
         if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(forward_process_output(stderr, event_tx));
+            tokio::spawn(forward_process_output(stderr, event_tx, events::ProcessStream::Stderr));
         }
 
         Ok(child)
@@ -798,7 +799,7 @@ impl Launcher {
     /// # Example
     /// ```ignore
     /// let code = child.wait().await?.code().unwrap_or(-1);
-    /// let lines: Vec<String> = /* collected LaunchEvent::Data lines */;
+    /// let lines: Vec<String> = /* collected, redacted process output */;
     /// if Launcher::is_corrupt_crash(code, &lines) {
     ///     // Re-run download_game with skip_bundle_check: false
     /// }
@@ -830,25 +831,46 @@ impl Launcher {
     }
 }
 
-/// JVM 可能按系统代码页输出；按字节分行后宽容解码，避免一条非 UTF-8 日志截断后续事件。
-async fn forward_process_output(reader: impl tokio::io::AsyncRead + Unpin, event_tx: Sender<LaunchEvent>) {
-    let mut reader = BufReader::new(reader);
+/// Forward bounded byte lines with stream identity and an ordered EOF marker.
+/// Oversized lines are discarded as a unit; the consumer must fail closed.
+#[doc(hidden)]
+pub async fn forward_process_output(
+    mut reader: impl tokio::io::AsyncRead + Unpin,
+    event_tx: Sender<LaunchEvent>,
+    stream: events::ProcessStream,
+) {
+    const MAX_LINE_BYTES: usize = 128 * 1024;
+    let mut chunk = [0u8; 8192];
     let mut bytes = Vec::new();
+    let mut discarded = false;
+    let mut failed = false;
     loop {
-        bytes.clear();
-        match reader.read_until(b'\n', &mut bytes).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                if bytes.last() == Some(&b'\n') {
-                    bytes.pop();
-                    if bytes.last() == Some(&b'\r') { bytes.pop(); }
-                }
-                let line = String::from_utf8_lossy(&bytes).into_owned();
-                // 接收端关闭后仍排空管道，避免 JVM 被写满的 stdout/stderr 阻塞。
-                let _ = event_tx.send(LaunchEvent::Data(line)).await;
+        let count = match reader.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(count) => count,
+            Err(_) => { failed = true; break; }
+        };
+        for byte in &chunk[..count] {
+            if *byte == b'\n' {
+                if !discarded && bytes.last() == Some(&b'\r') { bytes.pop(); }
+                let line = if discarded { String::new() } else { String::from_utf8_lossy(&bytes).into_owned() };
+                // Even a closed receiver must not leave a child blocked on its pipe.
+                let _ = event_tx.send(LaunchEvent::ProcessOutput { stream, line, discarded }).await;
+                bytes.clear();
+                discarded = false;
+            } else if !discarded {
+                if bytes.len() >= MAX_LINE_BYTES {
+                    bytes.clear();
+                    discarded = true;
+                } else { bytes.push(*byte); }
             }
         }
     }
+    if !bytes.is_empty() || discarded {
+        let line = if discarded { String::new() } else { String::from_utf8_lossy(&bytes).into_owned() };
+        let _ = event_tx.send(LaunchEvent::ProcessOutput { stream, line, discarded }).await;
+    }
+    let _ = event_tx.send(LaunchEvent::OutputClosed { stream, failed }).await;
 }
 
 
@@ -1186,7 +1208,7 @@ mod tests {
         use tokio::io::AsyncWriteExt;
         let (mut writer, reader) = tokio::io::duplex(7);
         let (tx, mut rx) = tokio::sync::mpsc::channel(2);
-        let forward = tokio::spawn(forward_process_output(reader, tx));
+        let forward = tokio::spawn(forward_process_output(reader, tx, events::ProcessStream::Stdout));
         let write = tokio::spawn(async move {
             let bytes = b"before\r\nWARN \xD6\xD0\xCE\xC4\xFF\r\n\nCreated textures/atlas\nSound engine started\nUTF8 \xE4\xB8\xAD\xE6\x96\x87\nlast\xFF";
             for byte in bytes {
@@ -1197,7 +1219,11 @@ mod tests {
         let mut lines = Vec::new();
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             while let Some(event) = rx.recv().await {
-                if let LaunchEvent::Data(line) = event { lines.push(line); }
+                if let LaunchEvent::ProcessOutput { stream, line, discarded } = event {
+                    assert_eq!(stream, events::ProcessStream::Stdout);
+                    assert!(!discarded);
+                    lines.push(line);
+                }
             }
             write.await.unwrap();
             forward.await.unwrap();
@@ -1220,7 +1246,7 @@ mod tests {
         let (mut writer, reader) = tokio::io::duplex(8);
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         drop(rx);
-        let forward = tokio::spawn(forward_process_output(reader, tx));
+        let forward = tokio::spawn(forward_process_output(reader, tx, events::ProcessStream::Stdout));
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             for _ in 0..64 {
                 writer.write_all(b"\xFFwarning\nrendered\n").await.unwrap();

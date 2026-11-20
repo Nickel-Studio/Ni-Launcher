@@ -690,23 +690,23 @@ pub fn start_launch_log(directory: &Path) -> PathBuf {
     store.log_path().to_path_buf()
 }
 
-/// 前端缓冲与落盘共用同一脱敏 / 截断结果，避免超长行放大内存占用。
+/// Complete dynamic messages are redacted before the frontend length cap.
 pub fn bounded_log_line(line: &str) -> String {
-    let sanitized = launch_log_store::redact_sensitive_text(line);
-    if sanitized.chars().count() > LOG_LINE_MAX_CHARS {
-        sanitized.chars().take(LOG_LINE_MAX_CHARS).collect()
-    } else {
-        sanitized
-    }
+    bounded_safe_log_line(&launch_log_store::redact_sensitive_text(line))
 }
 
-/// Derive the instance from its log path; the store owns redaction and rotation.
+/// Session output is already redacted; a presentation cap must not reinterpret fragments.
+pub(crate) fn bounded_safe_log_line(line: &str) -> String {
+    line.chars().take(LOG_LINE_MAX_CHARS).collect()
+}
+
+/// Complete launcher-generated messages use the store's document API, not the process stream API.
 pub fn append_launch_log(path: &Path, line: &str) -> Result<(), String> {
     let base = path
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| format!("无法从日志路径解析实例目录：{}", path.display()))?;
-    LaunchLogStore::instance(base).append_text(&bounded_log_line(line))
+    LaunchLogStore::instance(base).append_text(line)
 }
 
 /// 读取实例内最近的有界游戏日志并分类；任一文件损坏都只跳过该来源。

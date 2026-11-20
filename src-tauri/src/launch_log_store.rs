@@ -43,7 +43,7 @@ pub const MAX_APPEND_BYTES: usize = 512 * 1024;
 const MIN_LOG_BYTES: u64 = 1024;
 const TRUNCATION_MARKER: &str = "[日志片段已截断]\n";
 const REDACTION_MASK: &str = "***";
-const REDACTION_FAILURE: &str = "[日志含无法安全脱敏的敏感字段]";
+pub(crate) const REDACTION_FAILURE: &str = "[日志含无法安全脱敏的敏感字段]";
 
 static LOG_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -162,7 +162,7 @@ impl LaunchLogStore {
     /// 脱敏后追加一段文本。内容为空时直接返回成功。
     pub fn append_text(&self, text: &str) -> Result<(), String> {
         let redacted = redact_sensitive_text(text);
-        self.append_redacted(&redacted)
+        self.append_safe_text(&redacted)
     }
 
     /// 按行追加；行之间补 `\n`。
@@ -173,11 +173,11 @@ impl LaunchLogStore {
         self.append_text(&lines.join("\n"))
     }
 
-    fn append_redacted(&self, text: &str) -> Result<(), String> {
+    /// Only accepts text already redacted as a complete document or session output.
+    pub(crate) fn append_safe_text(&self, text: &str) -> Result<(), String> {
         if text.trim().is_empty() {
             return Ok(());
         }
-
         let _guard = write_lock();
         fs::create_dir_all(&self.paths.directory).map_err(|error| {
             format!(
@@ -185,11 +185,10 @@ impl LaunchLogStore {
                 self.paths.directory.display()
             )
         })?;
-
         let normalized = ensure_trailing_newline(&normalize_newlines(text));
         let append_limit = self.max_bytes.min(MAX_APPEND_BYTES as u64).max(1) as usize;
-        let append = cap_append_bytes(&normalized, append_limit);
-
+        let mut append = cap_append_bytes(&normalized, append_limit);
+        let mut failed = normalized.contains(REDACTION_FAILURE);
         let current_len = match fs::metadata(&self.paths.log_file) {
             Ok(metadata) => {
                 if !metadata.is_file() {
@@ -208,11 +207,29 @@ impl LaunchLogStore {
                 ));
             }
         };
-
         if current_len.saturating_add(append.len() as u64) > self.max_bytes {
+            // Carry a failure into the new file before its old marker can rotate
+            // out of the retained archives. Inspection is bounded and fail-closed.
+            failed |= if current_len > MAX_READ_BYTES as u64 {
+                true
+            } else if current_len > 0 {
+                let mut prior = Vec::new();
+                File::open(&self.paths.log_file)
+                    .and_then(|file| file.take(MAX_READ_BYTES as u64).read_to_end(&mut prior))
+                    .map_err(|_| "无法检查上一份启动日志的脱敏状态")?;
+                prior
+                    .windows(REDACTION_FAILURE.len())
+                    .any(|bytes| bytes == REDACTION_FAILURE.as_bytes())
+            } else {
+                false
+            };
             self.rotate_locked()?;
         }
-
+        if failed && !append.contains(REDACTION_FAILURE) {
+            let marker = format!("{REDACTION_FAILURE}\n");
+            append = marker.clone()
+                + &cap_append_bytes(&append, append_limit.saturating_sub(marker.len()));
+        }
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -550,6 +567,370 @@ fn is_crash_report_name(name: &str) -> bool {
     lower.starts_with("crash-") || lower.ends_with(".txt") || lower.ends_with(".log")
 }
 
+pub(crate) const STREAM_LINE_MAX_BYTES: usize = 128 * 1024;
+const STREAM_PENDING_MAX_BYTES: usize = MAX_COLLECTION_BYTES + STREAM_LINE_MAX_BYTES;
+const STREAM_PENDING_MAX_LINES: usize = 16_384;
+const STREAM_PENDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[derive(Debug)]
+struct QuoteBoundary {
+    start: usize,
+    index: usize,
+    quote: u8,
+    width: usize,
+    escaped: bool,
+}
+
+impl QuoteBoundary {
+    fn new(text: &str, start: usize, width: usize) -> Self {
+        Self {
+            start,
+            index: start + width,
+            quote: text.as_bytes()[start],
+            width,
+            escaped: false,
+        }
+    }
+
+    fn advance(&mut self, text: &str) -> Result<Option<(usize, usize)>, ScanFailure> {
+        let bytes = text.as_bytes();
+        while self.index < bytes.len() {
+            if self.index - self.start >= MAX_COLLECTION_BYTES {
+                return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+            }
+            if !self.escaped
+                && bytes[self.index] == self.quote
+                && bytes
+                    .get(self.index..self.index + self.width)
+                    .is_some_and(|s| s.iter().all(|b| *b == self.quote))
+            {
+                let mut end = self.index + self.width;
+                if self.width == 3 {
+                    while end < bytes.len() && bytes[end] == self.quote {
+                        end += 1;
+                        if end - self.start > MAX_COLLECTION_BYTES {
+                            return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+                        }
+                    }
+                } else if self.quote == b'\'' && bytes.get(end) == Some(&self.quote) {
+                    self.index = end + 1;
+                    continue;
+                }
+                if end - self.start > MAX_COLLECTION_BYTES {
+                    return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
+                }
+                return Ok(Some((self.index, end)));
+            }
+            self.escaped = bytes[self.index] == b'\\'
+                && !self.escaped
+                && !(self.quote == b'\'' && self.width == 3);
+            self.index += 1;
+        }
+        Ok(None)
+    }
+}
+
+#[derive(Debug)]
+struct CollectionBoundary {
+    start: usize,
+    index: usize,
+    stack: Vec<u8>,
+    quote: Option<QuoteBoundary>,
+    line_comment: bool,
+    block_comment: bool,
+}
+
+impl CollectionBoundary {
+    fn new(start: usize) -> Self {
+        Self {
+            start,
+            index: start,
+            stack: Vec::new(),
+            quote: None,
+            line_comment: false,
+            block_comment: false,
+        }
+    }
+
+    fn advance(&mut self, text: &str) -> Result<Option<usize>, ScanFailure> {
+        let bytes = text.as_bytes();
+        while self.index < bytes.len() {
+            if self.index - self.start >= MAX_COLLECTION_BYTES {
+                return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
+            }
+            if let Some(quote) = self.quote.as_mut() {
+                let Some((_, end)) = quote.advance(text)? else {
+                    return Ok(None);
+                };
+                self.index = end;
+                self.quote = None;
+                if end - self.start > MAX_COLLECTION_BYTES {
+                    return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
+                }
+                continue;
+            }
+            let byte = bytes[self.index];
+            if self.line_comment {
+                self.line_comment = !matches!(byte, b'\r' | b'\n');
+                self.index += 1;
+                continue;
+            }
+            if self.block_comment {
+                if bytes[self.index..].starts_with(b"*/") {
+                    self.block_comment = false;
+                    self.index += 2;
+                } else {
+                    self.index += 1;
+                }
+                continue;
+            }
+            if matches!(byte, b'"' | b'\'' | b'`') {
+                let width = quote_width(bytes, self.index);
+                self.quote = Some(QuoteBoundary::new(text, self.index, width));
+                continue;
+            }
+            // URL fragments inside a map are data, not comments.
+            let comment_boundary = self.index == self.start
+                || bytes[self.index - 1].is_ascii_whitespace()
+                || matches!(bytes[self.index - 1], b'[' | b'{' | b',');
+            if comment_boundary && (byte == b'#' || bytes[self.index..].starts_with(b"//")) {
+                self.line_comment = true;
+                self.index += 1;
+                continue;
+            }
+            if comment_boundary && bytes[self.index..].starts_with(b"/*") {
+                self.block_comment = true;
+                self.index += 2;
+                continue;
+            }
+            match byte {
+                b'[' | b'{' => {
+                    if self.stack.len() >= MAX_COLLECTION_DEPTH {
+                        return Err(ScanFailure::Invalid("日志敏感集合嵌套超过安全处理深度"));
+                    }
+                    self.stack.push(if byte == b'[' { b']' } else { b'}' });
+                }
+                b']' | b'}' => {
+                    if self.stack.pop() != Some(byte) {
+                        return Err(ScanFailure::Invalid(
+                            "日志敏感集合括号不匹配，无法安全生成完整报告",
+                        ));
+                    }
+                    if self.stack.is_empty() {
+                        return Ok(Some(self.index + 1));
+                    }
+                }
+                _ => {}
+            }
+            self.index += 1;
+        }
+        Ok(None)
+    }
+}
+
+fn quote_width(bytes: &[u8], start: usize) -> usize {
+    if bytes[start] != b'`'
+        && bytes
+            .get(start..start + 3)
+            .is_some_and(|s| s.iter().all(|b| *b == bytes[start]))
+    {
+        3
+    } else {
+        1
+    }
+}
+
+#[derive(Debug)]
+enum PendingBoundary {
+    Header,
+    Quote(QuoteBoundary),
+    Collection(CollectionBoundary),
+    Indented { indent: usize, cursor: usize },
+}
+
+impl PendingBoundary {
+    fn new(text: &str, key_start: usize, value_start: Option<usize>) -> Self {
+        let Some(start) = value_start else {
+            return Self::Header;
+        };
+        match text.as_bytes()[start] {
+            b'[' | b'{' => Self::Collection(CollectionBoundary::new(start)),
+            b'"' | b'\'' | b'`' => Self::Quote(QuoteBoundary::new(
+                text,
+                start,
+                quote_width(text.as_bytes(), start),
+            )),
+            _ => Self::Indented {
+                indent: line_indent(text, key_start),
+                cursor: scan_line_end(text, start),
+            },
+        }
+    }
+
+    fn advance(&mut self, text: &str) -> Result<bool, ScanFailure> {
+        match self {
+            Self::Header => Ok(true),
+            Self::Quote(quote) => Ok(quote.advance(text)?.is_some()),
+            Self::Collection(collection) => Ok(collection.advance(text)?.is_some()),
+            Self::Indented { indent, cursor } => {
+                while *cursor < text.len() {
+                    while matches!(text.as_bytes().get(*cursor), Some(b'\r' | b'\n')) {
+                        *cursor += 1;
+                    }
+                    if *cursor == text.len() {
+                        break;
+                    }
+                    let end = scan_line_end(text, *cursor);
+                    let content = skip_spaces(text, *cursor);
+                    if content < end && content - *cursor <= *indent {
+                        return Ok(true);
+                    }
+                    *cursor = end;
+                }
+                Ok(false)
+            }
+        }
+    }
+}
+
+/// A stream keeps only an unfinished field; complete ordinary lines are released immediately.
+/// Invalid or discarded input quarantines that stream until EOF, never its sibling stream.
+#[derive(Debug, Default)]
+pub(crate) struct StreamRedactor {
+    pending: String,
+    boundary: Option<PendingBoundary>,
+    started: Option<std::time::Instant>,
+    pending_lines: usize,
+    quarantined: bool,
+    finished: bool,
+}
+
+impl StreamRedactor {
+    pub(crate) fn push_line(&mut self, line: &str, discarded: bool) -> String {
+        if self.finished || self.quarantined {
+            return String::new();
+        }
+        if discarded || line.len() > STREAM_LINE_MAX_BYTES {
+            return self.reject();
+        }
+        let text = ensure_trailing_newline(&normalize_newlines(line));
+        if self.pending.is_empty() {
+            return self.accept(text);
+        }
+        if self.pending.len().saturating_add(text.len()) > STREAM_PENDING_MAX_BYTES
+            || self.pending_lines >= STREAM_PENDING_MAX_LINES
+            || self
+                .started
+                .is_some_and(|start| start.elapsed() >= STREAM_PENDING_TIMEOUT)
+        {
+            return self.reject();
+        }
+        self.pending.push_str(&text);
+        self.pending_lines += 1;
+        let completed_value = !matches!(self.boundary, Some(PendingBoundary::Header));
+        if !completed_value && self.pending.len() > 4096 {
+            return self.reject();
+        }
+        match self.boundary.as_mut().unwrap().advance(&self.pending) {
+            Ok(false) => String::new(),
+            Ok(true) => {
+                let text = std::mem::take(&mut self.pending);
+                self.boundary = None;
+                if completed_value {
+                    self.started = None;
+                }
+                self.pending_lines = 0;
+                self.accept(text)
+            }
+            Err(_) => self.reject(),
+        }
+    }
+
+    fn accept(&mut self, text: String) -> String {
+        match redact_document(&text, false) {
+            Ok(safe) => {
+                self.started = None;
+                self.pending_lines = 0;
+                safe
+            }
+            Err(ScanFailure::IncompleteField {
+                key_start,
+                value_start,
+            }) => {
+                let line_start = text[..key_start].rfind('\n').map_or(0, |n| n + 1);
+                let (safe, pending_start) = match redact_document(&text[..line_start], true) {
+                    Ok(safe) => (safe, line_start),
+                    // A previous value can close on the next field's opening line.
+                    // Retain that complete prefix too instead of cutting its boundary.
+                    Err(_) => (String::new(), 0),
+                };
+                self.pending = text[pending_start..].to_owned();
+                self.boundary = Some(PendingBoundary::new(
+                    &self.pending,
+                    key_start - pending_start,
+                    value_start.map(|n| n - pending_start),
+                ));
+                if self
+                    .boundary
+                    .as_mut()
+                    .unwrap()
+                    .advance(&self.pending)
+                    .is_err()
+                {
+                    return self.reject();
+                }
+                if self.started.is_none() {
+                    self.started = Some(std::time::Instant::now());
+                }
+                self.pending_lines = self.pending.lines().count();
+                safe
+            }
+            Err(_) => self.reject(),
+        }
+    }
+
+    pub(crate) fn expire(&mut self) -> String {
+        if self
+            .started
+            .is_some_and(|start| start.elapsed() >= STREAM_PENDING_TIMEOUT)
+        {
+            self.reject()
+        } else {
+            String::new()
+        }
+    }
+
+    pub(crate) fn finish(&mut self, failed: bool) -> String {
+        if self.finished {
+            return String::new();
+        }
+        self.finished = true;
+        if failed && !self.quarantined {
+            return self.reject();
+        }
+        if self.quarantined {
+            return String::new();
+        }
+        let text = std::mem::take(&mut self.pending);
+        self.boundary = None;
+        self.started = None;
+        redact_document(&text, true).unwrap_or_else(|_| self.reject())
+    }
+
+    pub(crate) fn failed(&self) -> bool {
+        self.quarantined
+    }
+
+    fn reject(&mut self) -> String {
+        self.pending.clear();
+        self.pending.shrink_to_fit();
+        self.boundary = None;
+        self.started = None;
+        self.quarantined = true;
+        format!("{REDACTION_FAILURE}\n")
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 脱敏
 // ─────────────────────────────────────────────────────────────────────────────
@@ -576,12 +957,18 @@ const MAX_KEY_BYTES: usize = 256;
 #[derive(Debug)]
 enum ScanFailure {
     Incomplete,
+    IncompleteField {
+        key_start: usize,
+        value_start: Option<usize>,
+    },
     Invalid(&'static str),
 }
 impl ScanFailure {
     fn message(&self) -> String {
         match self {
-            Self::Incomplete => "日志敏感字段未闭合，无法安全生成完整报告".into(),
+            Self::Incomplete | Self::IncompleteField { .. } => {
+                "日志敏感字段未闭合，无法安全生成完整报告".into()
+            }
             Self::Invalid(message) => (*message).into(),
         }
     }
@@ -737,11 +1124,11 @@ fn collect_key_value_spans(
             continue;
         };
         if !explicit && !cli {
-            if !final_input
-                && separator == text.len()
-                && (quoted || text[..key_start].trim().is_empty())
-            {
-                return Err(ScanFailure::Incomplete);
+            if !final_input && separator == text.len() && quoted {
+                return Err(ScanFailure::IncompleteField {
+                    key_start,
+                    value_start: None,
+                });
             }
             continue;
         }
@@ -755,7 +1142,10 @@ fn collect_key_value_spans(
         };
         if start == text.len() {
             if !final_input {
-                return Err(ScanFailure::Incomplete);
+                return Err(ScanFailure::IncompleteField {
+                    key_start,
+                    value_start: None,
+                });
             }
             continue;
         }
@@ -768,22 +1158,24 @@ fn collect_key_value_spans(
             && (text[separator + 1..start].contains('\n')
                 && line_indent(text, start) > line_indent(text, key_start)
                 || yaml_field_start(text, key_start));
-        let (span, consumed) = if block_value {
+        let scanned = if block_value {
             let end = scan_indented_end(
                 text,
                 key_start,
                 start,
                 scan_line_end(text, start),
                 final_input,
-            )?;
-            (
-                RedactionSpan {
-                    start,
+            );
+            end.map(|end| {
+                (
+                    RedactionSpan {
+                        start,
+                        end,
+                        kind: MaskKind::Collection,
+                    },
                     end,
-                    kind: MaskKind::Collection,
-                },
-                end,
-            )
+                )
+            })
         } else {
             scan_sensitive_value(
                 text,
@@ -793,8 +1185,15 @@ fn collect_key_value_spans(
                 key.trim_start_matches('-')
                     .eq_ignore_ascii_case("authorization"),
                 final_input,
-            )?
+            )
         };
+        let (span, consumed) = scanned.map_err(|error| match error {
+            ScanFailure::Incomplete => ScanFailure::IncompleteField {
+                key_start,
+                value_start: Some(start),
+            },
+            error => error,
+        })?;
         index = consumed.max(start + 1);
         if span.end > span.start {
             push_redaction_span(spans, span)
@@ -942,110 +1341,17 @@ fn scan_indented_end(
 }
 
 fn scan_quote_end(text: &str, start: usize, width: usize) -> Result<(usize, usize), ScanFailure> {
-    let bytes = text.as_bytes();
-    let quote = bytes[start];
-    let mut index = start + width;
-    let mut escaped = false;
-    while index < bytes.len() {
-        if index - start >= MAX_COLLECTION_BYTES {
-            return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
-        }
-        if !escaped
-            && bytes[index] == quote
-            && bytes
-                .get(index..index + width)
-                .is_some_and(|s| s.iter().all(|b| *b == quote))
-        {
-            let mut end = index + width;
-            if width == 3 {
-                while end < bytes.len() && bytes[end] == quote {
-                    end += 1;
-                    if end - start > MAX_COLLECTION_BYTES {
-                        return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
-                    }
-                }
-            } else if quote == b'\'' && bytes.get(end) == Some(&quote) {
-                index = end + 1;
-                continue;
-            }
-            if end - start > MAX_COLLECTION_BYTES {
-                return Err(ScanFailure::Invalid("日志敏感字段超过安全处理大小"));
-            }
-            return Ok((index, end));
-        }
-        escaped = bytes[index] == b'\\' && !escaped && !(quote == b'\'' && width == 3);
-        index += 1;
-    }
-    Err(ScanFailure::Incomplete)
+    QuoteBoundary::new(text, start, width)
+        .advance(text)?
+        .ok_or(ScanFailure::Incomplete)
 }
 
 fn scan_collection_end(text: &str, start: usize) -> Result<usize, ScanFailure> {
-    let bytes = text.as_bytes();
-    let mut stack = Vec::new();
-    let mut index = start;
-    while index < bytes.len() {
-        if index - start >= MAX_COLLECTION_BYTES {
-            return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
-        }
-        let byte = bytes[index];
-        if matches!(byte, b'"' | b'\'' | b'`') {
-            let width = if byte != b'`'
-                && bytes
-                    .get(index..index + 3)
-                    .is_some_and(|s| s.iter().all(|b| *b == byte))
-            {
-                3
-            } else {
-                1
-            };
-            index = scan_quote_end(text, index, width)?.1;
-            if index - start > MAX_COLLECTION_BYTES {
-                return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
-            }
-            continue;
-        }
-        // Comment markers are only comments at token boundaries; URLs and
-        // unquoted map values may contain // or # as ordinary data.
-        let comment_boundary = index == start
-            || bytes[index - 1].is_ascii_whitespace()
-            || matches!(bytes[index - 1], b'[' | b'{' | b',');
-        if comment_boundary && (byte == b'#' || bytes[index..].starts_with(b"//")) {
-            index = scan_line_end(text, index);
-            continue;
-        }
-        if comment_boundary && bytes[index..].starts_with(b"/*") {
-            let end = text[index + 2..]
-                .find("*/")
-                .ok_or(ScanFailure::Incomplete)?;
-            index += end + 4;
-            if index - start > MAX_COLLECTION_BYTES {
-                return Err(ScanFailure::Invalid("日志敏感集合超过安全处理大小"));
-            }
-            continue;
-        }
-        match byte {
-            b'[' | b'{' => {
-                if stack.len() >= MAX_COLLECTION_DEPTH {
-                    return Err(ScanFailure::Invalid("日志敏感集合嵌套超过安全处理深度"));
-                }
-                stack.push(if byte == b'[' { b']' } else { b'}' });
-            }
-            b']' | b'}' => {
-                if stack.pop() != Some(byte) {
-                    return Err(ScanFailure::Invalid(
-                        "日志敏感集合括号不匹配，无法安全生成完整报告",
-                    ));
-                }
-                if stack.is_empty() {
-                    return Ok(index + 1);
-                }
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Err(ScanFailure::Incomplete)
+    CollectionBoundary::new(start)
+        .advance(text)?
+        .ok_or(ScanFailure::Incomplete)
 }
+
 fn scan_value_end(text: &str, start: usize) -> usize {
     let mut index = start;
     while let Some(byte) = text.as_bytes().get(index).copied() {
@@ -1316,5 +1622,153 @@ mod collection_redaction_tests {
             assert_eq!(value["next"], "visible");
             assert_eq!(redact_sensitive_text(&redacted), redacted);
         }
+    }
+}
+#[cfg(test)]
+mod stream_redaction_tests {
+    use super::*;
+
+    #[test]
+    fn streams_use_the_document_lexer_without_publishing_continuations() {
+        for raw in [
+            "{\n\"password\": [\n],\n\"next\":\"visible\"\n}\n",
+            "{\n\"pass\\u0077ord\"\n:\n[\n{\"value\":\"stream-secret\"}\n],\n\"next\":\"visible\"\n}\n",
+            "password=\"\nstream-secret\n\"\nnext=visible\n",
+            "password=\"\"\"\r\nstream-secret\r\n\"\"\"\r\nnext=visible\r\n",
+            "password='''\nstream-secret\\tail\n'''\nnext=visible\n",
+            "password: |2+ # comment\n  stream-secret\nnext: visible\n",
+            "password:\n  primary: stream-secret\nnext: visible\n",
+            "password: stream-secret\n  continuation\nnext: visible\n",
+            "password=[/* ]\n } */ 'stream-secret',\n{value:https://example.invalid/stream-secret}]\nnext=visible\n",
+            "password=[\n`stream-secret\\`}]`\n]\nnext=visible\n",
+        ] {
+            let mut stream = StreamRedactor::default();
+            let mut output = String::new();
+            for line in raw.split_terminator('\n') {
+                let safe = stream.push_line(line, false);
+                assert!(!safe.contains("stream-secret"), "{raw}");
+                output.push_str(&safe);
+            }
+            output.push_str(&stream.finish(false));
+            assert!(!output.contains(REDACTION_FAILURE), "{raw}: {output}");
+            assert!(output.contains("visible"));
+            assert_eq!(
+                output,
+                redact_sensitive_text_checked(&normalize_newlines(raw)).unwrap()
+            );
+            assert!(stream.finish(false).is_empty());
+        }
+    }
+
+    #[test]
+    fn ordinary_lines_are_not_delayed_by_unrelated_sensitive_words() {
+        let mut stream = StreamRedactor::default();
+        for line in [
+            "SyntaxError: Unexpected token { in JSON",
+            "token",
+            "password confirmation failed",
+            "UTF8 中文",
+            "next=visible",
+        ] {
+            assert_eq!(stream.push_line(line, false), format!("{line}\n"));
+            assert!(stream.pending.is_empty());
+        }
+        assert!(stream.finish(false).is_empty());
+    }
+
+    #[test]
+    fn incomplete_values_flush_fail_closed_and_new_sessions_are_independent() {
+        for prefix in ["password=[", "password=\"", "password='''", "password=`"] {
+            let mut stream = StreamRedactor::default();
+            assert!(stream.push_line(prefix, false).is_empty());
+            assert!(stream.push_line("stream-secret", false).is_empty());
+            assert_eq!(stream.finish(false), format!("{REDACTION_FAILURE}\n"));
+            assert!(stream.push_line("stream-secret", false).is_empty());
+            let mut next = StreamRedactor::default();
+            assert_eq!(next.push_line("next=visible", false), "next=visible\n");
+        }
+        let mut yaml = StreamRedactor::default();
+        assert!(yaml.push_line("password: |", false).is_empty());
+        assert!(yaml.push_line("  stream-secret", false).is_empty());
+        assert_eq!(yaml.finish(false), "password: \"***\"\n");
+    }
+
+    #[test]
+    fn pending_bytes_lines_and_timeout_are_bounded() {
+        let mut lines = StreamRedactor::default();
+        assert!(lines.push_line("password=[", false).is_empty());
+        for _ in 0..STREAM_PENDING_MAX_LINES {
+            lines.push_line("", false);
+        }
+        assert!(lines.quarantined);
+        assert!(lines.pending.is_empty());
+        assert!(lines.push_line("stream-secret", false).is_empty());
+
+        let mut bytes = StreamRedactor::default();
+        bytes.push_line("password=[", false);
+        for _ in 0..20 {
+            let safe = bytes.push_line(&"stream-secret ".repeat(7000), false);
+            assert!(!safe.contains("stream-secret"));
+            assert!(bytes.pending.len() <= STREAM_PENDING_MAX_BYTES);
+        }
+        assert!(bytes.quarantined);
+
+        let mut timeout = StreamRedactor::default();
+        timeout.push_line("password=[", false);
+        timeout.started = Some(std::time::Instant::now() - STREAM_PENDING_TIMEOUT);
+        assert_eq!(timeout.expire(), format!("{REDACTION_FAILURE}\n"));
+        assert!(timeout.expire().is_empty());
+
+        let mut discarded = StreamRedactor::default();
+        assert_eq!(
+            discarded.push_line("", true),
+            format!("{REDACTION_FAILURE}\n")
+        );
+        assert!(discarded.push_line("stream-secret", false).is_empty());
+    }
+
+    #[test]
+    fn long_collections_advance_a_cursor_instead_of_rescanning_every_line() {
+        let mut stream = StreamRedactor::default();
+        stream.push_line("password=[", false);
+        for _ in 0..2000 {
+            assert!(stream.push_line("\"stream-secret\",", false).is_empty());
+            let Some(PendingBoundary::Collection(boundary)) = &stream.boundary else {
+                panic!("collection state");
+            };
+            assert_eq!(boundary.index, stream.pending.len());
+        }
+        let safe = stream.push_line("] next=visible", false);
+        assert_eq!(safe, "password=\"***\" next=visible\n");
+        assert!(stream.pending.is_empty());
+        assert!(stream.finish(false).is_empty());
+    }
+
+    #[test]
+    fn successive_fields_reset_timeouts_but_incomplete_headers_do_not() {
+        let mut stream = StreamRedactor::default();
+        assert!(stream.push_line("password=[", false).is_empty());
+        let old = std::time::Instant::now() - STREAM_PENDING_TIMEOUT / 2;
+        stream.started = Some(old);
+        assert_eq!(stream.push_line("] password=[", false), "");
+        assert!(stream.started.unwrap() > old);
+        assert_eq!(
+            stream.push_line("] next=visible", false),
+            "password=\"***\" password=\"***\" next=visible\n"
+        );
+        assert!(!stream.failed());
+
+        let mut header = StreamRedactor::default();
+        assert!(header.push_line("\"password\"", false).is_empty());
+        header.started = Some(old);
+        assert!(header.push_line("", false).is_empty());
+        assert_eq!(header.started, Some(old));
+        assert!(header.push_line(":", false).is_empty());
+        assert_eq!(header.started, Some(old));
+        assert_eq!(
+            header.push_line("[]", false),
+            "\"password\"\n\n:\n\"***\"\n"
+        );
+        assert!(!header.failed());
     }
 }
