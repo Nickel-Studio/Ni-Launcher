@@ -584,14 +584,31 @@ fn decode_script_string(inner: &str) -> Option<String> {
     Some(result)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScriptPolicyLanguage {
+    JavaScript,
+    TypeScript,
+}
+
+impl ScriptPolicyLanguage {
+    fn from_extension(extension: &str) -> Option<Self> {
+        match extension {
+            "js" => Some(Self::JavaScript),
+            "ts" => Some(Self::TypeScript),
+            _ => None,
+        }
+    }
+}
+
 struct JavaScriptPolicyFrame {
     close: u8,
     regex_after: bool,
     statement_body: bool,
+    property_name: bool,
     function_body: Option<bool>,
 }
 
-fn javascript_policy_text(text: &str) -> Result<String, ()> {
+fn javascript_policy_text(text: &str, language: ScriptPolicyLanguage) -> Result<String, ()> {
     use ress::ManualScanner;
     use ress::tokens::{Punct, Token};
     if text.len() as u64 > CONFIG_MAX_BYTES {
@@ -609,6 +626,7 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
     let mut pending_function = None;
     let mut function_body = None;
     let mut pending_class = None;
+    let mut previous_end = 0;
     for _ in 0..MAX_POLICY_EVENTS {
         let Some(item) = scanner.next_token() else {
             return Err(());
@@ -659,7 +677,11 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
         let was_closed_paren = closed_paren;
         let was_arrow = arrow;
         let was_member = member_name;
+        let was_property = stack.last().is_some_and(|frame| frame.property_name);
         let was_function_body = function_body.take();
+        if let Some(frame) = stack.last_mut() {
+            frame.property_name = false;
+        }
         conditional = false;
         closed_paren = false;
         arrow = false;
@@ -674,12 +696,14 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
                         close: b')',
                         regex_after: was_conditional,
                         statement_body: false,
+                        property_name: false,
                         function_body: pending_function.take(),
                     },
                     Token::Punct(Punct::OpenBracket) => JavaScriptPolicyFrame {
                         close: b']',
                         regex_after: false,
                         statement_body: false,
+                        property_name: false,
                         function_body: None,
                     },
                     _ => {
@@ -701,6 +725,7 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
                             close: b'}',
                             regex_after,
                             statement_body,
+                            property_name: !statement_body,
                             function_body: None,
                         }
                     }
@@ -732,13 +757,29 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
                 statement_start = false;
                 member_name = true;
             }
+            Token::Punct(Punct::Bang)
+                if language == ScriptPolicyLanguage::TypeScript
+                    && !regex_allowed
+                    && !text[previous_end..item.span.start]
+                        .chars()
+                        .any(|ch| matches!(ch, '\r' | '\n' | '\u{2028}' | '\u{2029}')) =>
+            {
+                // A TS postfix assertion preserves the operand; after a line break
+                // `!` is prefix negation instead. `!=` and `!==` stay operators.
+                statement_start = false;
+            }
             Token::Punct(punct) => {
                 regex_allowed = true;
                 statement_start = *punct == Punct::SemiColon
                     && stack.last().is_none_or(|frame| frame.statement_body);
                 arrow = *punct == Punct::EqualGreaterThan;
+                if *punct == Punct::Comma {
+                    if let Some(frame) = stack.last_mut() {
+                        frame.property_name = frame.close == b'}' && !frame.statement_body;
+                    }
+                }
             }
-            Token::Keyword(_) if was_member => {
+            Token::Keyword(_) if was_member || was_property => {
                 regex_allowed = false;
                 statement_start = false;
             }
@@ -770,7 +811,7 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
                             | "else"
                             | "do"
                     );
-                statement_start = matches!(word, "else" | "do" | "try" | "finally")
+                statement_start = matches!(word, "else" | "do" | "try" | "finally" | "catch")
                     || statement_start && matches!(word, "export" | "default");
             }
             Token::Ident(identifier) if identifier.as_ref() == "async" && !was_member => {
@@ -785,6 +826,7 @@ fn javascript_policy_text(text: &str) -> Result<String, ()> {
                 statement_start = false;
             }
         }
+        previous_end = item.span.end;
     }
     Err(())
 }
@@ -973,13 +1015,22 @@ fn credential_assignment_value(
 
 #[cfg(test)]
 fn credential_text(text: &str, script: bool) -> bool {
-    credential_text_language(text, script, script)
+    credential_text_language(
+        text,
+        script,
+        script.then_some(ScriptPolicyLanguage::JavaScript),
+    )
 }
 
-fn credential_text_language(text: &str, script: bool, javascript: bool) -> bool {
+fn credential_text_language(
+    text: &str,
+    script: bool,
+    language: Option<ScriptPolicyLanguage>,
+) -> bool {
+    let javascript = language.is_some();
     let safe;
-    let text = if javascript {
-        safe = match javascript_policy_text(text) {
+    let text = if let Some(language) = language {
+        safe = match javascript_policy_text(text, language) {
             Ok(value) => value,
             Err(_) => return true,
         };
@@ -1236,9 +1287,11 @@ fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
         let script = matches!(extension.as_str(), "js" | "ts" | "zs" | "lua");
         match serde_json::from_str::<Value>(&text) {
             Ok(value) => json_has_credentials(&value),
-            Err(_) => {
-                credential_text_language(&text, script, matches!(extension.as_str(), "js" | "ts"))
-            }
+            Err(_) => credential_text_language(
+                &text,
+                script,
+                ScriptPolicyLanguage::from_extension(&extension),
+            ),
         }
     };
     if contains_credentials {
@@ -1408,17 +1461,20 @@ fn reject_portable_host_data(
         portable_toml_has_host_data(&value, source_roots)
             || has_host_path(&policy_host_scan_text(&raw), source_roots)
     } else {
-        match serde_json::from_str::<Value>(&text) {
-            Ok(value) => portable_json_has_host_data(&value, source_roots),
-            Err(_) if matches!(extension.as_str(), "js" | "ts") => {
+        match (
+            serde_json::from_str::<Value>(&text),
+            ScriptPolicyLanguage::from_extension(&extension),
+        ) {
+            (Ok(value), _) => portable_json_has_host_data(&value, source_roots),
+            (Err(_), Some(language)) => {
                 // Reuse credential-policy regex boundaries without masking paths
                 // in strings or comment bodies.
-                let policy = javascript_policy_text(&text).map_err(|_| {
-                    format!("无法安全解析 JavaScript 脚本，请修正或取消选择后重试：{relative}")
+                let policy = javascript_policy_text(&text, language).map_err(|_| {
+                    format!("无法安全解析 JS/TS 脚本，请修正或取消选择后重试：{relative}")
                 })?;
                 has_host_path(&policy_host_scan_text(&policy), source_roots)
             }
-            Err(_) => has_host_path(&policy_host_scan_text(&text), source_roots),
+            (Err(_), None) => has_host_path(&policy_host_scan_text(&text), source_roots),
         }
     };
     if has_host_data || folded.contains("prelaunchcommand") {

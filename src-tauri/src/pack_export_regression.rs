@@ -813,6 +813,10 @@ fn credential_collections_are_rejected_before_either_snapshot_format() {
 }
 
 fn assert_policy_archive(relative: &str, text: &str, allowed: bool) {
+    assert_policy_archive_formats(relative, text, [allowed; 2]);
+}
+
+fn assert_policy_archive_formats(relative: &str, text: &str, allowed: [bool; 2]) {
     let fixture = Fixture::new();
     fixture.put(relative, text);
     let cancel = CancellationToken::new();
@@ -833,13 +837,15 @@ fn assert_policy_archive(relative: &str, text: &str, allowed: bool) {
         let request = fixture.request(format, selected);
         let archive = workspace.join("payload.mrpack");
         let result = snapshot_instance(instance, &request, &workspace, &cancel, |_, _, _| {});
-        if !allowed {
+        if !allowed[index] {
             let error = result
                 .err()
                 .unwrap_or_else(|| panic!("accepted {relative}: {text}"));
             assert!(error.contains(relative), "{error}");
             assert!(
-                !error.contains("archive-secret") && !error.contains("round03-secret"),
+                !error.contains("archive-secret")
+                    && !error.contains("round03-secret")
+                    && !error.contains("round04-private-user"),
                 "{error}"
             );
             assert!(!archive.exists());
@@ -972,10 +978,16 @@ fn javascript_regexes_have_opaque_lexical_boundaries_and_byte_preserved_payloads
         "const x = ({count:12}).count / 3; const clean = /\"/g;",
         "const x = 12 / /* safe */ 3; const clean = /\"/g;",
     ] {
-        assert!(javascript_policy_text(text).is_ok(), "{text}");
+        assert!(
+            javascript_policy_text(text, ScriptPolicyLanguage::JavaScript).is_ok(),
+            "{text}"
+        );
         assert_policy_archive("kubejs/server_scripts/service.js", text, true);
         let protected = format!("{text}\nsettings['password'] = ('archive-secret');");
-        assert!(javascript_policy_text(&protected).is_ok(), "{protected}");
+        assert!(
+            javascript_policy_text(&protected, ScriptPolicyLanguage::JavaScript).is_ok(),
+            "{protected}"
+        );
         assert_policy_archive("kubejs/server_scripts/service.js", &protected, false);
     }
     for text in [
@@ -984,6 +996,132 @@ fn javascript_regexes_have_opaque_lexical_boundaries_and_byte_preserved_payloads
         r#"settings['password'] = '${PASSWORD}'; const clean = /"/g;"#,
     ] {
         assert_policy_archive("kubejs/server_scripts/service.js", text, true);
+    }
+}
+
+#[test]
+fn javascript_and_typescript_property_catch_and_non_null_contexts_export_original_bytes() {
+    let cases = [
+        ("js", "const config = { class: 'mage', enabled: true };\n"),
+        (
+            "js",
+            "const config = { function: 'craft', enabled: true };\n",
+        ),
+        ("js", "const { class: category } = metadata;\n"),
+        (
+            "js",
+            "const { function: handler, class: category } = metadata;\n",
+        ),
+        ("ts", "const cfg = { class: 'mage', function: 'fast' };"),
+        ("ts", "const { class: klass, function: handler } = cfg;"),
+        (
+            "js",
+            "const cfg = { class() { return 9; }, function() { return 6; }, handler: function() {}, factory: class extends mixin(Base) {} }; const ratio = cfg.class() / 3;",
+        ),
+        ("js", "try { run(); } catch {} /[\"']/.test(name);\n"),
+        (
+            "ts",
+            "try { work(); } catch /* safe */ {} /\"/g.test(name);",
+        ),
+        ("js", "try { work(); } catch (error) {} /\"/g.test(name);"),
+        ("ts", "const ratio = value! / 3;\n"),
+        (
+            "ts",
+            "const a = (value)! / 3; const b = values[0]! / 3; const c = cfg.value! / 3; const d = getValue()! / 3;",
+        ),
+        (
+            "ts",
+            "const normalized = value /* safe */ ! / 3; const prefix = ! /\"/g.test(name); const different = value! !== 3; value\n! /\"/g.test(name);",
+        ),
+        (
+            "js",
+            "const prefix = ! /\"/g.test(name); const different = value !== 3; function declared() {} /\"/g.test(name); class Declared {} /\"/g.test(name);",
+        ),
+    ];
+    for (index, (extension, text)) in cases.into_iter().enumerate() {
+        let relative = format!("kubejs/server_scripts/context-{index}.{extension}");
+        let language = ScriptPolicyLanguage::from_extension(extension).unwrap();
+        assert!(javascript_policy_text(text, language).is_ok(), "{text}");
+        assert!(
+            !credential_text_language(text, true, Some(language)),
+            "{text}"
+        );
+        assert_policy_archive(&relative, text, true);
+
+        let protected = format!("{text}\nsettings['password'] = ('archive-secret');");
+        assert!(
+            javascript_policy_text(&protected, language).is_ok(),
+            "{protected}"
+        );
+        assert!(
+            credential_text_language(&protected, true, Some(language)),
+            "{protected}"
+        );
+        assert_policy_archive(&relative, &protected, false);
+
+        let local = if index % 2 == 0 {
+            "D:/Users/round04-private-user/cache"
+        } else {
+            "/home/round04-private-user/cache"
+        };
+        let host = format!("{text}\nconst localPath = '{local}';");
+        assert!(javascript_policy_text(&host, language).is_ok(), "{host}");
+        assert!(
+            !credential_text_language(&host, true, Some(language)),
+            "{host}"
+        );
+        assert_policy_archive_formats(&relative, &host, [true, false]);
+    }
+}
+
+#[test]
+fn typescript_postfix_assertions_cannot_mask_sensitive_division_or_relax_limits() {
+    for (extension, expression) in [
+        ("js", "({ class: 'mage', function: 'fast' })"),
+        ("ts", "({ class: 'mage', function: 'fast' })"),
+        ("ts", "value!"),
+        ("ts", "getValue()!"),
+    ] {
+        let language = ScriptPolicyLanguage::from_extension(extension).unwrap();
+        let text = format!(
+            "const result = {expression} / (settings.password = 'archive-secret') / denominator;"
+        );
+        assert!(javascript_policy_text(&text, language).is_ok(), "{text}");
+        assert!(
+            credential_text_language(&text, true, Some(language)),
+            "{text}"
+        );
+        assert_policy_archive(
+            &format!("kubejs/server_scripts/division.{extension}"),
+            &text,
+            false,
+        );
+    }
+    assert!(
+        javascript_policy_text(
+            "const ratio = value! / 3;",
+            ScriptPolicyLanguage::JavaScript
+        )
+        .is_err()
+    );
+    assert_policy_archive(
+        "kubejs/server_scripts/non-null.js",
+        "const ratio = value! / 3;",
+        false,
+    );
+    for text in [
+        "const value = ! /unterminated".to_owned(),
+        "const value = ! /a/gg;".to_owned(),
+        format!(
+            "const value = {}0{}! / 3;",
+            "(".repeat(MAX_POLICY_DEPTH + 1),
+            ")".repeat(MAX_POLICY_DEPTH + 1)
+        ),
+        ";".repeat(MAX_POLICY_EVENTS),
+        format!("const value = '{}';", "x".repeat(CONFIG_MAX_BYTES as usize)),
+    ] {
+        assert!(javascript_policy_text(&text, ScriptPolicyLanguage::TypeScript).is_err());
+        assert_policy_archive("kubejs/server_scripts/limits.ts", &text, false);
     }
 }
 
