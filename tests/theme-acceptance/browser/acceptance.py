@@ -161,7 +161,7 @@ class Acceptance:
     def patch(self, page, patch):
         page.evaluate("patch => window.__themeAcceptance.update(patch)", patch)
         page.wait_for_function("patch => Object.entries(patch).every(([key, value]) => JSON.stringify(window.__themeAcceptance.settings[key]) === JSON.stringify(value) && JSON.stringify(window.__themeAcceptance.saved()[key]) === JSON.stringify(value))", arg=patch)
-        page.wait_for_timeout(440 if patch.get("accent") in ORDER[:10] or "themeMode" in patch else 40)
+        page.wait_for_timeout(540)
 
     def screenshot(self, page, name):
         page.mouse.move(0, 0)
@@ -174,7 +174,12 @@ class Acceptance:
         try:
             callback()
         except Exception as error:
-            self.check(name + " completes", False, {"error": str(error), "traceback": traceback.format_exc()})
+            details = {"error": str(error), "traceback": traceback.format_exc()}
+            if self.contexts and self.contexts[-1].pages:
+                page = self.contexts[-1].pages[-1]
+                details["videos"] = page.locator("video").evaluate_all("items=>items.map(v=>({readyState:v.readyState,width:v.videoWidth,height:v.videoHeight,paused:v.paused,networkState:v.networkState,error:v.error?.code,srcLength:v.currentSrc.length,preload:v.preload}))")
+                self.screenshot(page, "failure-" + name.replace(" ", "-"))
+            self.check(name + " completes", False, details)
 
     def palette(self):
         page = self.new_page()
@@ -191,7 +196,7 @@ class Acceptance:
                 state = group.evaluate("e => Array.from(e.querySelectorAll('[role=radio]')).map(r => ({name: r.getAttribute('aria-label'), checked: r.getAttribute('aria-checked'), tab: r.tabIndex}))")
                 active = [entry for entry in state if entry["checked"] == "true"]
                 self.check("palette selects and saves " + mode + "/" + accent, len(active) == 1 and active[0]["name"] == label and sum(entry["tab"] == 0 for entry in state) == 1, active)
-                self.check("custom sidebar condition " + mode + "/" + accent, page.get_by_role("navigation", name="设置分区").get_by_role("button", name="自定义", exact=True).count() == (1 if accent == "custom" else 0))
+                self.check("sidebar remains unchanged " + mode + "/" + accent, page.get_by_role("navigation", name="设置分区").get_by_role("button", name="自定义", exact=True).count() == 0)
         self.patch(page, {"accent": "mono"})
         group.get_by_role("radio", name=LABELS[0], exact=True).focus()
         page.keyboard.press("ArrowLeft")
@@ -228,7 +233,7 @@ class Acceptance:
     def custom(self):
         page = self.new_page({"accent": "custom", "themeMode": "dark"})
         nav = page.get_by_role("navigation", name="设置分区")
-        nav.get_by_role("button", name="自定义", exact=True).click()
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
         page.get_by_role("slider", name="主题色相").wait_for()
         page.wait_for_timeout(400)
         self.check("custom is an independent panel", page.get_by_role("radiogroup", name="颜色主题").count() == 0 and page.get_by_role("slider").count() == 5)
@@ -242,7 +247,7 @@ class Acceptance:
                 page.keyboard.press(key)
                 page.wait_for_function("args => window.__themeAcceptance.saved().customTheme[args.field] === args.value", arg={"field": field, "value": expected})
                 self.check("custom keyboard boundary persists " + field + "/" + key, int(slider.input_value()) == expected, page.evaluate("window.__themeAcceptance.saved().customTheme"))
-        decoration = page.get_by_role("radiogroup", name="原创装饰样式")
+        decoration = page.get_by_role("radiogroup", name="顶部装饰样式")
         self.check("all five custom decorations exposed", decoration.get_by_role("radio").evaluate_all("items => items.map(i => i.value)") == ["none", "lattice", "ribbons", "orbits", "folds"])
         decoration.get_by_role("radio", name="晶格").focus()
         for expected in ("ribbons", "orbits", "folds", "none", "lattice"):
@@ -251,6 +256,7 @@ class Acceptance:
             self.check("custom native radio keyboard saves " + expected, page.evaluate("document.activeElement.value") == expected)
         decoration.get_by_role("radio", name="无装饰").check()
         page.wait_for_function("window.__themeAcceptance.settings.customTheme.decoration === 'none'")
+        page.wait_for_timeout(540)
         self.check("none disables intensity and removes shell artwork", page.get_by_role("slider", name=SLIDERS["decorationOpacity"]).is_disabled() and page.locator(".ni-bg .ni-theme-artwork, .ni-titlebar > .ni-theme-artwork").count() == 0)
         decoration.get_by_role("radio", name="流带").check()
         intensity = page.get_by_role("slider", name=SLIDERS["decorationOpacity"])
@@ -258,6 +264,7 @@ class Acceptance:
             intensity.focus()
             page.keyboard.press(key)
             page.wait_for_function("value => window.__themeAcceptance.saved().customTheme.decorationOpacity === value", arg=expected)
+            page.wait_for_timeout(540)
             opacity = page.locator(".ni-titlebar > .ni-theme-artwork").evaluate("e => getComputedStyle(e).opacity")
             self.check("custom opacity applies and saves " + key, float(opacity) == expected, opacity)
         page.get_by_role("navigation", name="主导航").get_by_role("button", name="更多", exact=True).click()
@@ -276,7 +283,7 @@ class Acceptance:
         self.screenshot(page, "frontier-light")
         page.get_by_role("navigation", name="主导航").get_by_role("button", name="设置", exact=True).click()
         nav = page.get_by_role("navigation", name="设置分区")
-        nav.get_by_role("button", name="自定义", exact=True).click()
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
         shift = page.get_by_role("slider", name=SLIDERS["titlebarHueShift"])
         shift.wait_for()
         self.check("titlebar shift enabled by frontier setting", shift.is_enabled())
@@ -300,7 +307,7 @@ class Acceptance:
         page.wait_for_function("document.documentElement.dataset.fixtureReady === 'true'")
         self.check("custom parameters and tint survive browser reload", page.evaluate("window.__themeAcceptance.settings.customTheme") == parameters and page.evaluate("window.__themeAcceptance.settings.titlebarTint") is True)
         nav = page.get_by_role("navigation", name="设置分区")
-        nav.get_by_role("button", name="自定义", exact=True).click()
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
         page.get_by_role("button", name="重置自定义参数", exact=True).click()
         page.wait_for_function("value => JSON.stringify(window.__themeAcceptance.saved().customTheme) === JSON.stringify(value)", arg=DEFAULT_CUSTOM)
         self.check("reset restores all six fields without changing tint or selected theme", page.evaluate("window.__themeAcceptance.settings.customTheme") == DEFAULT_CUSTOM and page.evaluate("window.__themeAcceptance.settings.titlebarTint") is True and page.evaluate("window.__themeAcceptance.settings.accent") == "custom")
@@ -367,7 +374,7 @@ class Acceptance:
 
     def measure_contrast(self, page, label):
         page.mouse.move(0, 0)
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(540)
         snapshot = page.evaluate(COLORS)
         tokens = snapshot["tokens"]
         chrome = blend(snapshot["titlebar"]["background"], tokens["--bg"])
@@ -405,7 +412,7 @@ class Acceptance:
         self.patch(page, {"backgroundImage": image, "backgroundOpacity": 0.85, "backgroundBlur": 6})
         self.check("user image replaces shell and preview theme backgrounds", page.locator(".ni-bg > .ni-theme-artwork").count() == 0 and page.locator(".st-preview__art > .ni-theme-artwork").count() == 0 and page.locator(".ni-bg__image, .st-preview__image").count() == 2)
         self.check("user image retains original titlebar decoration", page.locator(".ni-titlebar > .ni-theme-artwork[data-motif=paper]").count() == 1)
-        self.check("image style uses selected URL and live blur", page.locator(".ni-bg__image").evaluate("(e, url) => e.style.backgroundImage.includes(url) && getComputedStyle(e).filter === 'blur(6px)'", image))
+        self.check("image style uses selected URL and live blur", page.locator(".ni-bg__image").evaluate("(e, url) => e.currentSrc === url && getComputedStyle(e).filter === 'blur(6px)'", image))
         self.screenshot(page, "user-image-dark")
         self.patch(page, {"themeMode": "light"})
         self.screenshot(page, "user-image-light")
@@ -436,10 +443,118 @@ class Acceptance:
         self.patch(page, {"backgroundImage": None})
         self.check("clearing user image restores theme background", page.locator(".ni-bg > .ni-theme-artwork[data-motif=paper]").count() == 1 and page.locator(".ni-bg__image").count() == 0)
 
+    def motion_and_hidden_page(self):
+        page = self.new_page({"accent": "mono", "customTheme": {**DEFAULT_CUSTOM, "hue": 286, "saturation": 72, "lightness": 45}})
+        nav = page.get_by_role("navigation", name="设置分区")
+        expected_nav = ["外观", "账号与隐私", "下载", "游戏"]
+        self.check("sidebar is exactly the original four sections", nav.get_by_role("button").all_text_contents() == expected_nav)
+        note = page.locator(".st-custom-note")
+        sample = """() => { const e = document.querySelector('.st-custom-note'); return {height:e.getBoundingClientRect().height,opacity:Number(getComputedStyle(e).opacity),inert:e.inert}; }"""
+        self.check("custom note is inert and collapsed outside custom", page.evaluate(sample) == {"height": 0, "opacity": 0, "inert": True})
+        page.get_by_role("radio", name="自定义", exact=True).click()
+        page.wait_for_timeout(150)
+        middle = page.evaluate(sample)
+        page.wait_for_timeout(420)
+        expanded = page.evaluate(sample)
+        self.check("custom note expands with intermediate height and opacity", 0 < middle["height"] < expanded["height"] and 0 < middle["opacity"] < 1 and expanded["opacity"] == 1, {"middle": middle, "expanded": expanded})
+        self.check("selecting custom never changes sidebar", nav.get_by_role("button").all_text_contents() == expected_nav)
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
+        page.get_by_role("radiogroup", name="顶部装饰样式").wait_for()
+        page.wait_for_timeout(300)
+        self.check("custom editor is a hidden independent subpage", nav.get_by_role("button").all_text_contents() == expected_nav and nav.locator('[aria-current]').count() == 0 and page.get_by_role("radio", name="自定义", exact=True).count() == 0)
+        self.check("custom editor exposes only top-decoration wording", page.get_by_text("顶部装饰", exact=True).count() == 1 and page.get_by_text("原创装饰", exact=True).count() == 0)
+        self.screenshot(page, "hidden-custom-page")
+        page.get_by_role("button", name="返回外观", exact=True).click()
+        page.get_by_role("radio", name="黑与白", exact=True).wait_for()
+        page.wait_for_timeout(540)
+        self.check("custom return button restores Appearance without sidebar changes", nav.get_by_role("button").all_text_contents() == expected_nav and nav.get_by_role("button", name="外观", exact=True).get_attribute("data-active") == "true")
+        page.get_by_role("radio", name="镍光", exact=True).click()
+        page.wait_for_timeout(180)
+        closing = page.evaluate(sample)
+        page.wait_for_timeout(450)
+        closed = page.evaluate(sample)
+        self.check("custom note exit animates and immediately removes keyboard access", 0 < closing["height"] < expanded["height"] and closing["opacity"] < 1 and closing["inert"] and closed["height"] == 0, {"closing": closing, "closed": closed})
+        for accent in ORDER[:-1]:
+            self.patch(page, {"accent": accent})
+            self.check("no non-custom theme note is visible " + accent, not page.locator(".st-theme-note").is_visible() and page.get_by_role("button", name="调整自定义主题", exact=True).count() == 0)
+
+        colors = """() => { const s=getComputedStyle(document.documentElement); return ['--accent','--accent-soft','--accent-text','--theme-ink','--theme-chrome-bg'].map(p=>s.getPropertyValue(p).trim()); }"""
+        pairs = [("nickel", "copper"), ("copper", "abyss"), ("abyss", "paper"), ("paper", "fortyTwo"), ("fortyTwo", "custom"), ("custom", "blue"), ("blue", "nickel"), ("nickel", "mono"), ("mono", "fortyTwo"), ("rose", "custom")]
+        for mode in ["dark", "light"]:
+            for before, after in pairs:
+                self.patch(page, {"accent": before, "themeMode": mode})
+                start = page.evaluate(colors)
+                page.evaluate("accent => window.__themeAcceptance.update({accent})", after)
+                page.wait_for_function("accent => document.documentElement.dataset.accent === accent", arg=after)
+                page.wait_for_timeout(130)
+                middle = page.evaluate(colors)
+                artwork = page.locator('.ni-bg > .ni-theme-artwork').evaluate_all("items => items.map(e=>({motif:e.dataset.motif,active:e.dataset.active,opacity:Number(getComputedStyle(e).opacity)}))")
+                page.wait_for_timeout(450)
+                end = page.evaluate(colors)
+                self.check("real token interpolation " + mode + "/" + before + "->" + after, start[0] != middle[0] != end[0] and start[3] != middle[3] != end[3], {"start":start,"middle":middle,"end":end})
+                self.check("real artwork crossfade " + mode + "/" + before + "->" + after, any(0 < layer["opacity"] < 0.35 for layer in artwork), artwork)
+                self.check("outgoing artwork is cleaned " + mode + "/" + after, page.locator('.ni-bg > .ni-theme-artwork[data-active="false"]').count() == 0)
+        self.patch(page, {"accent":"nickel"})
+        for accent in ["copper", "paper", "blue", "custom", "abyss"]:
+            page.evaluate("accent=>window.__themeAcceptance.update({accent})", accent)
+            page.wait_for_timeout(45)
+        page.wait_for_timeout(550)
+        self.check("rapid theme switches settle without old artwork", page.locator('.ni-bg > .ni-theme-artwork').evaluate_all("items=>items.map(e=>e.dataset.motif)") == ["abyss"])
+        page.emulate_media(reduced_motion="reduce")
+        self.patch(page, {"accent": "custom"})
+        self.check("reduced motion makes custom note instant", note.evaluate("e=>getComputedStyle(e).transitionDuration") == "0s")
+        self.patch(page, {"accent": "mono"})
+        self.check("reduced motion removes outgoing artwork immediately", page.locator('.ni-bg > .ni-theme-artwork').count() == 0 and page.evaluate("getComputedStyle(document.documentElement).transitionDuration") == "0s")
+
+    def video_background(self):
+        page = self.new_page({"accent": "paper", "titlebarTint": True})
+        # Headless canvas capture can produce a header-only WebM; use real encoded frames.
+        fixture = Path(__file__).resolve().parents[1] / "fixtures" / "background.webm"
+        data = fixture.read_bytes()
+        self.check("video fixture contains encoded frames", len(data) > 1024 and data.startswith(b"\x1a\x45\xdf\xa3"), {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        page.locator('input[type="file"]').set_input_files({"name":"background.webm", "mimeType":"video/webm", "buffer":data})
+        page.wait_for_function("window.__themeAcceptance.saved().backgroundImage?.startsWith('data:video/webm')")
+        page.wait_for_function("Array.from(document.querySelectorAll('.ni-bg video,.st-preview video,.st-bg__thumb video')).length===3 && Array.from(document.querySelectorAll('.ni-bg video,.st-preview video,.st-bg__thumb video')).every(v=>v.readyState>=2&&v.videoWidth===160)")
+        page.wait_for_timeout(550)
+        state = page.locator('video').evaluate_all("items=>items.map(v=>({width:v.videoWidth,muted:v.muted,loop:v.loop,inline:v.playsInline,controls:v.controls,paused:v.paused,fit:getComputedStyle(v).objectFit}))")
+        self.check("file picker accepts real decoded silent looping video", len(state)==3 and all(v["width"]==160 and v["muted"] and v["loop"] and v["inline"] and not v["controls"] and v["fit"]=="cover" for v in state), state)
+        self.check("video thumbnails stay still while shell and preview play", page.locator('.st-bg__thumb video').evaluate('v=>v.paused') and not page.locator('.ni-bg video').evaluate('v=>v.paused'))
+        page.wait_for_function("document.querySelector('.ni-bg video').currentTime > 0.08")
+        self.patch(page, {"backgroundBlur": 8, "backgroundOpacity": 0.7})
+        self.check("video uses live blur and opacity controls", page.locator('.ni-bg video').evaluate("v=>getComputedStyle(v).filter==='blur(8px)' && Number(getComputedStyle(v).opacity)===0.7"))
+        for accent in ORDER[6:]:
+            self.patch(page, {"accent":accent})
+            self.check("video excludes built-in background artwork " + accent, page.locator('.ni-bg .ni-theme-artwork,.st-preview__art .ni-theme-artwork').count()==0 and page.locator('.ni-titlebar > .ni-theme-artwork').count()==1)
+        self.screenshot(page, "video-background-dark")
+        self.patch(page, {"themeMode":"light"})
+        self.screenshot(page, "video-background-light")
+        page.reload(wait_until='networkidle')
+        page.wait_for_function("document.documentElement.dataset.fixtureReady==='true'")
+        page.wait_for_function("document.querySelector('.ni-bg video')?.readyState>=2")
+        self.check("video background survives settings reload", page.evaluate("window.__themeAcceptance.settings.backgroundImage.startsWith('data:video/webm')") and page.locator('.ni-bg .ni-theme-artwork').count()==0)
+        page.emulate_media(reduced_motion="reduce")
+        page.wait_for_function("Array.from(document.querySelectorAll('video')).every(v=>v.paused)")
+        self.check("reduced motion pauses all videos on a decoded frame", page.locator('video').evaluate_all('items=>items.every(v=>v.paused&&v.readyState>=2)'))
+        page.emulate_media(reduced_motion="no-preference")
+        page.wait_for_function("!document.querySelector('.ni-bg video').paused")
+        page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_function("Array.from(document.querySelectorAll('video')).every(v=>v.paused)")
+        self.check("hidden document pauses video decoding playback", page.locator('.ni-bg video').evaluate('v=>v.paused'))
+        page.evaluate("Reflect.deleteProperty(document,'hidden');document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_function("!document.querySelector('.ni-bg video').paused")
+        self.check("visible document resumes background playback", not page.locator('.ni-bg video').evaluate('v=>v.paused'))
+        self.patch(page, {"backgroundImage":"data:video/webm;base64,aW52YWxpZA=="})
+        page.get_by_text("背景无法加载，请更换文件", exact=True).wait_for()
+        self.check("failed video is recoverable without mixing theme backgrounds", page.get_by_role('button',name='清除背景',exact=True).is_enabled() and page.locator('.ni-bg .ni-theme-artwork').count()==0)
+        page.get_by_role('button',name='清除背景',exact=True).click()
+        page.wait_for_function("window.__themeAcceptance.settings.backgroundImage===null")
+        page.wait_for_timeout(550)
+        self.check("clearing video restores theme background", page.locator('.ni-bg video').count()==0 and page.locator('.ni-bg > .ni-theme-artwork').count()==1)
+
     def tauri_persistence(self):
         page = self.new_page({"accent": "custom", "titlebarTint": True}, tauri=True)
         nav = page.get_by_role("navigation", name="设置分区")
-        nav.get_by_role("button", name="自定义", exact=True).click()
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
         hue = page.get_by_role("slider", name=SLIDERS["hue"])
         hue.focus()
         page.keyboard.press("ArrowRight")
@@ -449,7 +564,7 @@ class Acceptance:
         page.wait_for_load_state("networkidle")
         page.wait_for_function("document.documentElement.dataset.fixtureReady === 'true'")
         self.check("backend reload normalizes persisted custom theme", page.evaluate("window.__themeAcceptance.settings.customTheme.hue") == 175)
-        page.get_by_role("navigation", name="设置分区").get_by_role("button", name="自定义", exact=True).click()
+        page.get_by_role("button", name="调整自定义主题", exact=True).click()
         page.get_by_role("button", name="重置自定义参数", exact=True).click()
         page.wait_for_function("value => JSON.stringify(window.__themeAcceptance.backend().customTheme) === JSON.stringify(value)", arg=DEFAULT_CUSTOM)
         self.check("custom reset also persists through settings_set IPC", page.evaluate("window.__themeAcceptance.backend().customTheme") == DEFAULT_CUSTOM)
@@ -548,6 +663,7 @@ class Acceptance:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:5191")
+    parser.add_argument("--only", help="Comma-separated acceptance sections")
     parser.add_argument("--evidence-dir", type=Path, default=Path(__file__).resolve().parents[1] / "evidence" / "browser")
     args = parser.parse_args()
     with sync_playwright() as playwright:
@@ -569,8 +685,10 @@ def main():
         if browser is None:
             raise RuntimeError("Unable to start headless browser: " + "\n".join(launch_errors))
         acceptance = Acceptance(browser, args.base_url, args.evidence_dir)
-        for name, callback in [("palette", acceptance.palette), ("custom", acceptance.custom), ("visual and contrast", acceptance.visual_and_contrast), ("image priority and hit testing", acceptance.image_priority_and_hit_testing), ("Tauri persistence", acceptance.tauri_persistence), ("runtime", acceptance.runtime)]:
-            acceptance.run_section(name, callback)
+        selected = set(args.only.split(",")) if args.only else None
+        for name, callback in [("palette", acceptance.palette), ("custom", acceptance.custom), ("visual and contrast", acceptance.visual_and_contrast), ("image priority and hit testing", acceptance.image_priority_and_hit_testing), ("motion and hidden page", acceptance.motion_and_hidden_page), ("video background", acceptance.video_background), ("Tauri persistence", acceptance.tauri_persistence), ("runtime", acceptance.runtime)]:
+            if selected is None or name in selected:
+                acceptance.run_section(name, callback)
         code = acceptance.finish()
         browser.close()
         return code

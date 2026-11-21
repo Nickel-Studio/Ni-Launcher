@@ -30,7 +30,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ni-collapse,
-  .ni-collapse--staggered {
+  .ni-collapse--staggered,
+  .ni-collapse--staggered[data-open="true"] {
     transition: none;
   }
 }

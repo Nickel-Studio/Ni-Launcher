@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSettings } from "../lib/settings";
 import { LoadingCard, PagerLayout, type PagerItem } from "../components/ui";
 import { AppearancePanel } from "../components/settings/AppearancePanel";
@@ -20,24 +20,12 @@ const SECTIONS: PagerItem[] = [
   { id: "download", label: "下载", icon: <DownloadIcon /> },
   { id: "game", label: "游戏", icon: <IconPlay /> },
 ];
-const CUSTOM_SECTION: PagerItem = {
-  id: "custom-theme",
-  label: "自定义",
-  icon: <PaletteIcon />,
-};
 
 /** Each navigation item replaces the panel rather than scrolling to an anchor. */
 export default function Settings() {
   const { settings, update, ready, saveError } = useSettings();
   const [active, setActive] = useState<string>(SECTIONS[0].id);
   const customSelected = settings.accent === "custom";
-  const sections = useMemo(
-    () =>
-      customSelected
-        ? [SECTIONS[0], CUSTOM_SECTION, ...SECTIONS.slice(1)]
-        : SECTIONS,
-    [customSelected]
-  );
   const selected =
     active === "custom-theme" && !customSelected ? "appearance" : active;
   useEffect(() => {
@@ -54,7 +42,7 @@ export default function Settings() {
   return (
     <PagerLayout
       className="ni-pager--fill"
-      items={sections}
+      items={SECTIONS}
       active={selected}
       onSelect={setActive}
       navLabel="设置分区"
@@ -69,10 +57,16 @@ export default function Settings() {
         <AppearancePanel
           settings={settings}
           update={update}
-          onOpenCustom={() => setActive("custom-theme")}
+          onOpenCustom={() => {
+            if (customSelected) setActive("custom-theme");
+          }}
         />
       ) : selected === "custom-theme" && customSelected ? (
-        <CustomThemePanel settings={settings} update={update} />
+        <CustomThemePanel
+          settings={settings}
+          update={update}
+          onBack={() => setActive("appearance")}
+        />
       ) : selected === "account" ? (
         <AccountPanel settings={settings} update={update} />
       ) : selected === "download" ? (

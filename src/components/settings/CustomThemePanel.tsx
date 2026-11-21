@@ -14,6 +14,7 @@ import type { AppSettings, CustomTheme, ThemeDecoration } from "./types";
 type Props = {
   settings: AppSettings;
   update: (patch: Partial<AppSettings>) => void;
+  onBack: () => void;
 };
 
 const DECORATION_LABELS: Record<ThemeDecoration, string> = {
@@ -24,12 +25,17 @@ const DECORATION_LABELS: Record<ThemeDecoration, string> = {
   folds: "折纸",
 };
 
-export function CustomThemePanel({ settings, update }: Props) {
+export function CustomThemePanel({ settings, update, onBack }: Props) {
   const custom = settings.customTheme;
   const change = (patch: Partial<CustomTheme>) =>
     update({ customTheme: normalizeCustomTheme({ ...custom, ...patch }) });
   return (
     <SettingsGroup id="custom-theme" title="自定义主题">
+      <div className="st-custom-back">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          返回外观
+        </Button>
+      </div>
       <SettingRow
         fill
         label="色相"
@@ -98,12 +104,12 @@ export function CustomThemePanel({ settings, update }: Props) {
       />
       <SettingRow
         stacked
-        label="原创装饰"
+        label="顶部装饰"
         control={
           <div
             className="st-custom-decorations"
             role="radiogroup"
-            aria-label="原创装饰样式"
+            aria-label="顶部装饰样式"
           >
             {THEME_DECORATIONS.map((decoration) => (
               <label

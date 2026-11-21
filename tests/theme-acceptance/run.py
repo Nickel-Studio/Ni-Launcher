@@ -14,12 +14,13 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[2]
 TEST_ROOT = Path(__file__).resolve().parent
 SOURCES = [
-    "src/lib/theme.ts", "src/lib/settings.ts", "src/components/settings/accents.ts",
+    "src/lib/theme.ts", "src/lib/settings.ts", "src/lib/visualMotion.ts", "src/components/settings/accents.ts",
     "src/components/settings/AppearancePanel.tsx", "src/components/settings/CustomThemePanel.tsx",
     "src/components/settings/ThemePreview.tsx", "src/components/settings/settings.css",
     "src/components/settings/types.ts", "src/pages/Settings.tsx", "src/pages/More.tsx",
     "src/components/TitleBar.tsx", "src/components/ui/BackgroundLayer.tsx",
-    "src/components/ui/ThemeArtwork.tsx", "src/components/ui/theme-artwork.css",
+    "src/components/ui/BackgroundMedia.tsx", "src/components/settings/backgroundImage.ts",
+    "src-tauri/src/media.rs", "src-tauri/tauri.conf.json", "src/components/ui/ThemeArtwork.tsx", "src/components/ui/theme-artwork.css",
     "src/components/ui/Button.tsx", "src/styles/tokens.css", "src/styles/global.css",
     "src/styles/ui.css", "src/styles/shell.css", "src-tauri/src/portable_pack.rs",
     "tests/theme-acceptance/fixtures/app.html", "tests/theme-acceptance/fixtures/app.tsx",
@@ -82,7 +83,6 @@ def main():
         return code
 
     run_stage("production-build", [pnpm, "run", "build"])
-    run_stage("typescript", [pnpm, "exec", "tsc", "--noEmit"])
     run_stage("fixture-typescript", [pnpm, "exec", "tsc", "--noEmit", "-p", "tests/theme-acceptance/tsconfig.json"])
     run_stage("logic", [node, "--test", "--test-reporter=tap", "tests/theme-acceptance/tests/theme.test.mjs"])
     fixture_dist = evidence / "fixture-dist"

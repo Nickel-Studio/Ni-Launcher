@@ -1,16 +1,17 @@
 import type { CSSProperties } from "react";
-import { useBackgroundSrc, useSettings } from "../../lib/settings";
+import { useSettings } from "../../lib/settings";
+import { BackgroundMedia } from "./BackgroundMedia";
 import { ThemeArtwork } from "./ThemeArtwork";
 
-/** A user image replaces theme artwork; all layers stay inside the clipped shell. */
+/** User media replaces theme backgrounds, but never the separate titlebar motif. */
 export function BackgroundLayer() {
   const { settings } = useSettings();
-  const url = useBackgroundSrc(settings.backgroundImage);
-  const hasUserBackground = Boolean(settings.backgroundImage?.trim());
+  const path = settings.backgroundImage?.trim() || null;
+  const hasUserBackground = Boolean(path);
   const style = {
-    "--_bg-opacity": url ? String(settings.backgroundOpacity) : "0",
+    "--_bg-opacity": path ? String(settings.backgroundOpacity) : "0",
     "--_bg-blur": `${settings.backgroundBlur}px`,
-    "--_bg-scrim": url ? "1" : "0",
+    "--_bg-scrim": path ? "1" : "0",
   } as CSSProperties;
 
   return (
@@ -27,12 +28,7 @@ export function BackgroundLayer() {
           decoration={settings.customTheme.decoration}
         />
       ) : null}
-      {url ? (
-        <div
-          className="ni-bg__image"
-          style={{ backgroundImage: `url(${JSON.stringify(url)})` }}
-        />
-      ) : null}
+      {path ? <BackgroundMedia key={path} path={path} className="ni-bg__image" /> : null}
       <div className="ni-bg__scrim" />
       <div className="ni-bg__grain" />
     </div>
