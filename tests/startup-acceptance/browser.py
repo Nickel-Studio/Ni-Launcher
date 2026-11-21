@@ -87,9 +87,27 @@ def main():
             return function
         return register
 
+    @case("eula-open-failure-without-url", {"failures": {"plugin:opener|open_url": 1}})
+    def eula_open_failure(page, output):
+        is_eula(page)
+        link = page.get_by_role("button", name="\u9605\u8bfb Minecraft EULA \u5b8c\u6574\u534f\u8bae", exact=True)
+        link.click()
+        expect(page.get_by_role("alert")).to_contain_text("\u65e0\u6cd5\u6253\u5f00\u6d4f\u89c8\u5668")
+        check("minecraft.net" not in page.locator(".startup-modal").inner_text(), "Failed opener displayed the removed URL")
+        check(snapshot(page)["record"] == {} and snapshot(page)["shellInert"], "Opening terms changed consent or unlocked startup")
+        page.screenshot(path=str(output / "failed-opener.png"))
+        link.click()
+        expect(page.get_by_role("alert")).to_have_count(0)
+        opened = calls(snapshot(page), "plugin:opener|open_url")
+        check(len(opened) == 2 and [entry["outcome"] for entry in opened] == ["rejected", "resolved"], "The terms button did not recover on retry")
+        expect(page.get_by_role("button", name=ACCEPT, exact=True)).to_be_disabled()
+
+
     @case("first-run-order-checkbox-and-shell", {"portablePending": True, "autoLaunch": True})
     def first_run(page, output):
         is_eula(page)
+        expect(page.locator(".startup-eula__url")).to_have_count(0)
+        check("minecraft.net" not in page.locator(".startup-modal").inner_text(), "Redundant EULA URL remains visible")
         expect(page.get_by_role("checkbox")).to_have_attribute("aria-checked", "false")
         expect(page.get_by_role("button", name=ACCEPT, exact=True)).to_be_disabled()
         expect(page.locator(".startup-modal input[type='text']")).to_have_count(0)
@@ -111,6 +129,8 @@ def main():
         check(before <= state["record"]["eulaAcceptedAt"] <= int(time.time()), "Acceptance is not a Unix seconds timestamp")
         check(calls(state, "onboarding_accept_eula")[0]["payload"] == {"checked": True, "eulaVersion": REVISION}, "Unexpected consent IPC fields")
         check(not calls(state, "onboarding_finish") and not calls(state, "portable_bootstrap_status"), "Startup work preceded changelog acknowledgment")
+        expect(page.locator(".startup-modal .ni-modal__desc")).to_have_count(0)
+        check("让每一次" not in page.locator(".startup-modal").inner_text(), "Redundant changelog subtitle remains visible")
         changelog = json.loads((Path(__file__).resolve().parents[2] / "CHANGELOG.json").read_text(encoding="utf-8"))
         for section in changelog["sections"]:
             expect(page.locator(".startup-changelog")).to_contain_text(section["title"])

@@ -1,5 +1,6 @@
-import { useId } from "react";
-import type { Accent, ThemeDecoration } from "../../lib/theme";
+import { useId, useLayoutEffect, useRef, useState } from "react";
+import { THEME_TRANSITION_MS, type Accent, type ThemeDecoration } from "../../lib/theme";
+import { useVisualMotionPaused } from "../../lib/visualMotion";
 import "./theme-artwork.css";
 
 type Props = {
@@ -115,30 +116,84 @@ function BackgroundMotif({ motif, glow }: { motif: string; glow: string }) {
   }
 }
 
-export function ThemeArtwork({ accent, placement = "background", decoration = "lattice", className = "" }: Props) {
+type ArtworkLayer = { motif: string; active: boolean };
+
+export function ThemeArtwork({
+  accent,
+  placement = "background",
+  decoration = "lattice",
+  className = "",
+}: Props) {
   const id = useId().replace(/:/g, "");
-  const motif = accent === "custom" ? decoration : accent;
-  if (["mono", "emerald", "blue", "violet", "amber", "rose", "none"].includes(motif)) return null;
-  const glow = `theme-glow-${id}`;
-  return (
-    <svg
-      className={`ni-theme-artwork ni-theme-artwork--${placement} ${className}`}
-      data-motif={motif}
-      viewBox={placement === "background" ? "0 0 1200 800" : "0 0 240 64"}
-      preserveAspectRatio={placement === "background" ? "xMidYMid slice" : "xMidYMid meet"}
-      aria-hidden="true"
-      focusable="false"
-    >
-      {placement === "titlebar" ? <TitlebarMotif motif={motif} /> : <>
-        <defs>
-          <radialGradient id={glow}>
-            <stop offset="0" stopColor="currentColor" stopOpacity="0.4" />
-            <stop offset="0.55" stopColor="currentColor" stopOpacity="0.12" />
-            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <BackgroundMotif motif={motif} glow={glow} />
-      </>}
-    </svg>
+  const selected = accent === "custom" ? decoration : accent;
+  const motif = ["mono", "emerald", "blue", "violet", "amber", "rose", "none"].includes(selected)
+    ? null
+    : selected;
+  const paused = useVisualMotionPaused();
+  const [layers, setLayers] = useState<ArtworkLayer[]>(() =>
+    motif ? [{ motif, active: true }] : []
   );
+  const previous = useRef(motif);
+  const committed = useRef(layers);
+  committed.current = layers;
+
+  useLayoutEffect(() => {
+    if (paused) {
+      previous.current = motif;
+      setLayers(motif ? [{ motif, active: true }] : []);
+      return;
+    }
+    if (previous.current === motif) return;
+    previous.current = motif;
+    const entering = motif && !committed.current.some((layer) => layer.motif === motif);
+    // Keep existing SVG nodes so rapid reversals continue from their current opacity.
+    setLayers((current) => [
+      ...current.map((layer) => ({ ...layer, active: layer.motif === motif })),
+      ...(entering ? [{ motif, active: false }] : []),
+    ]);
+    let frame: number | undefined;
+    if (entering) {
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(() => {
+          setLayers((current) => current.map((layer) =>
+            layer.motif === motif ? { ...layer, active: true } : layer
+          ));
+        });
+      });
+    }
+    const timer = window.setTimeout(() => {
+      setLayers((current) => current.filter((layer) => layer.active));
+    }, THEME_TRANSITION_MS + 48);
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [motif, paused]);
+
+  return layers.map((layer) => {
+    const glow = `theme-glow-${id}-${layer.motif}`;
+    return (
+      <svg
+        key={layer.motif}
+        className={`ni-theme-artwork ni-theme-artwork--${placement} ${className}`}
+        data-motif={layer.motif}
+        data-active={layer.active}
+        viewBox={placement === "background" ? "0 0 1200 800" : "0 0 240 64"}
+        preserveAspectRatio={placement === "background" ? "xMidYMid slice" : "xMidYMid meet"}
+        aria-hidden="true"
+        focusable="false"
+      >
+        {placement === "titlebar" ? <TitlebarMotif motif={layer.motif} /> : <>
+          <defs>
+            <radialGradient id={glow}>
+              <stop offset="0" stopColor="currentColor" stopOpacity="0.4" />
+              <stop offset="0.55" stopColor="currentColor" stopOpacity="0.12" />
+              <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <BackgroundMotif motif={layer.motif} glow={glow} />
+        </>}
+      </svg>
+    );
+  });
 }

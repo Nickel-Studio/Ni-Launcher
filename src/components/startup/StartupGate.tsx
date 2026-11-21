@@ -147,12 +147,12 @@ export function StartupGate({ onReady }: Props) {
 
   async function readTerms() {
     if (!status) return;
+    setError("");
     try {
       if (isTauri()) await openUrl(status.eulaUrl);
       else window.open(status.eulaUrl, "_blank", "noopener,noreferrer");
     } catch {
-      if (mounted.current)
-        setError(`无法打开浏览器，请访问 ${status.eulaUrl} 阅读完整协议。`);
+      if (mounted.current) setError("无法打开浏览器，请稍后重试阅读完整协议。");
     }
   }
 
@@ -181,7 +181,6 @@ export function StartupGate({ onReady }: Props) {
       key={stage}
       open
       title={title}
-      description={stage === "changelog" ? BUILTIN_CHANGELOG.title : undefined}
       onClose={ignoreDismiss}
       dismissible={false}
       closeOnBackdrop={false}
@@ -242,7 +241,6 @@ export function StartupGate({ onReady }: Props) {
             <Button variant="outline" onClick={() => void readTerms()}>
               阅读 Minecraft EULA 完整协议
             </Button>
-            <p className="startup-eula__url">{status?.eulaUrl}</p>
           </div>
           <Checkbox
             checked={checked}

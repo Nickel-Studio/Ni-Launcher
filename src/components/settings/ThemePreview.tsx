@@ -1,11 +1,12 @@
 import { PRODUCT_NAME } from "../../lib/brand";
-import { useBackgroundSrc, useSettings } from "../../lib/settings";
+import { useSettings } from "../../lib/settings";
+import { BackgroundMedia } from "../ui/BackgroundMedia";
 import { ThemeArtwork } from "../ui/ThemeArtwork";
 import type { CSSProperties } from "react";
 
 export function ThemePreview() {
   const { settings } = useSettings();
-  const background = useBackgroundSrc(settings.backgroundImage);
+  const background = settings.backgroundImage?.trim() || null;
   const hasUserBackground = Boolean(settings.backgroundImage?.trim());
   const style = {
     "--preview-bg-blur": `${settings.backgroundBlur / 4}px`,
@@ -27,9 +28,10 @@ export function ThemePreview() {
           />
         ) : null}
         {background ? (
-          <div
+          <BackgroundMedia
+            key={background}
+            path={background}
             className="st-preview__image"
-            style={{ backgroundImage: `url(${JSON.stringify(background)})` }}
           />
         ) : null}
       </div>

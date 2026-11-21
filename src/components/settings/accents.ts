@@ -18,37 +18,32 @@ export const ACCENT_OPTIONS: {
     value: "nickel",
     label: "镍光",
     color: THEME_COLORS.nickel,
-    description: "矿晶折面与冷绿微光",
   },
   {
     value: "copper",
     label: "铜霞",
     color: THEME_COLORS.copper,
-    description: "弧形铜带与暮色光点",
   },
   {
     value: "abyss",
     label: "深海",
     color: THEME_COLORS.abyss,
-    description: "等深流线与海面星标",
   },
   {
     value: "paper",
     label: "纸灯",
     color: THEME_COLORS.paper,
-    description: "纸折灯影与温暖留白",
   },
   {
     value: "fortyTwo",
     label: "四十二",
     color: THEME_COLORS.fortyTwo,
-    description: "青绿到浅薄荷，三分钟完整往返；无需解锁",
   },
   {
     value: "custom",
     label: "自定义",
     color: "var(--theme-ink, var(--accent))",
-    description: "在独立的自定义选项卡中调整颜色与装饰",
+    description: "调整颜色与顶部装饰",
   },
 ];
 

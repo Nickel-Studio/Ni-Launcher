@@ -68,6 +68,7 @@ export const THEME_COLORS: Readonly<Record<Exclude<Accent, "custom">, string>> =
 export const FORTY_TWO_CYCLE_MS = 180_000;
 export const FORTY_TWO_END = "#bcdec4";
 export const THEME_TICK_MS = 500;
+export const THEME_TRANSITION_MS = 420;
 export type Rgb = readonly [number, number, number];
 
 export function normalizeCustomTheme(input: unknown): CustomTheme {

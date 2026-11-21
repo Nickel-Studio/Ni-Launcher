@@ -39,11 +39,6 @@
 .startup-eula__summary .ni-btn {
   justify-self: start;
 }
-.startup-eula__url {
-  color: var(--text-faint);
-  font-size: var(--fs-sm);
-  overflow-wrap: anywhere;
-}
 .startup-eula .ni-check {
   white-space: normal;
   text-align: left;

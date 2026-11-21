@@ -8,6 +8,10 @@
   user-select: none;
   -webkit-user-select: none;
   opacity: var(--theme-decoration-opacity, 0.35);
+  transition: opacity var(--t-accent) var(--ease);
+}
+.ni-theme-artwork[data-active="false"] {
+  opacity: 0;
 }
 .ni-theme-artwork * {
   pointer-events: none;

@@ -326,10 +326,6 @@
   --accent-soft: rgba(68, 156, 147, 0.14);
   --accent-ring: rgba(68, 156, 147, 0.4);
 }
-:root[data-accent="fortyTwo"],
-:root[data-accent="custom"] {
-  --t-accent: 0ms;
-}
 :root {
   --accent-text: var(--accent);
   --theme-ink: var(--accent);
@@ -363,6 +359,31 @@
   syntax: "<color>";
   inherits: true;
   initial-value: transparent;
+}
+@property --accent-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-chrome-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-chrome-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-decoration-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.35;
 }
 
 /* ---- Shared semantic aliases for component text, shape and motion -------- */

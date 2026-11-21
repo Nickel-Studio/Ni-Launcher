@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -139,59 +140,66 @@ export function isTauri(): boolean {
   );
 }
 
+export type BackgroundKind = "image" | "video";
+
+export function backgroundKind(path: string | null): BackgroundKind {
+  const value = path?.trim() ?? "";
+  return /^data:video\//i.test(value) || /^nickel-video:/i.test(value) ||
+    /\.(mp4|m4v|webm|ogv)(?:[?#].*)?$/i.test(value)
+    ? "video"
+    : "image";
+}
+
 export function resolveBackgroundUrl(path: string | null): string | null {
   if (!path) return null;
   const value = path.trim();
   if (!value) return null;
-  if (/^(https?:|data:|blob:|asset:|tauri:|\/\/)/i.test(value)) return value;
+  if (/^(https?:|data:|blob:|nickel-image:|nickel-video:|tauri:|\/\/)/i.test(value))
+    return value;
   if (
     /^[a-zA-Z]:[\\/]/.test(value) ||
     value.startsWith("/") ||
     value.startsWith("\\\\")
   ) {
     try {
-      return convertFileSrc(value);
+      if (backgroundKind(value) === "video")
+        return convertFileSrc(value, "nickel-video");
+      return convertFileSrc(value, "nickel-image");
     } catch {
-      return value;
+      return null;
     }
   }
-  return value;
+  return /^(asset:|file:|javascript:)/i.test(value) ? null : value;
 }
 
 /* ----------------------------------------------------------------------------
-   Background source (asset protocol with dataURL fallback)
+   Validated background protocols (image dataURL fallback only)
    -------------------------------------------------------------------------- */
 
-/**
- * 背景图源。
- *
- * 先走 Tauri asset 协议（`convertFileSrc`）直接引用本地文件；
- * 若该 URL 加载失败（协议未启用 / 路径不在 scope 内 / CSP 限制），
- * 自动回退到 `image_data_url` 命令读取的 dataURL，保证背景图一定能渲染。
- */
+/** Local images and videos use separate validated protocols; videos never become base64 IPC. */
 export function useBackgroundSrc(path: string | null): string | null {
   const direct = resolveBackgroundUrl(path);
-  const [src, setSrc] = useState<string | null>(direct);
+  const [fallback, setFallback] = useState<{ path: string; src: string } | null>(null);
 
   useEffect(() => {
-    setSrc(resolveBackgroundUrl(path));
-    if (!path || !direct || !isTauri()) return;
+    if (!path || !direct || !isTauri() || backgroundKind(path) === "video") return;
     let alive = true;
     const probe = new Image();
     probe.onerror = () => {
       invoke<string>("image_data_url", { path })
         .then((dataUrl) => {
-          if (alive && dataUrl) setSrc(dataUrl);
+          if (alive && dataUrl) setFallback({ path, src: dataUrl });
         })
         .catch(() => undefined);
     };
     probe.src = direct;
     return () => {
       alive = false;
+      probe.onerror = null;
     };
   }, [path, direct]);
 
-  return src;
+  return fallback?.path === path ? fallback.src : direct;
 }
 
 /* ============================================================================
@@ -374,7 +382,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     decoration,
     decorationOpacity,
   } = settings.customTheme;
-  useEffect(
+  useLayoutEffect(
     () =>
       startThemeRuntime(document.documentElement, {
         accent: settings.accent,
