@@ -948,14 +948,22 @@ mod tests {
             "src/assets/credits/README.md",
         ];
         assert_eq!(LAUNCHER_LICENSE_ENTRIES.len(), expected_paths.len());
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         for path in expected_paths {
             let embedded = LAUNCHER_LICENSE_ENTRIES
                 .iter()
                 .find_map(|(name, bytes)| (*name == path).then_some(*bytes))
                 .expect(path);
+            let bundle_input = std::fs::read(source_root.join(path)).unwrap();
+            assert_eq!(embedded, bundle_input.as_slice(), "bundle/embedded {path}");
             let actual = read_zip_entry(archive, path, embedded.len() as u64, cancel);
             if launcher {
-                assert_eq!(actual.unwrap(), embedded, "{path}");
+                let actual = actual.unwrap();
+                assert_eq!(actual, embedded, "{path}");
+                if path == "LICENSES/dependencies-NOTICES.txt" {
+                    let text = std::str::from_utf8(&actual).unwrap();
+                    assert!(text.contains("Copyright 2018 Robert F. Masen"));
+                }
             } else {
                 assert!(actual.is_err(), "{path}");
             }
