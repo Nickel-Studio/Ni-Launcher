@@ -946,6 +946,149 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_paths_in_serialized_messages_are_safe_through_process_and_report_sources() {
+        use crate::launch_log_store::{LaunchLogStore, redact_sensitive_text_checked};
+        use minecraft_java_rs_core::launcher::{events::ProcessStream, forward_process_output};
+        use tokio::io::AsyncWriteExt;
+
+        let mut cases = Vec::new();
+        for user in ["R04PrivateUser", "R04\u{6d4b}\u{8bd5} \u{1f600}"] {
+            for (prefix, suffix) in [(r"C:\Users\", r"\.minecraft"), ("/home/", "/.minecraft")] {
+                let mut raw = serde_json::json!({"path":format!("{prefix}{user}{suffix}"),"before":"visible-before","next":"visible"});
+                let mut expected = serde_json::json!({"path":format!("{prefix}***{suffix}"),"before":"visible-before","next":"visible"});
+                for _ in 0..3 {
+                    cases.push((user, raw.to_string(), expected.clone()));
+                    raw = serde_json::json!({"message":raw.to_string(),"next":"visible"});
+                    expected = serde_json::json!({"message":expected.to_string(),"next":"visible"});
+                }
+            }
+        }
+        let mut evidence = Vec::new();
+        for (index, (user, raw, expected)) in cases.into_iter().enumerate() {
+            let root = TemporaryDirectory(
+                std::env::temp_dir()
+                    .join(format!("nickel-user-path-{}", crate::store::random_token())),
+            );
+            let safe = redact_sensitive_text_checked(&raw).unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&safe).unwrap(),
+                expected
+            );
+            assert!(!safe.contains(user), "{index}: {safe}");
+            assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+            let document_store = LaunchLogStore::instance(root.0.join("document"));
+            document_store.append_text(&raw).unwrap();
+            assert_eq!(
+                fs::read_to_string(document_store.log_path())
+                    .unwrap()
+                    .trim_end(),
+                safe
+            );
+
+            let store = LaunchLogStore::instance(&root.0);
+            let (tx, pump, capture, events) = stream_pump(store.clone());
+            assert!(crate::launch_output::reserve_finished(store.log_path()).is_err());
+            let (mut writer, reader) = tokio::io::duplex(7);
+            let stdout = tokio::spawn(forward_process_output(
+                reader,
+                tx.clone(),
+                ProcessStream::Stdout,
+            ));
+            let stderr = tokio::spawn(forward_process_output(
+                &b"visible-stderr\n"[..],
+                tx.clone(),
+                ProcessStream::Stderr,
+            ));
+            let bytes = format!("{raw}\n").into_bytes();
+            let write = tokio::spawn(async move {
+                for chunk in bytes.chunks(3) {
+                    writer.write_all(chunk).await.unwrap();
+                }
+                writer.shutdown().await.unwrap();
+            });
+            drop(tx);
+            write.await.unwrap();
+            stdout.await.unwrap();
+            stderr.await.unwrap();
+            pump.finish().await;
+            assert!(crate::launch_output::reserve_finished(store.log_path()).is_ok());
+            let stored = fs::read_to_string(store.log_path()).unwrap();
+            let captured = capture.lock().unwrap().text();
+            let payload = serde_json::to_string(&*events.lock().unwrap()).unwrap();
+            for text in [&stored, &captured, &payload] {
+                assert!(
+                    !text.contains(user) && !text.contains("无法安全脱敏"),
+                    "{index}: {text}"
+                );
+                assert!(text.contains("visible-stderr") && text.contains("visible-before"));
+            }
+            let stored_json = stored.lines().find(|line| line.starts_with('{')).unwrap();
+            assert_eq!(stored_json, safe);
+            for event in events.lock().unwrap().iter() {
+                if let crate::FrontendEvent::Log { line } = event {
+                    if line.starts_with('{') {
+                        assert_eq!(line.trim_end(), safe);
+                    }
+                }
+            }
+            let stream_zip = root.0.join("stream.zip");
+            assert!(
+                export_report(&root.0, &stream_zip, "user path test")
+                    .unwrap()
+                    .complete
+            );
+            fs::write(root.0.join("logs/latest.log"), format!("{raw}\n")).unwrap();
+            let raw_zip = root.0.join("raw-latest.zip");
+            assert!(
+                export_report(&root.0, &raw_zip, "raw user path test")
+                    .unwrap()
+                    .complete
+            );
+            for (zip, entry) in [
+                (&stream_zip, "logs/nickel-launcher.log"),
+                (&raw_zip, "logs/latest.log"),
+            ] {
+                let text = String::from_utf8(
+                    read_zip_entry(zip, entry, MAX_FILE_BYTES, &CancellationToken::new()).unwrap(),
+                )
+                .unwrap();
+                assert!(
+                    !text.contains(user) && text.contains("visible-before"),
+                    "{index}: {text}"
+                );
+                let json = text.lines().find(|line| line.starts_with('{')).unwrap();
+                assert_eq!(json, safe);
+                assert_eq!(redact_sensitive_text_checked(json).unwrap(), safe);
+            }
+            if let Some(output) = std::env::var_os("NICKEL_REPORT_TEST_OUTPUT") {
+                let output = PathBuf::from(output);
+                fs::create_dir_all(&output).unwrap();
+                for (label, path) in [("stream", &stream_zip), ("raw-latest", &raw_zip)] {
+                    let target = output.join(format!("user-path-{index}-{label}.zip"));
+                    assert!(!target.exists());
+                    fs::copy(path, target).unwrap();
+                }
+                for (label, text) in [
+                    ("document", &safe),
+                    ("storage", &stored),
+                    ("capture", &captured),
+                    ("events", &payload),
+                ] {
+                    let target = output.join(format!("user-path-{index}-{label}.log"));
+                    assert!(!target.exists());
+                    fs::write(target, text).unwrap();
+                }
+            }
+            evidence.push(serde_json::json!({"index":index,"private":user,"expected":expected,"document":safe,"raw":raw}));
+        }
+        if let Some(output) = std::env::var_os("NICKEL_REPORT_TEST_OUTPUT") {
+            let target = PathBuf::from(output).join("user-path-matrix.json");
+            assert!(!target.exists());
+            fs::write(target, serde_json::to_vec_pretty(&evidence).unwrap()).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn stdout_pending_values_never_capture_stderr_or_another_session() {
         use minecraft_java_rs_core::launcher::events::{LaunchEvent, ProcessStream};
         let root = TemporaryDirectory(

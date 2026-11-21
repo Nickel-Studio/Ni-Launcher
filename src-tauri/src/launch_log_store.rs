@@ -990,13 +990,7 @@ fn redact_document(text: &str, final_input: bool) -> Result<String, ScanFailure>
         ));
     }
     let mut spans = Vec::new();
-    collect_key_value_spans(text, &mut spans, final_input)?;
-    collect_user_path_spans(text, &mut spans)
-        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
-    collect_invite_path_spans(text, &mut spans)
-        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
-    collect_url_userinfo_spans(text, &mut spans)
-        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    collect_redaction_spans(text, &mut spans, final_input, 0)?;
     Ok(apply_redaction_spans(text, spans))
 }
 fn push_redaction_span(spans: &mut Vec<RedactionSpan>, span: RedactionSpan) -> Result<(), String> {
@@ -1135,7 +1129,7 @@ fn collect_quoted_message_spans(
         .flatten();
     let text = decoded.as_ref().map_or(inner, |(text, _)| text.as_str());
     let mut spans = Vec::new();
-    match collect_key_value_spans_bounded(text, &mut spans, true, depth + 1) {
+    match collect_redaction_spans(text, &mut spans, true, depth + 1) {
         Ok(()) => {}
         Err(ScanFailure::Incomplete | ScanFailure::IncompleteField { .. }) => {
             // A complete outer string can safely hide an uncertain assignment in full.
@@ -1176,12 +1170,22 @@ fn collect_quoted_message_spans(
     Ok(spans)
 }
 
-fn collect_key_value_spans(
+fn collect_redaction_spans(
     text: &str,
     spans: &mut Vec<RedactionSpan>,
     final_input: bool,
+    depth: usize,
 ) -> Result<(), ScanFailure> {
-    collect_key_value_spans_bounded(text, spans, final_input, 0)
+    // Encoded diagnostics have the same privacy policy as the outer document;
+    // only their byte mapping differs, not the supported fields or path forms.
+    collect_key_value_spans_bounded(text, spans, final_input, depth)?;
+    collect_user_path_spans(text, spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    collect_invite_path_spans(text, spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    collect_url_userinfo_spans(text, spans)
+        .map_err(|_| ScanFailure::Invalid("日志敏感字段数量超过安全处理上限"))?;
+    Ok(())
 }
 
 fn collect_key_value_spans_bounded(
@@ -1602,10 +1606,12 @@ fn scan_invite_segment_end(text: &str, start: usize) -> usize {
     let bytes = text.as_bytes();
     let mut index = start;
     while let Some(byte) = bytes.get(index).copied() {
+        // Encoded closing quotes are boundaries too; decoded messages are
+        // scanned separately and mapped without consuming their escape prefix.
         if byte.is_ascii_whitespace()
             || matches!(
                 byte,
-                b'/' | b'?' | b'#' | b'"' | b'\'' | b'&' | b')' | b']' | b'}'
+                b'/' | b'\\' | b'?' | b'#' | b'"' | b'\'' | b'&' | b')' | b']' | b'}'
             )
         {
             break;
@@ -1845,6 +1851,59 @@ mod quoted_message_redaction_tests {
     }
 
     #[test]
+    fn quoted_user_paths_share_the_document_policy_and_preserve_json() {
+        for user in [
+            "R04PrivateUser",
+            "R04 Private User",
+            "R04\u{6d4b}\u{8bd5} \u{1f600}",
+        ] {
+            for (prefix, suffix) in [
+                (r"C:\Users\", r"\.minecraft"),
+                ("/home/", "/.minecraft"),
+                ("/Users/", "/.minecraft"),
+            ] {
+                let path = format!("{prefix}{user}{suffix}");
+                let masked_path = format!("{prefix}***{suffix}");
+                assert_eq!(redact_sensitive_text_checked(&path).unwrap(), masked_path);
+                let mut raw =
+                    serde_json::json!({"path":path,"before":"visible-before","next":"visible"});
+                let mut expected = serde_json::json!({"path":masked_path,"before":"visible-before","next":"visible"});
+                for _ in 0..3 {
+                    let document = raw.to_string();
+                    let safe = redact_sensitive_text_checked(&document).unwrap();
+                    assert!(!safe.contains(user), "{safe}");
+                    assert_eq!(
+                        serde_json::from_str::<serde_json::Value>(&safe).unwrap(),
+                        expected
+                    );
+                    assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+                    let mut stream = StreamRedactor::default();
+                    assert_eq!(stream.push_line(&document, false), format!("{safe}\n"));
+                    assert!(stream.finish(false).is_empty() && !stream.failed());
+                    raw = serde_json::json!({"message":document,"next":"visible"});
+                    expected = serde_json::json!({"message":expected.to_string(),"next":"visible"});
+                }
+            }
+        }
+        let message = serde_json::json!({
+            "url":"https://user:R04PrivateCredential@example.invalid/invite/R04PrivateInvite",
+            "next":"visible"
+        })
+        .to_string();
+        let raw = serde_json::json!({"message":message,"next":"visible"}).to_string();
+        let safe = redact_sensitive_text_checked(&raw).unwrap();
+        for private in ["R04PrivateCredential", "R04PrivateInvite"] {
+            assert!(!safe.contains(private), "{safe}");
+        }
+        let outer: serde_json::Value = serde_json::from_str(&safe).unwrap();
+        let inner: serde_json::Value =
+            serde_json::from_str(outer["message"].as_str().unwrap()).unwrap();
+        assert_eq!(outer["next"], "visible");
+        assert_eq!(inner["next"], "visible");
+        assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+    }
+
+    #[test]
     fn quoted_messages_keep_normal_diagnostics_and_redacted_edges_stable() {
         for raw in [
             r#"{"message":"Unexpected token \" in JSON","next":"visible"}"#,
@@ -1893,6 +1952,18 @@ mod quoted_message_redaction_tests {
         safe.push_str(&stream.finish(false));
         assert!(!safe.contains("round03-secret"));
         assert!(stream.failed());
+    }
+
+    #[test]
+    fn quoted_user_path_mapping_keeps_the_existing_depth_limit() {
+        let mut raw = r"C:\Users\R04PrivateUser\.minecraft".to_owned();
+        for _ in 0..MAX_QUOTED_MESSAGE_DEPTH {
+            raw = serde_json::to_string(&raw).unwrap();
+        }
+        let safe = redact_sensitive_text_checked(&raw).unwrap();
+        assert!(!safe.contains("R04PrivateUser"));
+        assert_eq!(redact_sensitive_text_checked(&safe).unwrap(), safe);
+        assert!(redact_sensitive_text_checked(&serde_json::to_string(&raw).unwrap()).is_err());
     }
 }
 
