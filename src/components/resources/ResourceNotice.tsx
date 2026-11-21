@@ -46,7 +46,7 @@ export function ResourceSkeletonGrid({ count = 8 }: SkeletonProps) {
   return (
     <div className="rs-grid" aria-hidden="true">
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="rs-skel nw-card">
+        <div key={index} className="rs-skel ni-card">
           <span className="rs-skel__bar rs-skel__bar--sm" />
           <span className="rs-skel__bar rs-skel__bar--lg" />
           <span className="rs-skel__bar" />

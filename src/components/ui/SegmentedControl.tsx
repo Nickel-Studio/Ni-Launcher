@@ -25,9 +25,9 @@ export function SegmentedControl({
   className,
 }: SegmentedControlProps) {
   const cls = [
-    "nw-seg",
-    size === "sm" && "nw-seg--sm",
-    fullWidth && "nw-seg--full",
+    "ni-seg",
+    size === "sm" && "ni-seg--sm",
+    fullWidth && "ni-seg--full",
     className,
   ]
     .filter(Boolean)
@@ -69,7 +69,7 @@ export function SegmentedControl({
       onKeyDown={handleKeyDown}
     >
       <span
-        className="nw-seg__pill"
+        className="ni-seg__pill"
         data-ready={pill.ready}
         style={{ transform: `translateX(${pill.left}px)`, width: pill.width }}
         aria-hidden="true"
@@ -82,7 +82,7 @@ export function SegmentedControl({
           role="tab"
           aria-selected={opt.value === value}
           data-active={opt.value === value}
-          className="nw-seg__item"
+          className="ni-seg__item"
           onClick={() => onChange(opt.value)}
         >
           {opt.icon}

@@ -60,7 +60,7 @@ export interface TooltipProps {
   delay?: number;
 }
 
-/** 与 CSS 里 .nw-tooltip 的 --tip-gap / --tip-edge 对应，读不到时用同值兜底。 */
+/** 与 CSS 里 .ni-tooltip 的 --tip-gap / --tip-edge 对应，读不到时用同值兜底。 */
 const FALLBACK_GAP = 8;
 const FALLBACK_EDGE = 8;
 /** 默认延迟：轻扫不打扰，停留片刻才提示。 */
@@ -365,7 +365,7 @@ export function Tooltip({
               role="tooltip"
               data-side={placement}
               data-flip={flip}
-              className="nw-tooltip"
+              className="ni-tooltip"
               style={{
                 top: coords ? `${coords.top}px` : "0px",
                 left: coords ? `${coords.left}px` : "0px",

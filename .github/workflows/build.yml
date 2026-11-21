@@ -83,8 +83,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 打包使用 production；可选 API 配置由应用运行时读取。
+          # 构建仅投影公共客户端配置和 API Key；真实值不写入源码或日志。
           NICKEL_CHANNEL: production
+          NICKEL_MSA_CLIENT_ID: ${{ secrets.NICKEL_MSA_CLIENT_ID }}
+          NICKEL_MSA_AUTHORITY: ${{ vars.NICKEL_MSA_AUTHORITY }}
+          NICKEL_MSA_REDIRECT_URI: ${{ vars.NICKEL_MSA_REDIRECT_URI }}
+          NICKEL_CURSEFORGE_API_KEY: ${{ secrets.NICKEL_CURSEFORGE_API_KEY }}
         with:
           args: ${{ matrix.args }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}

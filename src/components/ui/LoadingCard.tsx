@@ -31,7 +31,7 @@ const ART_VIEW_HEIGHT = 114;
 function MiningArt() {
   return (
     <svg
-      className="nw-loading__art"
+      className="ni-loading__art"
       viewBox={`0 0 ${ART_VIEW_WIDTH} ${ART_VIEW_HEIGHT}`}
       width={ART_VIEW_WIDTH}
       height={ART_VIEW_HEIGHT}
@@ -43,30 +43,30 @@ function MiningArt() {
       aria-hidden="true"
       focusable="false"
     >
-      <path className="nw-loading__ground" d="M74 100h62" />
-      <g className="nw-loading__block">
+      <path className="ni-loading__ground" d="M74 100h62" />
+      <g className="ni-loading__block">
         <path d="M88 56h32l6 6v30l-6 6H88l-6-6V62Z" />
         <path
-          className="nw-loading__ore"
+          className="ni-loading__ore"
           d="m92 71 4-3 4 4-4 4Zm16 13 4-4 5 3-3 5Z"
         />
-        <path className="nw-loading__crack" d="m104 56-3 8 7 6-5 9" />
+        <path className="ni-loading__crack" d="m104 56-3 8 7 6-5 9" />
       </g>
-      <g className="nw-loading__chips">
+      <g className="ni-loading__chips">
         <path d="m96 50-4-4m14 1 2-5m8 12 5-2" />
       </g>
-      <g className="nw-loading__pick">
+      <g className="ni-loading__pick">
         <path
-          className="nw-loading__handle"
+          className="ni-loading__handle"
           d="m78 35-35 43a3 3 0 0 0 5 4l34-43"
         />
         <path
-          className="nw-loading__head"
+          className="ni-loading__head"
           d="M56 31Q84 15 104 56L88 41Q76 31 56 31Z"
         />
       </g>
       {/* 错误态才出现：矿石正上方的叉号，紧贴镐尖右侧，离开矿块轮廓。 */}
-      <path className="nw-loading__ore-x" d="m110 32 16 16m0-16-16 16" />
+      <path className="ni-loading__ore-x" d="m110 32 16 16m0-16-16 16" />
     </svg>
   );
 }
@@ -81,9 +81,9 @@ export function LoadingCard({
   ...rest
 }: LoadingCardProps) {
   const cls = [
-    "nw-loading",
-    `nw-loading--${size}`,
-    state === "error" ? "nw-loading--error" : "",
+    "ni-loading",
+    `ni-loading--${size}`,
+    state === "error" ? "ni-loading--error" : "",
     className,
   ]
     .filter(Boolean)
@@ -98,12 +98,12 @@ export function LoadingCard({
       aria-atomic="true"
       {...rest}
     >
-      <div className="nw-loading__card">
-        <div className="nw-loading__clip">
+      <div className="ni-loading__card">
+        <div className="ni-loading__clip">
           <MiningArt />
         </div>
-        <p className="nw-loading__label">{text}</p>
-        {action ? <div className="nw-loading__action">{action}</div> : null}
+        <p className="ni-loading__label">{text}</p>
+        {action ? <div className="ni-loading__action">{action}</div> : null}
       </div>
     </div>
   );

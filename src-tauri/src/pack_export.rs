@@ -1,11 +1,16 @@
 //! 标准 Modrinth 整合包与便携 ZIP 导出：共用内容快照、校验和任务终态。
+#[path = "pack_export_content.rs"]
+mod content;
 #[path = "instance_settings_export.rs"]
 pub(crate) mod instance_settings_export;
+#[cfg(test)]
+#[path = "pack_export_regression.rs"]
+mod regression;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use minecraft_java_rs_core::net::transfer::TransferContext;
+use minecraft_java_rs_core::net::transfer::{CancellationToken, TransferContext};
 use minecraft_java_rs_core::utils::archive::{ArchiveLimits, write_zip_files};
 use minecraft_java_rs_core::utils::hash::{HashAlgorithm, get_file_hash_cancellable};
 use serde::{Deserialize, Serialize};
@@ -17,38 +22,24 @@ use crate::{app_tasks, modpacks, named_profiles};
 
 const CONFIG_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 512;
-const CONTENT_DIRECTORIES: &[&str] = &[
-    "mods",
-    "config",
-    "defaultconfigs",
-    "kubejs",
-    "scripts",
-    "resourcepacks",
-    "shaderpacks",
-    "screenshots",
-    "saves",
-    "Xaero",
-    "xaero",
-    "XaeroWaypoints",
-    "XaeroWorldMap",
-    "journeymap",
-    "voxelmap",
-];
-const CONTENT_FILES: &[&str] = &[
-    "options.txt",
-    "optionsof.txt",
-    "optionsshaders.txt",
-    "servers.dat",
-    "servers.dat_old",
-    "hotbar.nbt",
-    "command_history.txt",
-];
+use content::{CONTENT_DIRECTORIES, CONTENT_FILES};
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportEntryKind {
+    File,
+    Directory,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportFile {
+    // Directory selections are scoped tokens, never archive entry paths.
     pub path: String,
-    pub size_bytes: u64,
+    pub source_path: String,
+    pub display_name: String,
+    pub kind: ExportEntryKind,
+    pub size_bytes: Option<u64>,
     pub group: String,
     pub selected: bool,
 }
@@ -99,15 +90,10 @@ pub struct ExportConfig {
     pub name: String,
     pub version: String,
     pub files: Vec<String>,
-    #[serde(default)]
     pub bundle_resources: bool,
-    #[serde(default)]
     pub modrinth_only: bool,
-    #[serde(default)]
     pub format: ExportFormat,
-    #[serde(default)]
     pub include_launcher: bool,
-    #[serde(default)]
     pub include_personalization: bool,
 }
 
@@ -119,15 +105,10 @@ pub struct PackExportRequest {
     pub name: String,
     pub version: String,
     pub files: Vec<String>,
-    #[serde(default)]
     pub bundle_resources: bool,
-    #[serde(default)]
     pub modrinth_only: bool,
-    #[serde(default)]
     pub format: ExportFormat,
-    #[serde(default)]
     pub include_launcher: bool,
-    #[serde(default)]
     pub include_personalization: bool,
 }
 
@@ -149,65 +130,8 @@ fn config(request: &PackExportRequest) -> ExportConfig {
     }
 }
 
-fn sensitive_path(path: &str) -> bool {
-    path.split('/').any(|part| {
-        let name = part.to_ascii_lowercase();
-        name.starts_with('.')
-            || name.starts_with("nowhere.")
-            || name.contains("secret")
-            || name.contains("token")
-            || name.contains("password")
-            || name.contains("credential")
-            || matches!(
-                name.as_str(),
-                "accounts.json"
-                    | "launcher_accounts.json"
-                    | "launcher_profiles.json"
-                    | "usercache.json"
-                    | "usernamecache.json"
-            )
-            || name.ends_with(".pem")
-            || name.ends_with(".key")
-            || name.ends_with(".p12")
-    })
-}
-
 fn group_for(path: &str) -> Option<(&'static str, bool)> {
-    if sensitive_path(path) {
-        return None;
-    }
-    let lower = path.to_ascii_lowercase();
-    // 光影包旁的设置文件独立勾选；解压后的 shaders/ 源码和内置属性仍属于光影包本体。
-    let shader_options = matches!(lower.as_str(), "optionsshaders.txt" | "config/iris.properties" | "config/oculus.properties")
-        || lower.strip_prefix("shaderpacks/").is_some_and(|file| {
-            !file.contains('/') && matches!(file.rsplit('.').next(), Some("txt" | "properties" | "cfg" | "ini" | "json" | "toml" | "yaml" | "yml"))
-        });
-    if shader_options {
-        return Some(("shaderOptions", true));
-    }
-    let root = lower.split('/').next()?;
-    Some(match root {
-        "mods"
-            if lower.ends_with(".disabled")
-                || lower.ends_with(".disable")
-                || lower.ends_with(".old") =>
-        {
-            ("disabledMods", false)
-        }
-        "mods" => ("mods", true),
-        "config" | "defaultconfigs" | "kubejs" | "scripts" => ("config", true),
-        "resourcepacks" => ("resourcepacks", true),
-        "shaderpacks" => ("shaderpacks", true),
-        "screenshots" => ("screenshots", false),
-        "saves" => ("saves", false),
-        "xaero" | "xaerowaypoints" | "xaeroworldmap" | "journeymap" | "voxelmap" => {
-            ("maps", false)
-        }
-        "options.txt" | "optionsof.txt" if !lower.contains('/') => ("gameOptions", true),
-        "servers.dat" | "servers.dat_old" if !lower.contains('/') => ("servers", false),
-        "hotbar.nbt" | "command_history.txt" if !lower.contains('/') => ("personal", false),
-        _ => return None,
-    })
+    content::group_for(path)
 }
 
 pub(crate) fn content_directory(
@@ -227,76 +151,47 @@ pub(crate) fn content_directory(
     }
 }
 
+#[cfg(test)]
 fn collect_files(
     root: &Path,
     path: &Path,
     files: &mut Vec<ExportFile>,
     total: &mut u64,
 ) -> Result<(), String> {
-    let metadata = match std::fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("读取导出文件失败：{error}")),
-    };
-    modpacks::check_destination(root, path)?;
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| "导出文件超出实例目录")?
-        .to_str()
-        .ok_or("导出文件名不是有效 Unicode")?
-        .replace('\\', "/");
-    if sensitive_path(&relative) {
-        return Ok(());
-    }
-    modpacks::validate_pack_path(&relative).map_err(|e| e.to_string())?;
-    if metadata.is_dir() {
-        for child in std::fs::read_dir(path).map_err(|e| format!("读取导出目录失败：{e}"))?
-        {
-            collect_files(
-                root,
-                &child.map_err(|e| e.to_string())?.path(),
-                files,
-                total,
-            )?;
-        }
-    } else if metadata.is_file() {
-        let Some((group, selected)) = group_for(&relative) else {
-            return Ok(());
-        };
-        let limits = ArchiveLimits::default();
-        *total = total
-            .checked_add(metadata.len())
-            .ok_or("导出文件总大小溢出")?;
-        if files.len() >= limits.max_entries
-            || metadata.len() > limits.max_entry_bytes
-            || *total > limits.max_total_bytes
-        {
-            return Err("导出内容超过归档配额，请减少所选内容".into());
-        }
-        files.push(ExportFile {
-            path: relative,
-            size_bytes: metadata.len(),
-            group: group.into(),
-            selected,
-        });
-    } else {
-        return Err(format!("导出内容不能包含特殊文件：{relative}"));
-    }
+    content::collect_preview(root, path, files, &CancellationToken::new())?;
+    *total = files.iter().filter_map(|file| file.size_bytes).sum();
     Ok(())
 }
 
-fn inspect(app: &AppHandle, dir: &str, version_id: &str) -> Result<ExportInstance, String> {
+fn inspect(
+    app: &AppHandle,
+    dir: &str,
+    version_id: &str,
+    cancel: &CancellationToken,
+) -> Result<ExportInstance, String> {
+    cancel.check()?;
     named_profiles::validate_name(version_id)?;
     let root = std::fs::canonicalize(dir).map_err(|e| format!("读取实例根目录失败：{e}"))?;
     let resource_root = crate::runtime_settings::resource_directory(app, &root, version_id)?;
-    inspect_resolved(&root, version_id, resource_root)
+    inspect_resolved_cancellable(&root, version_id, resource_root, cancel)
 }
 
+#[cfg(test)]
 fn inspect_resolved(
     root: &Path,
     version_id: &str,
     resource_root: PathBuf,
 ) -> Result<ExportInstance, String> {
+    inspect_resolved_cancellable(root, version_id, resource_root, &CancellationToken::new())
+}
+
+fn inspect_resolved_cancellable(
+    root: &Path,
+    version_id: &str,
+    resource_root: PathBuf,
+    cancel: &CancellationToken,
+) -> Result<ExportInstance, String> {
+    cancel.check()?;
     let directory = root.join("versions").join(version_id);
     modpacks::check_destination(root, &directory)?;
     if resource_root != root {
@@ -347,19 +242,23 @@ fn inspect_resolved(
         Err(error) => (Vec::new(), Vec::new(), Some(error)),
     };
     let mut files = Vec::new();
-    let mut total = 0_u64;
-    // 大小写不敏感文件系统上 Xaero/xaero 只遍历一次。
     let mut visited = HashSet::new();
     for name in CONTENT_DIRECTORIES.iter().chain(CONTENT_FILES) {
+        cancel.check()?;
         let path = content_directory(&resource_root, name, &mods_loader, &minecraft_version);
         if let Ok(canonical) = std::fs::canonicalize(&path) {
             if !visited.insert(canonical) {
                 continue;
             }
         }
-        collect_files(&resource_root, &path, &mut files, &mut total)?;
+        content::collect_preview(&resource_root, &path, &mut files, cancel)?;
     }
-    files.sort_by(|a, b| a.group.cmp(&b.group).then_with(|| a.path.cmp(&b.path)));
+    files.sort_by(|a, b| {
+        a.group
+            .cmp(&b.group)
+            .then_with(|| a.display_name.cmp(&b.display_name))
+            .then_with(|| a.path.cmp(&b.path))
+    });
     Ok(ExportInstance {
         resource_root,
         preview: ExportPreview {
@@ -389,17 +288,19 @@ fn validate_config(config: &ExportConfig) -> Result<(), String> {
             ));
         }
     }
-    if config.format == ExportFormat::Mrpack && (config.include_launcher || config.include_personalization) {
+    if config.format == ExportFormat::Mrpack
+        && (config.include_launcher || config.include_personalization)
+    {
         return Err("附带启动器或个性化设置时，请选择「便携 ZIP」".into());
     }
     if config.files.len() > ArchiveLimits::default().max_entries {
-        return Err("导出文件数量超过上限".into());
+        return Err("导出选择数量超过上限".into());
     }
     let mut seen = HashSet::new();
     for file in &config.files {
-        modpacks::validate_pack_path(file).map_err(|e| e.to_string())?;
-        if group_for(file).is_none() || !seen.insert(file.to_lowercase()) {
-            return Err(format!("导出文件不允许或重复：{file}"));
+        content::parse_selection(file)?;
+        if !seen.insert(file.to_lowercase()) {
+            return Err(format!("导出选择重复：{file}"));
         }
     }
     Ok(())
@@ -430,47 +331,976 @@ fn manifest(
     Ok(bytes)
 }
 
-fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
+fn read_policy_text(path: &Path, relative: &str) -> Result<String, String> {
+    use std::io::Read;
+    let input = std::fs::File::open(path).map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
+    if input.metadata().map_err(|e| e.to_string())?.len() > CONFIG_MAX_BYTES {
+        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
+    }
+    let mut text = String::new();
+    input
+        .take(CONFIG_MAX_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
+    }
+    Ok(text)
+}
+
+fn credential_key(key: &str) -> bool {
+    let leaf = key.rsplit('.').next().unwrap_or(key);
+    let folded: String = leaf
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    matches!(
+        folded.as_str(),
+        "accesstoken"
+            | "clienttoken"
+            | "refreshtoken"
+            | "authtoken"
+            | "bearertoken"
+            | "sessiontoken"
+            | "apitoken"
+            | "clientsecret"
+            | "apikey"
+            | "apikeys"
+            | "password"
+            | "authorization"
+            | "privatekey"
+            | "secretkey"
+    )
+}
+
+fn environment_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn environment_placeholder(value: &str) -> bool {
+    // Only a complete variable reference is non-secret; defaults and literal
+    // prefixes/suffixes are data, even when an application expands placeholders.
+    value
+        .strip_prefix("${")
+        .and_then(|v| v.strip_suffix('}'))
+        .or_else(|| value.strip_prefix('%').and_then(|v| v.strip_suffix('%')))
+        .is_some_and(environment_name)
+}
+
+fn credential_value(text: &str) -> bool {
+    let value = text.trim();
+    let folded: String = value
+        .chars()
+        .filter(|character| !matches!(character, '_' | '-' | ' '))
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    if value.is_empty()
+        || matches!(
+            folded.as_str(),
+            "null"
+                | "none"
+                | "true"
+                | "false"
+                | "disabled"
+                | "unset"
+                | "notset"
+                | "changeme"
+                | "placeholder"
+                | "redacted"
+                | "yourapikey"
+                | "yourapikeyhere"
+                | "yourtoken"
+                | "yourtokenhere"
+                | "yourpassword"
+                | "yourpasswordhere"
+                | "yourclientsecret"
+                | "<apikey>"
+                | "<token>"
+                | "<password>"
+        )
+        || value.bytes().all(|character| character == b'*')
+        || environment_placeholder(value)
+    {
+        return false;
+    }
+    true
+}
+
+fn embedded_credentials(text: &str) -> bool {
+    let text = text.trim();
+    let lower = text.to_ascii_lowercase();
+    let authorization = lower
+        .strip_prefix("authorization:")
+        .map_or(text, |rest| &text[text.len() - rest.trim_start().len()..]);
+    if authorization.to_ascii_lowercase().starts_with("bearer ") {
+        let token = authorization[7..].trim();
+        if token.len() >= 16
+            && credential_value(token)
+            && token.bytes().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, b'_' | b'-' | b'.' | b'+' | b'/' | b'=')
+            })
+        {
+            return true;
+        }
+    }
+    if authorization.to_ascii_lowercase().starts_with("basic ") {
+        use base64::Engine;
+        if base64::engine::general_purpose::STANDARD
+            .decode(authorization[6..].trim())
+            .is_ok_and(|bytes| bytes.contains(&b':'))
+        {
+            return true;
+        }
+    }
+    if [
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker) && text.contains("-----END "))
+    {
+        return true;
+    }
+    if let Ok(url) = minecraft_java_rs_core::net::client::reqwest::Url::parse(text) {
+        if url.password().is_some_and(credential_value)
+            || url
+                .query_pairs()
+                .any(|(key, value)| credential_key(&key) && credential_value(&value))
+        {
+            return true;
+        }
+    }
+    let parts: Vec<_> = text.split('.').collect();
+    text.starts_with("eyJ")
+        && parts.len() == 3
+        && parts[0].len() >= 8
+        && parts[1].len() >= 8
+        && parts[2].len() >= 16
+        && parts.iter().all(|part| {
+            part.bytes().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, b'_' | b'-')
+            })
+        })
+}
+
+enum CredentialToken {
+    Text { value: String, quoted: bool },
+    Assignment,
+    Field,
+    Open(u8),
+    Close(u8),
+    End,
+    Invalid,
+    Other,
+}
+
+fn decode_script_string(inner: &str) -> Option<String> {
+    let mut chars = inner.chars().peekable();
+    let mut result = String::new();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        let escaped = chars.next()?;
+        let decoded = match escaped {
+            '\n' => continue,
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                continue;
+            }
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            'b' => '\u{8}',
+            'f' => '\u{c}',
+            'v' => '\u{b}',
+            'x' | 'u' => {
+                let braced = escaped == 'u' && chars.peek() == Some(&'{');
+                let mut hex = String::new();
+                if braced {
+                    chars.next();
+                    loop {
+                        let digit = chars.next()?;
+                        if digit == '}' {
+                            break;
+                        }
+                        if hex.len() >= 6 || !digit.is_ascii_hexdigit() {
+                            return None;
+                        }
+                        hex.push(digit);
+                    }
+                } else {
+                    for _ in 0..if escaped == 'x' { 2 } else { 4 } {
+                        let digit = chars.next()?;
+                        if !digit.is_ascii_hexdigit() {
+                            return None;
+                        }
+                        hex.push(digit);
+                    }
+                }
+                let mut code = u32::from_str_radix(&hex, 16).ok()?;
+                if (0xd800..=0xdbff).contains(&code) {
+                    if chars.next()? != '\\' || chars.next()? != 'u' {
+                        return None;
+                    }
+                    let low: String = chars.by_ref().take(4).collect();
+                    if low.len() != 4 {
+                        return None;
+                    }
+                    let low = u32::from_str_radix(&low, 16).ok()?;
+                    if !(0xdc00..=0xdfff).contains(&low) {
+                        return None;
+                    }
+                    code = 0x10000 + ((code - 0xd800) << 10) + low - 0xdc00;
+                }
+                char::from_u32(code)?
+            }
+            '0'..='7' => {
+                let mut code = escaped.to_digit(8)?;
+                for _ in 0..if escaped <= '3' { 2 } else { 1 } {
+                    let Some(digit @ '0'..='7') = chars.peek().copied() else {
+                        break;
+                    };
+                    chars.next();
+                    code = code * 8 + digit.to_digit(8)?;
+                }
+                char::from_u32(code)?
+            }
+            other => other,
+        };
+        result.push(decoded);
+    }
+    Some(result)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScriptPolicyLanguage {
+    JavaScript,
+    TypeScript,
+}
+
+impl ScriptPolicyLanguage {
+    fn from_extension(extension: &str) -> Option<Self> {
+        match extension {
+            "js" => Some(Self::JavaScript),
+            "ts" => Some(Self::TypeScript),
+            _ => None,
+        }
+    }
+}
+
+struct JavaScriptPolicyFrame {
+    close: u8,
+    regex_after: bool,
+    statement_body: bool,
+    property_name: bool,
+    function_body: Option<bool>,
+}
+
+fn javascript_policy_text(text: &str, language: ScriptPolicyLanguage) -> Result<String, ()> {
+    use ress::ManualScanner;
+    use ress::tokens::{Punct, Token};
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(());
+    }
+    let mut scanner = ManualScanner::new(text);
+    let mut safe = text.as_bytes().to_vec();
+    let mut stack: Vec<JavaScriptPolicyFrame> = Vec::new();
+    let mut regex_allowed = true;
+    let mut statement_start = true;
+    let mut conditional = false;
+    let mut closed_paren = false;
+    let mut arrow = false;
+    let mut member_name = false;
+    let mut pending_function = None;
+    let mut function_body = None;
+    let mut pending_class = None;
+    let mut previous_end = 0;
+    for _ in 0..MAX_POLICY_EVENTS {
+        let Some(item) = scanner.next_token() else {
+            return Err(());
+        };
+        let mut item = item.map_err(|_| ())?;
+        if item.token.is_div_punct() && regex_allowed {
+            item = scanner
+                .next_regex(item.span.len())
+                .ok_or(())?
+                .map_err(|_| ())?;
+        }
+        if matches!(item.token, Token::EoF) {
+            return if stack.is_empty() && pending_function.is_none() && pending_class.is_none() {
+                String::from_utf8(safe).map_err(|_| ())
+            } else {
+                Err(())
+            };
+        }
+        if item.token.is_comment() {
+            continue;
+        }
+        if let Token::RegEx(regex) = &item.token {
+            let flags = regex.flags.unwrap_or("");
+            let mut seen = 0_u16;
+            for flag in flags.bytes() {
+                let bit = b"dgimsuvy"
+                    .iter()
+                    .position(|value| *value == flag)
+                    .ok_or(())?;
+                if seen & (1 << bit) != 0 {
+                    return Err(());
+                }
+                seen |= 1 << bit;
+            }
+            if flags.contains('u') && flags.contains('v') {
+                return Err(());
+            }
+            // Keep byte offsets and surrounding source intact. The policy scanner
+            // sees an opaque expression, never quotes or assignments inside regex.
+            safe[item.span.start..item.span.end].fill(b' ');
+            safe[item.span.start] = b'_';
+        } else if item.token.is_div_punct() {
+            // An arithmetic slash is not a filesystem root. Multiplication has
+            // the same policy role and preserves compound-assignment detection.
+            safe[item.span.start] = b'*';
+        }
+        let was_conditional = conditional;
+        let was_closed_paren = closed_paren;
+        let was_arrow = arrow;
+        let was_member = member_name;
+        let was_property = stack.last().is_some_and(|frame| frame.property_name);
+        let was_function_body = function_body.take();
+        if let Some(frame) = stack.last_mut() {
+            frame.property_name = false;
+        }
+        conditional = false;
+        closed_paren = false;
+        arrow = false;
+        member_name = false;
+        match &item.token {
+            Token::Punct(Punct::OpenParen | Punct::OpenBrace | Punct::OpenBracket) => {
+                if stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let frame = match item.token {
+                    Token::Punct(Punct::OpenParen) => JavaScriptPolicyFrame {
+                        close: b')',
+                        regex_after: was_conditional,
+                        statement_body: false,
+                        property_name: false,
+                        function_body: pending_function.take(),
+                    },
+                    Token::Punct(Punct::OpenBracket) => JavaScriptPolicyFrame {
+                        close: b']',
+                        regex_after: false,
+                        statement_body: false,
+                        property_name: false,
+                        function_body: None,
+                    },
+                    _ => {
+                        // Function/arrow/class expression bodies contain statements,
+                        // but their closing brace still ends an expression, not a
+                        // statement that may be followed by a regex literal.
+                        let (regex_after, statement_body) =
+                            if let Some(declaration) = was_function_body {
+                                (declaration, true)
+                            } else if pending_class.is_some_and(|(depth, _)| depth == stack.len()) {
+                                let (_, declaration) = pending_class.take().ok_or(())?;
+                                (declaration, true)
+                            } else if was_arrow {
+                                (false, true)
+                            } else {
+                                (statement_start, statement_start || was_closed_paren)
+                            };
+                        JavaScriptPolicyFrame {
+                            close: b'}',
+                            regex_after,
+                            statement_body,
+                            property_name: !statement_body,
+                            function_body: None,
+                        }
+                    }
+                };
+                regex_allowed = true;
+                statement_start = frame.statement_body;
+                stack.push(frame);
+            }
+            Token::Punct(Punct::CloseParen | Punct::CloseBrace | Punct::CloseBracket) => {
+                let close = match item.token {
+                    Token::Punct(Punct::CloseParen) => b')',
+                    Token::Punct(Punct::CloseBracket) => b']',
+                    _ => b'}',
+                };
+                let frame = stack.pop().ok_or(())?;
+                if frame.close != close {
+                    return Err(());
+                }
+                regex_allowed = frame.regex_after;
+                statement_start = frame.regex_after;
+                closed_paren = close == b')';
+                function_body = frame.function_body;
+            }
+            Token::Punct(Punct::DoublePlus | Punct::DoubleDash) => {
+                statement_start = false;
+            }
+            Token::Punct(Punct::Period) => {
+                regex_allowed = false;
+                statement_start = false;
+                member_name = true;
+            }
+            Token::Punct(Punct::Bang)
+                if language == ScriptPolicyLanguage::TypeScript
+                    && !regex_allowed
+                    && !text[previous_end..item.span.start]
+                        .chars()
+                        .any(|ch| matches!(ch, '\r' | '\n' | '\u{2028}' | '\u{2029}')) =>
+            {
+                // A TS postfix assertion preserves the operand; after a line break
+                // `!` is prefix negation instead. `!=` and `!==` stay operators.
+                statement_start = false;
+            }
+            Token::Punct(punct) => {
+                regex_allowed = true;
+                statement_start = *punct == Punct::SemiColon
+                    && stack.last().is_none_or(|frame| frame.statement_body);
+                arrow = *punct == Punct::EqualGreaterThan;
+                if *punct == Punct::Comma {
+                    if let Some(frame) = stack.last_mut() {
+                        frame.property_name = frame.close == b'}' && !frame.statement_body;
+                    }
+                }
+            }
+            Token::Keyword(_) if was_member || was_property => {
+                regex_allowed = false;
+                statement_start = false;
+            }
+            Token::Keyword(keyword) => {
+                let word = keyword.as_str();
+                if word == "function" {
+                    pending_function = Some(statement_start);
+                } else if word == "class" {
+                    if pending_class.is_some() {
+                        return Err(());
+                    }
+                    pending_class = Some((stack.len(), statement_start));
+                }
+                conditional = matches!(word, "if" | "while" | "for" | "with" | "switch" | "catch");
+                regex_allowed = conditional
+                    || matches!(
+                        word,
+                        "return"
+                            | "throw"
+                            | "case"
+                            | "delete"
+                            | "void"
+                            | "typeof"
+                            | "new"
+                            | "in"
+                            | "instanceof"
+                            | "yield"
+                            | "await"
+                            | "else"
+                            | "do"
+                    );
+                statement_start = matches!(word, "else" | "do" | "try" | "finally" | "catch")
+                    || statement_start && matches!(word, "export" | "default");
+            }
+            Token::Ident(identifier) if identifier.as_ref() == "async" && !was_member => {
+                regex_allowed = false;
+            }
+            Token::Template(template) => {
+                regex_allowed = template.is_head() || template.is_middle();
+                statement_start = false;
+            }
+            _ => {
+                regex_allowed = false;
+                statement_start = false;
+            }
+        }
+        previous_end = item.span.end;
+    }
+    Err(())
+}
+
+fn credential_token(text: &str, offset: &mut usize, javascript: bool) -> Option<CredentialToken> {
+    let bytes = text.as_bytes();
+    loop {
+        while bytes.get(*offset).is_some_and(u8::is_ascii_whitespace) {
+            *offset += 1;
+        }
+        let rest = text.get(*offset..)?;
+        if rest.starts_with("//")
+            || (!javascript && (rest.starts_with('#') || rest.starts_with("--")))
+        {
+            *offset += rest.find('\n').unwrap_or(rest.len());
+        } else if rest.starts_with("/*") {
+            let Some(end) = rest.find("*/") else {
+                *offset = text.len();
+                return Some(CredentialToken::Invalid);
+            };
+            *offset += end + 2;
+        } else {
+            break;
+        }
+    }
+    let first = *bytes.get(*offset)?;
+    let start = *offset;
+    *offset += 1;
+    match first {
+        b'$' if bytes.get(*offset) == Some(&b'{') => {
+            if let Some(end) = text[*offset..].find('}') {
+                *offset += end + 1;
+                Some(CredentialToken::Text {
+                    value: text[start..*offset].into(),
+                    quoted: false,
+                })
+            } else {
+                Some(CredentialToken::Invalid)
+            }
+        }
+        b'"' | b'\'' | b'`' => {
+            let mut escaped = false;
+            while let Some(&ch) = bytes.get(*offset) {
+                *offset += 1;
+                if escaped {
+                    escaped = false;
+                } else if ch == b'\\' {
+                    escaped = true;
+                } else if ch == first {
+                    return Some(match decode_script_string(&text[start + 1..*offset - 1]) {
+                        Some(value) => CredentialToken::Text {
+                            value,
+                            quoted: true,
+                        },
+                        None => CredentialToken::Invalid,
+                    });
+                }
+            }
+            Some(CredentialToken::Invalid)
+        }
+        b':' => Some(CredentialToken::Field),
+        b'=' | b'!' | b'?' | b'|' | b'&' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'<'
+        | b'>' => {
+            while bytes.get(*offset).is_some_and(|ch| {
+                matches!(ch, b'=' | b'?' | b'|' | b'&' | b'<' | b'>' | b'*')
+                    || javascript && *ch == first && matches!(first, b'+' | b'-')
+            }) {
+                *offset += 1;
+            }
+            let operator = &text[start..*offset];
+            Some(
+                if matches!(
+                    operator,
+                    "=" | "??="
+                        | "||="
+                        | "&&="
+                        | "+="
+                        | "-="
+                        | "*="
+                        | "/="
+                        | "%="
+                        | "**="
+                        | "&="
+                        | "|="
+                        | "^="
+                        | "<<="
+                        | ">>="
+                        | ">>>="
+                ) {
+                    CredentialToken::Assignment
+                } else {
+                    CredentialToken::Other
+                },
+            )
+        }
+        b'{' | b'[' | b'(' => Some(CredentialToken::Open(first)),
+        b'}' | b']' | b')' => Some(CredentialToken::Close(first)),
+        b',' | b';' => Some(CredentialToken::End),
+        _ => {
+            while bytes.get(*offset).is_some_and(|ch| {
+                !ch.is_ascii_whitespace() && !b"\"'`=:{}[](),;?!|&+*/%^<>".contains(ch)
+            }) {
+                *offset += 1;
+            }
+            let raw = &text[start..*offset];
+            Some(match decode_script_string(raw) {
+                Some(value) => CredentialToken::Text {
+                    value,
+                    quoted: false,
+                },
+                None => CredentialToken::Invalid,
+            })
+        }
+    }
+}
+
+fn credential_assignment_value(
+    token: CredentialToken,
+    text: &str,
+    offset: &mut usize,
+    script: bool,
+    javascript: bool,
+    depth: usize,
+) -> bool {
+    match token {
+        CredentialToken::Invalid => true,
+        CredentialToken::Text { value, quoted } => {
+            let mut after = *offset;
+            if matches!(
+                credential_token(text, &mut after, javascript),
+                Some(CredentialToken::Field | CredentialToken::Assignment)
+            ) {
+                return false;
+            }
+            // An environment lookup's variable name is not a secret literal.
+            if script
+                && !quoted
+                && matches!(value.as_str(), "System.getenv" | "os.getenv" | "getenv")
+            {
+                after = *offset;
+                if matches!(
+                    credential_token(text, &mut after, javascript),
+                    Some(CredentialToken::Open(b'('))
+                ) {
+                    if let Some(CredentialToken::Text {
+                        value: name,
+                        quoted: true,
+                    }) = credential_token(text, &mut after, javascript)
+                    {
+                        if environment_name(&name)
+                            && matches!(
+                                credential_token(text, &mut after, javascript),
+                                Some(CredentialToken::Close(b')'))
+                            )
+                        {
+                            *offset = after;
+                            return false;
+                        }
+                    }
+                }
+            }
+            (quoted || !script || value.parse::<f64>().is_ok()) && credential_value(&value)
+        }
+        CredentialToken::Open(open) => {
+            if depth >= MAX_POLICY_DEPTH {
+                return true;
+            }
+            let close = match open {
+                b'[' => b']',
+                b'(' => b')',
+                _ => b'}',
+            };
+            while let Some(token) = credential_token(text, offset, javascript) {
+                if let CredentialToken::Close(end) = token {
+                    return end != close;
+                }
+                if credential_assignment_value(token, text, offset, script, javascript, depth + 1) {
+                    return true;
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+fn credential_text(text: &str, script: bool) -> bool {
+    credential_text_language(
+        text,
+        script,
+        script.then_some(ScriptPolicyLanguage::JavaScript),
+    )
+}
+
+fn credential_text_language(
+    text: &str,
+    script: bool,
+    language: Option<ScriptPolicyLanguage>,
+) -> bool {
+    let javascript = language.is_some();
+    let safe;
+    let text = if let Some(language) = language {
+        safe = match javascript_policy_text(text, language) {
+            Ok(value) => value,
+            Err(_) => return true,
+        };
+        safe.as_str()
+    } else {
+        text
+    };
+    let mut offset = 0;
+    let mut after_bracket = false;
+    while let Some(token) = credential_token(text, &mut offset, javascript) {
+        let indexed = after_bracket;
+        after_bracket = matches!(token, CredentialToken::Open(b'['));
+        if matches!(token, CredentialToken::Invalid) {
+            return true;
+        }
+        let CredentialToken::Text { value, quoted } = token else {
+            continue;
+        };
+        if quoted && embedded_credentials(&value) {
+            return true;
+        }
+        if !credential_key(&value) {
+            continue;
+        }
+        let mut next = offset;
+        let mut operator = credential_token(text, &mut next, javascript);
+        if script && quoted && indexed && matches!(operator, Some(CredentialToken::Close(b']'))) {
+            operator = credential_token(text, &mut next, javascript);
+            if !matches!(operator, Some(CredentialToken::Assignment)) {
+                continue;
+            }
+        }
+        if !matches!(
+            operator,
+            Some(CredentialToken::Assignment | CredentialToken::Field)
+        ) {
+            continue;
+        }
+        while let Some(token) = credential_token(text, &mut next, javascript) {
+            if matches!(token, CredentialToken::End | CredentialToken::Close(_)) {
+                break;
+            }
+            if credential_assignment_value(token, text, &mut next, script, javascript, 0) {
+                return true;
+            }
+            if !script {
+                break;
+            }
+            // A new statement without a semicolon is not part of this RHS.
+            if text
+                .as_bytes()
+                .get(next)
+                .is_some_and(|ch| matches!(ch, b'\r' | b'\n'))
+            {
+                break;
+            }
+        }
+    }
+    false
+}
+
+fn toml_has_credentials(value: &toml::Value, sensitive: bool) -> bool {
+    // The TOML parser enforces its depth limit; preserve key context through both
+    // tables and arrays, using the same value policy as JSON and script exports.
+    match value {
+        toml::Value::String(text) => {
+            (sensitive && credential_value(text)) || embedded_credentials(text)
+        }
+        toml::Value::Array(values) => values.iter().any(|v| toml_has_credentials(v, sensitive)),
+        toml::Value::Table(values) => values
+            .iter()
+            .any(|(key, value)| toml_has_credentials(value, sensitive || credential_key(key))),
+        toml::Value::Boolean(_) => false,
+        _ => sensitive,
+    }
+}
+
+const MAX_POLICY_DEPTH: usize = 64;
+const MAX_POLICY_EVENTS: usize = 262_144;
+
+enum YamlPolicyFrame {
+    Sequence(bool),
+    Mapping {
+        sensitive: bool,
+        pending_value: Option<bool>,
+    },
+}
+
+fn yaml_child_context(stack: &mut [YamlPolicyFrame]) -> Result<bool, ()> {
+    match stack.last_mut() {
+        Some(YamlPolicyFrame::Sequence(sensitive)) => Ok(*sensitive),
+        Some(YamlPolicyFrame::Mapping { pending_value, .. }) => pending_value.take().ok_or(()),
+        None => Ok(false),
+    }
+}
+
+fn yaml_has_credentials(text: &str) -> Result<bool, ()> {
+    use yaml_rust2::parser::{Event, Parser};
+    use yaml_rust2::scanner::TScalarStyle;
+    if text.len() as u64 > CONFIG_MAX_BYTES {
+        return Err(());
+    }
+    let mut parser = Parser::new_from_str(text);
+    let mut stack = Vec::new();
+    // Validate the complete bounded stream even after finding credentials.
+    let mut contains_credentials = false;
+    for _ in 0..MAX_POLICY_EVENTS {
+        match parser.next_token().map_err(|_| ())?.0 {
+            Event::Scalar(value, style, _, tag) => {
+                if tag.is_some() {
+                    return Err(());
+                }
+                contains_credentials |= embedded_credentials(&value);
+                let sensitive = match stack.last_mut() {
+                    Some(YamlPolicyFrame::Mapping {
+                        sensitive,
+                        pending_value,
+                    }) => {
+                        if let Some(value_sensitive) = pending_value.take() {
+                            value_sensitive
+                        } else {
+                            *pending_value = Some(*sensitive || credential_key(&value));
+                            continue;
+                        }
+                    }
+                    Some(YamlPolicyFrame::Sequence(sensitive)) => *sensitive,
+                    None => false,
+                };
+                let null = style == TScalarStyle::Plain && value == "~";
+                contains_credentials |= sensitive && !null && credential_value(&value);
+            }
+            Event::SequenceStart(_, tag) => {
+                if tag.is_some() || stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let sensitive = yaml_child_context(&mut stack)?;
+                stack.push(YamlPolicyFrame::Sequence(sensitive));
+            }
+            Event::MappingStart(_, tag) => {
+                if tag.is_some() || stack.len() >= MAX_POLICY_DEPTH {
+                    return Err(());
+                }
+                let sensitive = yaml_child_context(&mut stack)?;
+                stack.push(YamlPolicyFrame::Mapping {
+                    sensitive,
+                    pending_value: None,
+                });
+            }
+            Event::SequenceEnd => {
+                if !matches!(stack.pop(), Some(YamlPolicyFrame::Sequence(_))) {
+                    return Err(());
+                }
+            }
+            Event::MappingEnd => {
+                if !matches!(
+                    stack.pop(),
+                    Some(YamlPolicyFrame::Mapping {
+                        pending_value: None,
+                        ..
+                    })
+                ) {
+                    return Err(());
+                }
+            }
+            // Reject graph features without building or expanding an alias tree.
+            Event::Alias(_) => return Err(()),
+            Event::DocumentStart | Event::DocumentEnd => {
+                if !stack.is_empty() {
+                    return Err(());
+                }
+            }
+            Event::StreamEnd => {
+                return if stack.is_empty() {
+                    Ok(contains_credentials)
+                } else {
+                    Err(())
+                };
+            }
+            Event::StreamStart => {}
+            Event::Nothing => return Err(()),
+        }
+    }
+    Err(())
+}
+
+fn json_has_credentials(value: &Value) -> bool {
+    fn populated(value: &Value) -> bool {
+        match value {
+            Value::String(text) => credential_value(text),
+            Value::Number(_) => true,
+            Value::Array(values) => values.iter().any(populated),
+            Value::Object(values) => values.values().any(populated),
+            Value::Null | Value::Bool(_) => false,
+        }
+    }
+    match value {
+        Value::String(text) => embedded_credentials(text),
+        Value::Array(values) => values.iter().any(json_has_credentials),
+        Value::Object(values) => values.iter().any(|(key, value)| {
+            (credential_key(key) && populated(value)) || json_has_credentials(value)
+        }),
+        _ => false,
+    }
+}
+
+fn is_policy_text(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|v| v.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !matches!(
+    matches!(
         extension.as_str(),
-        "json" | "toml" | "yaml" | "yml" | "properties" | "cfg" | "ini" | "txt"
-    ) {
+        "json"
+            | "json5"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "properties"
+            | "cfg"
+            | "conf"
+            | "config"
+            | "ini"
+            | "txt"
+            | "js"
+            | "ts"
+            | "zs"
+            | "lua"
+            | "mcmeta"
+            | "snbt"
+    )
+}
+
+fn reject_credentials(path: &Path, relative: &str) -> Result<(), String> {
+    if !is_policy_text(path) {
         return Ok(());
     }
-    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if size > CONFIG_MAX_BYTES {
-        return Err(format!("配置文件过大，请取消选择后重试：{relative}"));
-    }
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("读取配置失败 {relative}：{e}"))?;
-    let folded: String = text
-        .to_ascii_lowercase()
-        .chars()
-        .filter(|c| !matches!(c, '_' | '-' | ' '))
-        .collect();
-    if [
-        "accesstoken",
-        "clienttoken",
-        "refreshtoken",
-        "clientsecret",
-        "apikey",
-        "password",
-        "authorization",
-        "privatekey",
-    ]
-    .iter()
-    .any(|key| folded.contains(key))
-    {
-        return Err(format!("配置文件含凭据字段，请取消选择后重试：{relative}"));
+    let text = read_policy_text(path, relative)?;
+    let extension = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    // Structured syntax/depth errors never fall back to a looser scanner or
+    // expose parser diagnostics containing the user's configuration text.
+    let contains_credentials = if extension == "toml" {
+        let value = toml::from_str::<toml::Value>(&text)
+            .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
+        toml_has_credentials(&value, false)
+    } else if matches!(extension.as_str(), "yaml" | "yml") {
+        yaml_has_credentials(&text)
+            .map_err(|_| format!("无法安全解析 YAML 配置（语法、别名、标签或处理上限），请修正或取消选择后重试：{relative}"))?
+    } else {
+        let script = matches!(extension.as_str(), "js" | "ts" | "zs" | "lua");
+        match serde_json::from_str::<Value>(&text) {
+            Ok(value) => json_has_credentials(&value),
+            Err(_) => credential_text_language(
+                &text,
+                script,
+                ScriptPolicyLanguage::from_extension(&extension),
+            ),
+        }
+    };
+    if contains_credentials {
+        return Err(format!(
+            "配置或脚本含真实凭据，请移除凭据或取消选择后重试：{relative}"
+        ));
     }
     Ok(())
 }
-
 
 fn has_host_path(value: &str, source_roots: &[&Path]) -> bool {
     let normalized = value.replace('\\', "/").to_ascii_lowercase();
@@ -478,57 +1308,179 @@ fn has_host_path(value: &str, source_roots: &[&Path]) -> bool {
         let bytes = value.as_bytes();
         value.starts_with('/')
             || value.starts_with("file:")
-            || (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/')
+            || (bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && bytes[2] == b'/')
             || source_roots.iter().any(|root| {
-                let root = root.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+                let root = root
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_ascii_lowercase();
                 let root = root.trim_end_matches('/');
-                root.len() > 1 && (value == root || value.strip_prefix(root).is_some_and(|suffix| suffix.starts_with('/')))
+                root.len() > 1
+                    && (value == root
+                        || value
+                            .strip_prefix(root)
+                            .is_some_and(|suffix| suffix.starts_with('/')))
             })
     };
-    normalized.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`')).any(|token| {
-        let token = token.trim_matches(|c| matches!(c, '[' | ']' | '{' | '}' | '(' | ')' | ',' | ';'));
-        if is_local_path(token) {
-            return true;
-        }
-        // 先保留完整 URL 和命名空间资源标识，避免将 URL 查询参数中的斜杠误判为本机路径。
-        if minecraft_java_rs_core::net::client::reqwest::Url::parse(token).is_ok() {
-            return false;
-        }
-        let value = token.split_once('=').map_or(token, |(_, value)| value);
-        is_local_path(value)
-    })
+    normalized
+        .split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`'))
+        .any(|token| {
+            let token =
+                token.trim_matches(|c| matches!(c, '[' | ']' | '{' | '}' | '(' | ')' | ',' | ';'));
+            if is_local_path(token) {
+                return true;
+            }
+            // 先保留完整 URL 和命名空间资源标识，避免将 URL 查询参数中的斜杠误判为本机路径。
+            if minecraft_java_rs_core::net::client::reqwest::Url::parse(token).is_ok() {
+                return false;
+            }
+            let value = token.split_once('=').map_or(token, |(_, value)| value);
+            is_local_path(value)
+        })
 }
 
 fn portable_json_has_host_data(value: &Value, source_roots: &[&Path]) -> bool {
     match value {
         Value::String(value) => has_host_path(value, source_roots),
-        Value::Array(values) => values.iter().any(|value| portable_json_has_host_data(value, source_roots)),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| portable_json_has_host_data(value, source_roots)),
         Value::Object(values) => values.iter().any(|(key, value)| {
             if has_host_path(key, source_roots) {
                 return true;
             }
-            let key: String = key.chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect();
-            key.eq_ignore_ascii_case("preLaunchCommand") || portable_json_has_host_data(value, source_roots)
+            let key: String = key
+                .chars()
+                .filter(|c| !matches!(c, '_' | '-' | ' '))
+                .collect();
+            key.eq_ignore_ascii_case("preLaunchCommand")
+                || portable_json_has_host_data(value, source_roots)
         }),
         _ => false,
     }
 }
 
-fn reject_portable_host_data(path: &Path, relative: &str, source_roots: &[&Path]) -> Result<(), String> {
-    let extension = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
-    if !matches!(extension.as_str(), "json" | "toml" | "yaml" | "yml" | "properties" | "cfg" | "ini" | "txt" | "js" | "ts") {
+fn policy_host_scan_text(text: &str) -> String {
+    let mut bytes = text.as_bytes().to_vec();
+    let mut offset = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut previous = None;
+    while offset < bytes.len() {
+        let character = bytes[offset];
+        if line_comment {
+            if matches!(character, b'\n' | b'\r') {
+                line_comment = false;
+                previous = None;
+            }
+        } else if block_comment {
+            if bytes[offset..].starts_with(b"*/") {
+                bytes[offset..offset + 2].fill(b' ');
+                block_comment = false;
+                offset += 2;
+                continue;
+            }
+        } else if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == b'\\' {
+                escaped = true;
+            } else if character == delimiter {
+                quote = None;
+            }
+        } else if matches!(character, b'"' | b'\'' | b'`') {
+            quote = Some(character);
+            previous = Some(character);
+        } else if bytes[offset..].starts_with(b"/*") {
+            bytes[offset..offset + 2].fill(b' ');
+            block_comment = true;
+            offset += 2;
+            continue;
+        } else if bytes[offset..].starts_with(b"//") && !matches!(previous, Some(b'=' | b':')) {
+            bytes[offset..offset + 2].fill(b' ');
+            line_comment = true;
+            offset += 2;
+            continue;
+        } else if character == b'#' || bytes[offset..].starts_with(b"--") {
+            line_comment = true;
+        } else if matches!(character, b'\n' | b'\r') {
+            previous = None;
+        } else if !character.is_ascii_whitespace() {
+            previous = Some(character);
+        }
+        offset += 1;
+    }
+    // Only ASCII delimiters are masked. Comment bodies still undergo host-path
+    // checks, and quoted paths, URL schemes, and unquoted UNC values stay intact.
+    String::from_utf8(bytes).expect("masking ASCII preserves UTF-8")
+}
+
+fn portable_toml_has_host_data(value: &toml::Value, source_roots: &[&Path]) -> bool {
+    match value {
+        toml::Value::String(text) => has_host_path(text, source_roots),
+        toml::Value::Array(values) => values
+            .iter()
+            .any(|v| portable_toml_has_host_data(v, source_roots)),
+        toml::Value::Table(values) => values.iter().any(|(key, value)| {
+            has_host_path(key, source_roots) || portable_toml_has_host_data(value, source_roots)
+        }),
+        _ => false,
+    }
+}
+
+fn reject_portable_host_data(
+    path: &Path,
+    relative: &str,
+    source_roots: &[&Path],
+) -> Result<(), String> {
+    if !is_policy_text(path) {
         return Ok(());
     }
-    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if size > CONFIG_MAX_BYTES { return Err(format!("配置文件过大，请取消选择后重试：{relative}")); }
-    let text = std::fs::read_to_string(path).map_err(|e| format!("读取便携配置失败 {relative}：{e}"))?;
-    let folded: String = text.to_ascii_lowercase().chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect();
-    let has_host_data = match serde_json::from_str::<Value>(&text) {
-        Ok(value) => portable_json_has_host_data(&value, source_roots),
-        Err(_) => has_host_path(&text, source_roots),
+    let text = read_policy_text(path, relative)?;
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let folded: String = text
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| !matches!(c, '_' | '-' | ' '))
+        .collect();
+    let has_host_data = if extension == "toml" {
+        let value = toml::from_str::<toml::Value>(&text)
+            .map_err(|_| format!("无法安全解析 TOML 配置，请修正或取消选择后重试：{relative}"))?;
+        // Decoded values catch escaped paths. The raw pass still checks comments,
+        // but a continuation backslash is not itself an absolute filesystem path.
+        let raw = text.replace("\\\r\n", "\r\n").replace("\\\n", "\n");
+        portable_toml_has_host_data(&value, source_roots)
+            || has_host_path(&policy_host_scan_text(&raw), source_roots)
+    } else {
+        match (
+            serde_json::from_str::<Value>(&text),
+            ScriptPolicyLanguage::from_extension(&extension),
+        ) {
+            (Ok(value), _) => portable_json_has_host_data(&value, source_roots),
+            (Err(_), Some(language)) => {
+                // Reuse credential-policy regex boundaries without masking paths
+                // in strings or comment bodies.
+                let policy = javascript_policy_text(&text, language).map_err(|_| {
+                    format!("无法安全解析 JS/TS 脚本，请修正或取消选择后重试：{relative}")
+                })?;
+                has_host_path(&policy_host_scan_text(&policy), source_roots)
+            }
+            (Err(_), None) => has_host_path(&policy_host_scan_text(&text), source_roots),
+        }
     };
     if has_host_data || folded.contains("prelaunchcommand") {
-        return Err(format!("请将配置中的本机路径改为相对路径，并移除启动前命令，或取消选择后重试：{relative}"));
+        return Err(format!(
+            "请将配置中的本机路径改为相对路径，并移除启动前命令，或取消选择后重试：{relative}"
+        ));
     }
     Ok(())
 }
@@ -536,6 +1488,7 @@ fn reject_portable_host_data(path: &Path, relative: &str, source_roots: &[&Path]
 struct ExportSnapshot {
     root: PathBuf,
     preview: ExportPreview,
+    files: Vec<String>,
     hashes: Vec<(String, String, u64)>,
 }
 
@@ -544,37 +1497,69 @@ fn snapshot_files(
     request: &PackExportRequest,
     task: &app_tasks::TaskContext,
 ) -> Result<ExportSnapshot, String> {
-    use std::io::{Read, Write};
     task.check_cancelled()?;
-    let instance = inspect(app, &request.dir, &request.version_id)?;
-    let available: HashSet<_> = instance
-        .preview
-        .files
-        .iter()
-        .map(|file| file.path.as_str())
-        .collect();
-    let root = task.workspace.join("export-content");
+    task.stage("准备导出文件", &request.name);
+    let cancel = task.transfer.cancellation();
+    let instance = inspect(app, &request.dir, &request.version_id, cancel)?;
+    snapshot_instance(
+        instance,
+        request,
+        &task.workspace,
+        cancel,
+        |done, total, relative| {
+            task.file(relative, 1.0, true);
+            task.progress(done as u64, total as u64, 0.0, 0);
+        },
+    )
+}
+
+fn snapshot_instance(
+    instance: ExportInstance,
+    request: &PackExportRequest,
+    workspace: &Path,
+    cancel: &CancellationToken,
+    mut progress: impl FnMut(usize, usize, &str),
+) -> Result<ExportSnapshot, String> {
+    use std::io::{Read, Write};
+    cancel.check()?;
+    validate_config(&config(request))?;
+    let selected = content::selected_files(
+        &instance.resource_root,
+        &instance.preview.files,
+        &request.files,
+        cancel,
+    )?;
+    let root = workspace.join("export-content");
+    modpacks::check_destination(workspace, &root)?;
     std::fs::create_dir(&root).map_err(|e| format!("创建导出暂存目录失败：{e}"))?;
     let mut hashes = Vec::new();
+    let mut files = Vec::with_capacity(selected.len());
     let mut total = 0_u64;
     let limits = ArchiveLimits::default();
-    task.stage("准备导出文件", &request.name);
-    for (index, relative) in request.files.iter().enumerate() {
-        task.check_cancelled()?;
-        if !available.contains(relative.as_str()) {
-            return Err(format!("文件已变化，请刷新导出列表：{relative}"));
-        }
+    for (index, selected_file) in selected.iter().enumerate() {
+        cancel.check()?;
+        let relative = &selected_file.path;
         let source = instance.resource_root.join(relative);
         modpacks::check_destination(&instance.resource_root, &source)?;
+        let source_metadata = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
+        if !source_metadata.is_file() || source_metadata.len() != selected_file.size_bytes {
+            return Err(format!("导出文件已变化，请刷新后重试：{relative}"));
+        }
         let destination = root.join(relative);
+        modpacks::check_destination(&root, &destination)?;
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        modpacks::check_destination(&root, &destination)?;
         let mut input =
             std::fs::File::open(&source).map_err(|e| format!("读取导出文件失败：{e}"))?;
         let metadata = input.metadata().map_err(|e| e.to_string())?;
-        if !metadata.is_file() || metadata.len() > limits.max_entry_bytes {
-            return Err(format!("导出文件无效或过大：{relative}"));
+        modpacks::check_destination(&instance.resource_root, &source)?;
+        if !metadata.is_file()
+            || metadata.len() != selected_file.size_bytes
+            || metadata.len() > limits.max_entry_bytes
+        {
+            return Err(format!("导出文件无效、已变化或过大：{relative}"));
         }
         let mut output = std::fs::OpenOptions::new()
             .create_new(true)
@@ -584,13 +1569,13 @@ fn snapshot_files(
         let mut buffer = [0_u8; 64 * 1024];
         let mut copied = 0_u64;
         loop {
-            task.check_cancelled()?;
+            cancel.check()?;
             let count = input.read(&mut buffer).map_err(|e| e.to_string())?;
             if count == 0 {
                 break;
             }
-            copied += count as u64;
-            total += count as u64;
+            copied = copied.checked_add(count as u64).ok_or("导出文件大小溢出")?;
+            total = total.checked_add(count as u64).ok_or("导出总大小溢出")?;
             if copied > metadata.len() || total > limits.max_total_bytes {
                 return Err("导出文件已变化或超过归档配额，请刷新后重试".into());
             }
@@ -598,41 +1583,78 @@ fn snapshot_files(
                 .write_all(&buffer[..count])
                 .map_err(|e| e.to_string())?;
         }
-        if copied != metadata.len() {
+        if copied != metadata.len() || input.metadata().map_err(|e| e.to_string())?.len() != copied
+        {
             return Err(format!("导出文件已变化，请刷新后重试：{relative}"));
         }
         drop(output);
+        cancel.check()?;
         reject_credentials(&destination, relative)?;
         if request.format == ExportFormat::Portable {
-            reject_portable_host_data(&destination, relative, &[Path::new(&request.dir), &instance.resource_root])?;
-        }
-        // 仅资源文件需要内容身份，以便生成标准下载条目；配置和存档保持 overrides。
-        if !request.bundle_resources && is_download_resource(relative) {
-            let digest = get_file_hash_cancellable(
+            reject_portable_host_data(
                 &destination,
-                HashAlgorithm::Sha512,
-                task.transfer.cancellation(),
+                relative,
+                &[Path::new(&request.dir), &instance.resource_root],
             )?;
+        }
+        if !request.bundle_resources && is_download_resource(relative) {
+            let digest = get_file_hash_cancellable(&destination, HashAlgorithm::Sha512, cancel)?;
             hashes.push((relative.clone(), digest, copied));
         }
-        task.file(relative, 1.0, true);
-        task.progress((index + 1) as u64, request.files.len() as u64, 0.0, 0);
+        files.push(relative.clone());
+        progress(index + 1, selected.len(), relative);
     }
+    cancel.check()?;
     Ok(ExportSnapshot {
         root,
         preview: instance.preview,
+        files,
         hashes,
     })
 }
 
-fn is_download_resource(path: &str) -> bool {
-    matches!(
-        group_for(path),
-        Some(("mods" | "disabledMods" | "resourcepacks" | "shaderpacks", _))
-    ) && matches!(
-        path.rsplit('.').next(),
-        Some("jar" | "zip" | "disabled" | "disable")
+fn write_snapshot_payload(
+    snapshot: &ExportSnapshot,
+    destination: &Path,
+    index: Vec<u8>,
+    remote_paths: &HashSet<String>,
+    cancel: &CancellationToken,
+    progress: impl FnMut(usize, usize, &str),
+) -> Result<(), String> {
+    let entries: Vec<_> = snapshot
+        .files
+        .iter()
+        .filter(|path| !remote_paths.contains(*path))
+        .map(|path| (format!("overrides/{path}"), path.clone()))
+        .collect();
+    write_zip_files(
+        destination,
+        &snapshot.root,
+        &entries,
+        &[("modrinth.index.json".into(), index)],
+        &ArchiveLimits::default(),
+        cancel,
+        progress,
     )
+}
+
+fn is_download_resource(path: &str) -> bool {
+    let Some((group, _)) = group_for(path) else {
+        return false;
+    };
+    let standalone = match group {
+        "mods" | "disabledMods" => true,
+        "resourcepacks" | "shaderpacks" => path.split('/').count() == 2,
+        _ => false,
+    };
+    standalone
+        && matches!(
+            path.rsplit('.')
+                .next()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("jar" | "zip" | "disabled" | "disable")
+        )
 }
 
 fn remote_entry(version: &Value, relative: &str, digest: &str, size: u64) -> Result<Value, String> {
@@ -680,7 +1702,10 @@ async fn export_to_staging(
         let portable = if copied_request.format == ExportFormat::Portable {
             reporter.stage("准备便携整合包", &copied_request.name);
             Some(crate::portable_pack::prepare_snapshot(
-                &app, &copied_request, &reporter.workspace, reporter.transfer.cancellation(),
+                &app,
+                &copied_request,
+                &reporter.workspace,
+                reporter.transfer.cancellation(),
             )?)
         } else {
             None
@@ -721,34 +1746,30 @@ async fn export_to_staging(
                 task.check_cancelled()?;
                 if request.modrinth_only {
                     return Err(format!(
-                        "Modrinth 未收录 {relative}；请取消选择此文件或开启「打包资源文件」"
+                        "Modrinth 未收录 {relative}；请取消选择此文件或开启「导出资源文件」"
                     ));
                 }
             }
             Err(error) => {
                 return Err(format!(
-                    "匹配 {relative} 失败，请重试或开启「打包资源文件」：{error}"
+                    "匹配 {relative} 失败，请重试或开启「导出资源文件」：{error}"
                 ));
             }
         }
     }
     let index = manifest(&snapshot.preview, &config(&request), &downloads)?;
-    let entries: Vec<_> = request
-        .files
-        .iter()
-        .filter(|path| !remote_paths.contains(*path))
-        .map(|path| (format!("overrides/{path}"), path.clone()))
-        .collect();
     let reporter = task.clone();
     task.stage("写入整合包", &request.name);
     tokio::task::spawn_blocking(move || {
-        let payload = portable.as_ref().map(|pack| pack.payload_path()).unwrap_or_else(|| staged.clone());
-        write_zip_files(
+        let payload = portable
+            .as_ref()
+            .map(|pack| pack.payload_path())
+            .unwrap_or_else(|| staged.clone());
+        write_snapshot_payload(
+            &snapshot,
             &payload,
-            &snapshot.root,
-            &entries,
-            &[("modrinth.index.json".into(), index)],
-            &ArchiveLimits::default(),
+            index,
+            &remote_paths,
             reporter.transfer.cancellation(),
             |done, total, name| {
                 reporter.file(name, 1.0, true);
@@ -757,10 +1778,14 @@ async fn export_to_staging(
         )?;
         if let Some(portable) = portable {
             reporter.stage("写入便携 ZIP", &request.name);
-            portable.write(&staged, reporter.transfer.cancellation(), |done, total, name| {
-                reporter.file(name, 1.0, true);
-                reporter.progress(done as u64, total as u64, 0.0, 0);
-            })?;
+            portable.write(
+                &staged,
+                reporter.transfer.cancellation(),
+                |done, total, name| {
+                    reporter.file(name, 1.0, true);
+                    reporter.progress(done as u64, total as u64, 0.0, 0);
+                },
+            )?;
         }
         Ok(())
     })
@@ -803,9 +1828,11 @@ pub async fn pack_export_inspect(
     dir: String,
     version_id: String,
 ) -> Result<ExportPreview, String> {
-    tokio::task::spawn_blocking(move || inspect(&app, &dir, &version_id).map(|instance| instance.preview))
-        .await
-        .map_err(|e| format!("读取导出内容失败：{e}"))?
+    tokio::task::spawn_blocking(move || {
+        inspect(&app, &dir, &version_id, &CancellationToken::new()).map(|instance| instance.preview)
+    })
+    .await
+    .map_err(|e| format!("读取导出内容失败：{e}"))?
 }
 
 #[tauri::command]
@@ -847,7 +1874,7 @@ pub async fn pack_export_save(
     task.describe_kind(app_tasks::TaskKind::Export, &request.name);
     let id = task.id.clone();
     tauri::async_runtime::spawn(async move {
-        let temporary = parent.join(format!(".nowhere-export-{}.part", task.id));
+        let temporary = parent.join(format!(".nickel-export-{}.part", task.id));
         let staged = temporary.clone();
         let result = export_to_staging(app, request, staged, &task).await;
         task.finish_transaction(
@@ -923,18 +1950,20 @@ mod tests {
     struct Fixture(PathBuf);
     impl Fixture {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!("nowhere-r6-export-{}", crate::store::random_token()));
+            let root = std::env::temp_dir()
+                .join(format!("nickel-r6-export-{}", crate::store::random_token()));
             std::fs::create_dir_all(&root).unwrap();
             Self(root)
         }
     }
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn export_selection_roundtrips_through_local_import_and_safe_overrides() {
-        use minecraft_java_rs_core::net::transfer::CancellationToken;
         use minecraft_java_rs_core::utils::archive::extract_zip_subtrees;
         let fixture = Fixture::new();
         let version_id = "directory-identity";
@@ -942,34 +1971,102 @@ mod tests {
         std::fs::create_dir_all(directory.join("mods")).unwrap();
         std::fs::create_dir_all(directory.join("config")).unwrap();
         std::fs::write(directory.join("mods/local.jar"), b"local mod").unwrap();
-        std::fs::write(directory.join("config/client.json"), br#"{"quality":"high"}"#).unwrap();
+        std::fs::write(
+            directory.join("config/client.json"),
+            br#"{"quality":"high"}"#,
+        )
+        .unwrap();
         std::fs::write(directory.join("config/accounts.json"), b"must not export").unwrap();
         std::fs::write(directory.join("servers.dat"), b"private servers").unwrap();
-        std::fs::write(directory.join("nowhere.profile.json"), serde_json::to_vec(&json!({
+        std::fs::write(directory.join("nickel.profile.json"), serde_json::to_vec(&json!({
             "schemaVersion":1,"name":version_id,"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9","ready":true
         })).unwrap()).unwrap();
         std::fs::write(directory.join(format!("{version_id}.json")), serde_json::to_vec(&json!({
             "id":version_id,"type":"release","inheritsFrom":"1.20.1",
-            "nowhereProfile":{"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9"},
-            "nowhereCustom":{"name":"显示名称不等于目录"}
+            "nickelProfile":{"minecraftVersion":"1.20.1","loader":"fabric","loaderVersion":"0.16.9"},
+            "nickelCustom":{"name":"显示名称不等于目录"}
         })).unwrap()).unwrap();
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
         assert_eq!(instance.preview.name, "显示名称不等于目录");
-        assert!(instance.preview.files.iter().all(|file| !file.path.contains("accounts")));
-        assert!(!instance.preview.files.iter().find(|file| file.path == "servers.dat").unwrap().selected);
-        let config = ExportConfig { name:"可移植整合包".into(),version:"1.0".into(),files:instance.preview.files.iter().filter(|file|file.selected).map(|file|file.path.clone()).collect(),bundle_resources:true,modrinth_only:false, ..ExportConfig::default() };
-        let archive = fixture.0.join("roundtrip.mrpack");
-        let entries = config.files.iter().map(|path|(format!("overrides/{path}"),path.clone())).collect::<Vec<_>>();
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| !file.path.contains("accounts"))
+        );
+        assert!(
+            !instance
+                .preview
+                .files
+                .iter()
+                .find(|file| file.path == "servers.dat")
+                .unwrap()
+                .selected
+        );
+        let request = PackExportRequest {
+            dir: root.to_string_lossy().into_owned(),
+            version_id: version_id.into(),
+            name: "可移植整合包".into(),
+            version: "1.0".into(),
+            files: instance
+                .preview
+                .files
+                .iter()
+                .filter(|file| file.selected)
+                .map(|file| file.path.clone())
+                .collect(),
+            bundle_resources: true,
+            modrinth_only: false,
+            format: ExportFormat::Mrpack,
+            include_launcher: false,
+            include_personalization: false,
+        };
+        assert!(request.files.iter().any(|path| path.starts_with("@dir/")));
+        let workspace = fixture.0.join("roundtrip-stage");
+        std::fs::create_dir(&workspace).unwrap();
         let cancel = CancellationToken::new();
-        write_zip_files(&archive, &instance.resource_root, &entries, &[("modrinth.index.json".into(),manifest(&instance.preview,&config,&[]).unwrap())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        let (_, imported) = modpacks::local_manifest(&archive,&cancel).unwrap();
-        assert_eq!(imported.name,config.name);
-        assert_eq!(imported.loader,instance.preview.loader);
-        let destination=fixture.0.join("imported");
-        extract_zip_subtrees(&archive,&destination,&imported.overrides,&[],&ArchiveLimits::default(),&cancel).unwrap();
-        assert_eq!(std::fs::read(destination.join("mods/local.jar")).unwrap(),b"local mod");
+        let snapshot =
+            snapshot_instance(instance, &request, &workspace, &cancel, |_, _, _| {}).unwrap();
+        assert_eq!(snapshot.files, ["config/client.json", "mods/local.jar"]);
+        std::fs::write(
+            directory.join("mods/local.jar"),
+            b"source changed after snapshot",
+        )
+        .unwrap();
+        let archive = fixture.0.join("roundtrip.mrpack");
+        write_snapshot_payload(
+            &snapshot,
+            &archive,
+            manifest(&snapshot.preview, &config(&request), &[]).unwrap(),
+            &HashSet::new(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        let (_, imported) = modpacks::local_manifest(&archive, &cancel).unwrap();
+        assert_eq!(imported.name, request.name);
+        assert_eq!(imported.loader, snapshot.preview.loader);
+        let destination = fixture.0.join("imported");
+        extract_zip_subtrees(
+            &archive,
+            &destination,
+            &imported.overrides,
+            &[],
+            &ArchiveLimits::default(),
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(destination.join("mods/local.jar")).unwrap(),
+            b"local mod"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("config/client.json")).unwrap(),
+            br#"{"quality":"high"}"#
+        );
         assert!(!destination.join("servers.dat").exists());
         assert!(!destination.join("config/accounts.json").exists());
     }
@@ -988,22 +2085,39 @@ mod tests {
             std::fs::write(
                 directory.join(format!("{version_id}.json")),
                 serde_json::to_vec(&json!({ "id": "1.20.1", "type": "release" })).unwrap(),
-            ).unwrap();
+            )
+            .unwrap();
             if named {
                 std::fs::write(
-                    directory.join("nowhere.profile.json"),
+                    directory.join("nickel.profile.json"),
                     serde_json::to_vec(&json!({
                         "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
                         "loader": null, "loaderVersion": "", "ready": true
-                    })).unwrap(),
-                ).unwrap();
+                    }))
+                    .unwrap(),
+                )
+                .unwrap();
             }
             for isolation in [false, true] {
-                let resources = crate::runtime_settings::game_directory(&root, version_id, isolation);
+                let resources =
+                    crate::runtime_settings::game_directory(&root, version_id, isolation);
                 let instance = inspect_resolved(&root, version_id, resources.clone()).unwrap();
-                let paths: Vec<_> = instance.preview.files.iter().map(|file| file.path.as_str()).collect();
-                let expected = if isolation { "mods/isolated.jar" } else { "mods/shared.jar" };
-                assert_eq!(paths, vec![expected], "named={named}, isolation={isolation}");
+                let paths: Vec<_> = instance
+                    .preview
+                    .files
+                    .iter()
+                    .map(|file| file.path.as_str())
+                    .collect();
+                let expected = if isolation {
+                    "mods/isolated.jar"
+                } else {
+                    "mods/shared.jar"
+                };
+                assert_eq!(
+                    paths,
+                    vec![expected],
+                    "named={named}, isolation={isolation}"
+                );
                 assert_eq!(instance.resource_root, resources);
             }
         }
@@ -1012,38 +2126,69 @@ mod tests {
     #[test]
     fn local_import_accepts_curseforge_manifest_but_not_arbitrary_zip() {
         use minecraft_java_rs_core::net::transfer::CancellationToken;
-        let fixture=Fixture::new();
-        let cancel=CancellationToken::new();
-        let cf=fixture.0.join("cf.zip");
-        let manifest=json!({"manifestType":"minecraftModpack","manifestVersion":1,"name":"CF local","version":"1","minecraft":{"version":"1.20.1","modLoaders":[{"id":"forge-47.3.0","primary":true}]},"files":[],"overrides":"overrides"});
-        write_zip_files(&cf,&fixture.0,&[],&[("manifest.json".into(),serde_json::to_vec(&manifest).unwrap())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        assert_eq!(modpacks::local_manifest(&cf,&cancel).unwrap().1.name,"CF local");
-        let arbitrary=fixture.0.join("arbitrary.zip");
-        write_zip_files(&arbitrary,&fixture.0,&[],&[("file.txt".into(),b"not a pack".to_vec())],&ArchiveLimits::default(),&cancel,|_,_,_|{}).unwrap();
-        assert!(modpacks::local_manifest(&arbitrary,&cancel).is_err());
+        let fixture = Fixture::new();
+        let cancel = CancellationToken::new();
+        let cf = fixture.0.join("cf.zip");
+        let manifest = json!({"manifestType":"minecraftModpack","manifestVersion":1,"name":"CF local","version":"1","minecraft":{"version":"1.20.1","modLoaders":[{"id":"forge-47.3.0","primary":true}]},"files":[],"overrides":"overrides"});
+        write_zip_files(
+            &cf,
+            &fixture.0,
+            &[],
+            &[(
+                "manifest.json".into(),
+                serde_json::to_vec(&manifest).unwrap(),
+            )],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(
+            modpacks::local_manifest(&cf, &cancel).unwrap().1.name,
+            "CF local"
+        );
+        let arbitrary = fixture.0.join("arbitrary.zip");
+        write_zip_files(
+            &arbitrary,
+            &fixture.0,
+            &[],
+            &[("file.txt".into(), b"not a pack".to_vec())],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(modpacks::local_manifest(&arbitrary, &cancel).is_err());
     }
 
     #[test]
     fn remote_resource_requires_matching_hash_size_and_modrinth_host() {
-        let hash="a".repeat(128);
-        let mut version=json!({"files":[{"hashes":{"sha512":hash,"sha1":"b".repeat(40)},"size":42,"url":"https://cdn.modrinth.com/data/example/file.jar"}]});
-        assert!(remote_entry(&version,"mods/a.jar",&hash,42).is_ok());
-        assert!(remote_entry(&version,"mods/a.jar",&hash,43).is_err());
-        version["files"][0]["url"]=json!("https://example.com/file.jar");
-        assert!(remote_entry(&version,"mods/a.jar",&hash,42).is_err());
+        let hash = "a".repeat(128);
+        let mut version = json!({"files":[{"hashes":{"sha512":hash,"sha1":"b".repeat(40)},"size":42,"url":"https://cdn.modrinth.com/data/example/file.jar"}]});
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 42).is_ok());
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 43).is_err());
+        version["files"][0]["url"] = json!("https://example.com/file.jar");
+        assert!(remote_entry(&version, "mods/a.jar", &hash, 42).is_err());
     }
 
     #[test]
     fn export_config_roundtrip_keeps_flags_and_rejects_credentials() {
-        let config=ExportConfig{name:"包".into(),version:"1".into(),files:vec!["mods/a.jar".into()],bundle_resources:true,modrinth_only:true, ..ExportConfig::default()};
-        let decoded:ExportConfig=serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
+        let config = ExportConfig {
+            name: "包".into(),
+            version: "1".into(),
+            files: vec!["mods/a.jar".into()],
+            bundle_resources: true,
+            modrinth_only: true,
+            ..ExportConfig::default()
+        };
+        let decoded: ExportConfig =
+            serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
         assert!(decoded.bundle_resources && decoded.modrinth_only);
-        let fixture=Fixture::new();
-        let path=fixture.0.join("service.json");
-        std::fs::write(&path,br#"{"access_token":"fixture-value"}"#).unwrap();
-        assert!(reject_credentials(&path,"config/service.json").is_err());
+        let fixture = Fixture::new();
+        let path = fixture.0.join("service.json");
+        std::fs::write(&path, br#"{"access_token":"fixture-value"}"#).unwrap();
+        assert!(reject_credentials(&path, "config/service.json").is_err());
     }
-
 
     #[test]
     fn personal_content_is_opt_in_and_secrets_are_excluded() {
@@ -1063,7 +2208,7 @@ mod tests {
             "config/service/secrets.json",
             "mods/.env",
             "config/api-token.txt",
-            "nowhere.profile.json",
+            "nickel.profile.json",
             "options.txt/file",
         ] {
             assert!(group_for(path).is_none(), "{path}");
@@ -1083,15 +2228,21 @@ mod tests {
         let mut files = Vec::new();
         let mut total = 0;
         collect_files(&root, &lite, &mut files, &mut total).unwrap();
-        assert!(files
-            .iter()
-            .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods"));
+        assert!(
+            files
+                .iter()
+                .any(|file| file.path == "mods/1.12.2/lite.jar" && file.group == "mods")
+        );
         assert!(files.iter().any(|file| {
             file.path == "mods/1.12.2/legacy.litemod.old"
                 && file.group == "disabledMods"
                 && !file.selected
         }));
-        assert!(files.iter().all(|file| !file.path.starts_with("mods/ignored")));
+        assert!(
+            files
+                .iter()
+                .all(|file| !file.path.starts_with("mods/ignored"))
+        );
         assert_eq!(
             content_directory(&root, "mods", "forge", "1.20.1"),
             root.join("mods")
@@ -1107,30 +2258,98 @@ mod tests {
         std::fs::create_dir_all(directory.join("XaeroWorldMap")).unwrap();
         std::fs::write(directory.join("XaeroWaypoints/waypoints.txt"), b"waypoint").unwrap();
         std::fs::write(directory.join("XaeroWorldMap/region.dat"), b"map").unwrap();
-        std::fs::write(directory.join("nowhere.settings.json"), serde_json::to_vec(&json!({
-            "windowTitle": "安全标题", "memoryMode": "custom", "memoryMb": 6144,
-            "jvmArgs": "-XX:+UseG1GC", "javaPath": "C:/Users/private/java.exe",
-            "accessToken": "secret", "preLaunchCommand": "echo hidden",
-        })).unwrap()).unwrap();
-        std::fs::write(directory.join("nowhere.profile.json"), serde_json::to_vec(&json!({
-            "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
-            "loader": null, "loaderVersion": "", "ready": true
-        })).unwrap()).unwrap();
-        std::fs::write(directory.join(format!("{version_id}.json")), serde_json::to_vec(&json!({
-            "id": "1.20.1", "type": "release",
-            "nowhereCustom": {"name": "设置预览"}
-        })).unwrap()).unwrap();
-
+        std::fs::write(
+            directory.join("nickel.settings.json"),
+            serde_json::to_vec(&json!({
+                "windowTitle": "安全标题", "memoryMode": "custom", "memoryMb": 6144,
+                "jvmArgs": "-XX:+UseG1GC", "javaPath": "C:/Users/private/java.exe",
+                "accessToken": "secret", "preLaunchCommand": "echo hidden",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("nickel.profile.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1, "name": version_id, "minecraftVersion": "1.20.1",
+                "loader": null, "loaderVersion": "", "ready": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join(format!("{version_id}.json")),
+            serde_json::to_vec(&json!({
+                "id": "1.20.1", "type": "release", "nickelCustom": {"name": "设置预览"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         let root = std::fs::canonicalize(&fixture.0).unwrap();
         let resources = crate::runtime_settings::game_directory(&root, version_id, true);
         let instance = inspect_resolved(&root, version_id, resources).unwrap();
-        assert!(instance.preview.instance_settings.iter().any(|field| field == "窗口标题"));
-        assert!(instance.preview.instance_settings.iter().any(|field| field == "内存上限"));
-        assert!(instance.preview.instance_settings.iter().all(|field| field != "Java 路径"));
-        assert!(instance.preview.files.iter().any(|file| file.path == "XaeroWaypoints/waypoints.txt" && file.group == "maps"));
-        assert!(instance.preview.files.iter().any(|file| file.path == "XaeroWorldMap/region.dat" && file.group == "maps"));
-        assert!(instance.preview.files.iter().all(|file| file.path != "nowhere.settings.json"));
-        assert_eq!(group_for("XaeroWaypoints/waypoints.txt"), Some(("maps", false)));
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "窗口标题")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .any(|field| field == "内存上限")
+        );
+        assert!(
+            instance
+                .preview
+                .instance_settings
+                .iter()
+                .all(|field| field != "Java 路径")
+        );
+        for relative in ["XaeroWaypoints", "XaeroWorldMap"] {
+            assert!(instance.preview.files.iter().any(|file| {
+                file.path == format!("@dir/maps/{relative}")
+                    && file.source_path == relative
+                    && file.kind == ExportEntryKind::Directory
+                    && file.group == "maps"
+                    && !file.selected
+                    && file.size_bytes.is_none()
+            }));
+        }
+        assert!(
+            instance
+                .preview
+                .files
+                .iter()
+                .all(|file| file.path != "nickel.settings.json")
+        );
+        let selections: Vec<_> = instance
+            .preview
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect();
+        let selected = content::selected_files(
+            &instance.resource_root,
+            &instance.preview.files,
+            &selections,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            selected
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            ["XaeroWaypoints/waypoints.txt", "XaeroWorldMap/region.dat"]
+        );
+        assert_eq!(
+            group_for("XaeroWaypoints/waypoints.txt"),
+            Some(("maps", false))
+        );
         assert_eq!(group_for("XaeroWorldMap/region.dat"), Some(("maps", false)));
     }
 
@@ -1184,32 +2403,19 @@ mod tests {
         }
     }
 
-
-    #[test]
-    fn old_export_config_and_request_keep_mrpack_defaults() {
-        let old = json!({ "name": "旧配置", "version": "1", "files": ["mods/local.jar"] });
-        let config: ExportConfig = serde_json::from_value(old.clone()).unwrap();
-        assert_eq!(config.format, ExportFormat::Mrpack);
-        assert!(!config.include_launcher && !config.include_personalization);
-        validate_config(&config).unwrap();
-        let mut request = old;
-        request["dir"] = json!("fixture-root");
-        request["versionId"] = json!("fixture-instance");
-        let decoded: PackExportRequest = serde_json::from_value(request.clone()).unwrap();
-        assert_eq!(decoded.format, ExportFormat::Mrpack);
-        assert!(!decoded.include_launcher && !decoded.include_personalization);
-        request["accessToken"] = json!("not-allowed");
-        assert!(serde_json::from_value::<PackExportRequest>(request).is_err());
-    }
-
     #[test]
     fn both_formats_persist_all_options_without_weakening_config_validation() {
         for include_launcher in [false, true] {
             for include_personalization in [false, true] {
                 let config = ExportConfig {
-                    name: "便携配置".into(), version: "1".into(), format: ExportFormat::Portable,
-                    files: vec!["mods/local.jar".into()], bundle_resources: true, modrinth_only: true,
-                    include_launcher, include_personalization,
+                    name: "便携配置".into(),
+                    version: "1".into(),
+                    format: ExportFormat::Portable,
+                    files: vec!["mods/local.jar".into()],
+                    bundle_resources: true,
+                    modrinth_only: true,
+                    include_launcher,
+                    include_personalization,
                 };
                 let encoded = serde_json::to_value(&config).unwrap();
                 let decoded: ExportConfig = serde_json::from_value(encoded.clone()).unwrap();
@@ -1224,14 +2430,19 @@ mod tests {
                 let mut invalid = encoded;
                 invalid["format"] = json!("renamed-zip");
                 assert!(serde_json::from_value::<ExportConfig>(invalid).is_err());
-                let standard = ExportConfig { format: ExportFormat::Mrpack, ..config };
-                assert_eq!(validate_config(&standard).is_ok(), !include_launcher && !include_personalization);
+                let standard = ExportConfig {
+                    format: ExportFormat::Mrpack,
+                    ..config
+                };
+                assert_eq!(
+                    validate_config(&standard).is_ok(),
+                    !include_launcher && !include_personalization
+                );
             }
         }
         assert_eq!(ExportFormat::Mrpack.extension(), "mrpack");
         assert_eq!(ExportFormat::Portable.extension(), "zip");
     }
-
 
     #[test]
     fn portable_text_rejects_host_paths_and_commands_without_changing_standard_policy() {
@@ -1257,8 +2468,19 @@ mod tests {
             json!({"pre_launch_command": "echo start"}),
         ] {
             std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[Path::new("/custom-root/game")]).is_err(), "{value}");
-            assert!(reject_credentials(&path, "config/client.json").is_ok(), "{value}");
+            assert!(
+                reject_portable_host_data(
+                    &path,
+                    "config/client.json",
+                    &[Path::new("/custom-root/game")]
+                )
+                .is_err(),
+                "{value}"
+            );
+            assert!(
+                reject_credentials(&path, "config/client.json").is_ok(),
+                "{value}"
+            );
         }
         for text in [
             r#"{"folder":"\u0043:\u002fUsers/private/game"}"#,
@@ -1268,8 +2490,14 @@ mod tests {
             r#"{"\u002ftmp/local-cache":"cached"}"#,
         ] {
             std::fs::write(&path, text).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[]).is_err(), "{text}");
-            assert!(reject_credentials(&path, "config/client.json").is_ok(), "{text}");
+            assert!(
+                reject_portable_host_data(&path, "config/client.json", &[]).is_err(),
+                "{text}"
+            );
+            assert!(
+                reject_credentials(&path, "config/client.json").is_ok(),
+                "{text}"
+            );
         }
         let portable = json!({
             "folder": "config/client",
@@ -1285,32 +2513,57 @@ mod tests {
             "minecraft:textures/block/stone.png": "resource",
         });
         std::fs::write(&path, serde_json::to_vec(&portable).unwrap()).unwrap();
-        reject_portable_host_data(&path, "config/client.json", &[Path::new("/custom-root/game")]).unwrap();
-        for text in ["cache=/tmp/local-cache", "java=/opt/jdk/bin/java", r"cache=\\server\share\game"] {
+        reject_portable_host_data(
+            &path,
+            "config/client.json",
+            &[Path::new("/custom-root/game")],
+        )
+        .unwrap();
+        for text in [
+            "cache=/tmp/local-cache",
+            "java=/opt/jdk/bin/java",
+            r"cache=\\server\share\game",
+        ] {
             std::fs::write(&path, text).unwrap();
-            assert!(reject_portable_host_data(&path, "config/client.json", &[]).is_err(), "{text}");
+            assert!(
+                reject_portable_host_data(&path, "config/client.json", &[]).is_err(),
+                "{text}"
+            );
         }
         std::fs::write(&path, "url=https://example.com/home/files?cache=/tmp/local-cache\nmodel=minecraft:textures/block/stone.png").unwrap();
         reject_portable_host_data(&path, "config/client.json", &[]).unwrap();
     }
 
     #[test]
-    fn shader_options_are_separate_from_resources_and_keep_old_path_configs() {
+    fn shader_options_are_separate_from_resources() {
         use minecraft_java_rs_core::net::transfer::CancellationToken;
         use minecraft_java_rs_core::utils::archive::extract_zip_subtrees;
 
         let settings = [
-            "optionsshaders.txt", "config/iris.properties", "config/oculus.properties",
-            "shaderpacks/Forest.zip.txt", "shaderpacks/Forest.properties", "shaderpacks/Forest.json",
+            "optionsshaders.txt",
+            "config/iris.properties",
+            "config/oculus.properties",
+            "shaderpacks/Forest.zip.txt",
+            "shaderpacks/Forest.properties",
+            "shaderpacks/Forest.json",
         ];
         for path in settings {
             assert_eq!(group_for(path), Some(("shaderOptions", true)), "{path}");
             assert!(!is_download_resource(path), "{path}");
         }
-        assert_eq!(group_for("shaderpacks/Forest.zip"), Some(("shaderpacks", true)));
+        assert_eq!(
+            group_for("shaderpacks/Forest.zip"),
+            Some(("shaderpacks", true))
+        );
         assert!(is_download_resource("shaderpacks/Forest.zip"));
-        assert_eq!(group_for("shaderpacks/Forest/shaders/shaders.properties"), Some(("shaderpacks", true)));
-        assert_eq!(group_for("config/client.properties"), Some(("config", true)));
+        assert_eq!(
+            group_for("shaderpacks/Forest/shaders/shaders.properties"),
+            Some(("shaderpacks", true))
+        );
+        assert_eq!(
+            group_for("config/client.properties"),
+            Some(("config", true))
+        );
         assert_eq!(group_for("optionsof.txt"), Some(("gameOptions", true)));
         assert!(group_for("shaderpacks/private-token.txt").is_none());
 
@@ -1320,35 +2573,71 @@ mod tests {
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
             std::fs::write(file, "quality=high").unwrap();
         }
-        let old: ExportConfig = serde_json::from_value(json!({
-            "name": "光影设置", "version": "1", "files": settings,
-        })).unwrap();
-        validate_config(&old).unwrap();
-        assert_eq!(old.files, settings);
+        let config = ExportConfig {
+            name: "光影设置".into(),
+            version: "1".into(),
+            files: settings.iter().map(|path| (*path).into()).collect(),
+            ..Default::default()
+        };
+        validate_config(&config).unwrap();
+        assert_eq!(config.files, settings);
         let mut files = Vec::new();
         let mut size = 0;
-        for path in &old.files {
+        for path in &config.files {
             collect_files(&fixture.0, &fixture.0.join(path), &mut files, &mut size).unwrap();
         }
-        assert!(files.iter().all(|file| file.group == "shaderOptions" && file.selected));
+        assert!(
+            files
+                .iter()
+                .all(|file| file.group == "shaderOptions" && file.selected)
+        );
         let preview = ExportPreview {
-            name: old.name.clone(), minecraft_version: "1.20.1".into(), loader: None, files,
+            name: config.name.clone(),
+            minecraft_version: "1.20.1".into(),
+            loader: None,
+            files,
             launcher: crate::portable_pack::launcher_availability(),
-            instance_settings: vec![], instance_settings_omitted: vec![], instance_settings_error: None,
+            instance_settings: vec![],
+            instance_settings_omitted: vec![],
+            instance_settings_error: None,
         };
-        let entries = old.files.iter().map(|path| (format!("overrides/{path}"), path.clone())).collect::<Vec<_>>();
+        let entries = config
+            .files
+            .iter()
+            .map(|path| (format!("overrides/{path}"), path.clone()))
+            .collect::<Vec<_>>();
         let archive = fixture.0.join("shader-options.mrpack");
         let cancel = CancellationToken::new();
-        write_zip_files(&archive, &fixture.0, &entries, &[("modrinth.index.json".into(), manifest(&preview, &old, &[]).unwrap())], &ArchiveLimits::default(), &cancel, |_, _, _| {}).unwrap();
+        write_zip_files(
+            &archive,
+            &fixture.0,
+            &entries,
+            &[(
+                "modrinth.index.json".into(),
+                manifest(&preview, &config, &[]).unwrap(),
+            )],
+            &ArchiveLimits::default(),
+            &cancel,
+            |_, _, _| {},
+        )
+        .unwrap();
         let (_, imported) = modpacks::local_manifest(&archive, &cancel).unwrap();
         let destination = fixture.0.join("imported");
-        extract_zip_subtrees(&archive, &destination, &imported.overrides, &[], &ArchiveLimits::default(), &cancel).unwrap();
+        extract_zip_subtrees(
+            &archive,
+            &destination,
+            &imported.overrides,
+            &[],
+            &ArchiveLimits::default(),
+            &cancel,
+        )
+        .unwrap();
         for path in settings {
-            assert_eq!(std::fs::read_to_string(destination.join(path)).unwrap(), "quality=high");
+            assert_eq!(
+                std::fs::read_to_string(destination.join(path)).unwrap(),
+                "quality=high"
+            );
         }
         assert!(!destination.join("shaderpacks/Forest.zip").exists());
     }
-
-
-
 }

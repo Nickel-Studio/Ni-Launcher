@@ -2,7 +2,8 @@ import { type ComponentType } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppNav, type Route } from "../lib/nav";
 import { useSlidePill } from "../lib/useSlidePill";
-import { isTauri } from "../lib/settings";
+import { isTauri, useSettings } from "../lib/settings";
+import { ThemeArtwork } from "./ui/ThemeArtwork";
 import { PRODUCT_NAME } from "../lib/brand";
 import { Tooltip } from "./ui";
 import {
@@ -24,9 +25,7 @@ interface NavItem {
 /**
  * 顶栏导航项 —— 与 `nav.ts` 的 `TAB_ROUTES` 一一对应（顺序一致）。
  *
- * 红线圈定：顶栏只有这四项，**不得新增任何 tab**；顶栏之外的页面一律是
- * 「无 tab 归属的独立页 + 页面内返回」，通过首页等入口进入。
- * 「更多」沿用原「版本」的图标 IconVersions（层叠方块），代表其余入口。
+ * 独立详情页不占顶栏高亮，通过页面内返回恢复来源页。
  */
 const NAV_ITEMS: NavItem[] = [
   { route: "home", label: "首页", Icon: IconHome },
@@ -52,9 +51,9 @@ async function runWindowCommand(
 /** Play the shell exit animation, then close the window (Tauri only). */
 async function closeWindow(): Promise<void> {
   if (!isTauri()) return;
-  const shell = document.querySelector<HTMLElement>(".nw-shell");
-  if (shell && !shell.classList.contains("nw-shell--leaving")) {
-    shell.classList.add("nw-shell--leaving");
+  const shell = document.querySelector<HTMLElement>(".ni-shell");
+  if (shell && !shell.classList.contains("ni-shell--leaving")) {
+    shell.classList.add("ni-shell--leaving");
     await new Promise((resolve) => window.setTimeout(resolve, EXIT_MS));
   }
   await runWindowCommand("window_close");
@@ -62,6 +61,7 @@ async function closeWindow(): Promise<void> {
 
 export function TitleBar() {
   const { route, setRoute } = useAppNav();
+  const { settings } = useSettings();
   const activeIndex = NAV_ITEMS.findIndex((item) => item.route === route);
   const { navRef, registerTab, pill } = useSlidePill<
     HTMLElement,
@@ -69,18 +69,27 @@ export function TitleBar() {
   >(activeIndex);
 
   return (
-    <header className="nw-titlebar" data-tauri-drag-region>
-      <div className="nw-titlebar__left" data-tauri-drag-region>
-        <span className="nw-brand">
-          <span className="nw-brand__text" data-tauri-drag-region>
+    <header
+      className="ni-titlebar"
+      data-tauri-drag-region
+      data-tinted={settings.titlebarTint}
+    >
+      <ThemeArtwork
+        accent={settings.accent}
+        placement="titlebar"
+        decoration={settings.customTheme.decoration}
+      />
+      <div className="ni-titlebar__left" data-tauri-drag-region>
+        <span className="ni-brand">
+          <span className="ni-brand__text" data-tauri-drag-region>
             {PRODUCT_NAME}
           </span>
         </span>
       </div>
 
-      <nav className="nw-titlebar__center" aria-label="主导航" ref={navRef}>
+      <nav className="ni-titlebar__center" aria-label="主导航" ref={navRef}>
         <span
-          className="nw-navtab__pill"
+          className="ni-navtab__pill"
           data-ready={pill.ready}
           style={{ transform: `translateX(${pill.left}px)`, width: pill.width }}
           aria-hidden="true"
@@ -90,7 +99,7 @@ export function TitleBar() {
             key={r}
             ref={registerTab(i)}
             type="button"
-            className="nw-navtab"
+            className="ni-navtab"
             data-active={route === r}
             aria-current={route === r ? "page" : undefined}
             onClick={() => setRoute(r)}
@@ -101,11 +110,11 @@ export function TitleBar() {
         ))}
       </nav>
 
-      <div className="nw-titlebar__right">
+      <div className="ni-titlebar__right">
         <Tooltip label="最小化">
           <button
             type="button"
-            className="nw-winbtn"
+            className="ni-winbtn"
             aria-label="最小化"
             onClick={() => void runWindowCommand("window_minimize")}
           >
@@ -115,7 +124,7 @@ export function TitleBar() {
         <Tooltip label="关闭">
           <button
             type="button"
-            className="nw-winbtn nw-winbtn--close"
+            className="ni-winbtn ni-winbtn--close"
             aria-label="关闭"
             onClick={() => void closeWindow()}
           >

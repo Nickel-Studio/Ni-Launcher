@@ -37,7 +37,7 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 Copy-Item secrets.local.example.json secrets.local.json
 ```
 
-读取顺序为 `NICKEL_SECRETS` 指定文件、兼容的 `NOWHERE_SECRETS` 指定文件、选定配置目录、开发根目录。Microsoft 设备码认证使用公共客户端，不需要 client secret。
+运行时读取顺序为 `NICKEL_SECRETS` 指定文件、选定配置目录、程序目录，再使用内嵌配置；仅调试构建会在内嵌配置前尝试开发根目录。Microsoft 设备码认证使用公共客户端，不需要 client secret。
 
 ### CurseForge
 
@@ -45,7 +45,7 @@ Copy-Item secrets.local.example.json secrets.local.json
 
 ## 构建通道
 
-`NICKEL_CHANNEL` 在编译时选择 `development` / `production`，兼容 `NOWHERE_CHANNEL`。普通开发与测试默认 `development`；打包工作流指定 `production`。
+`NICKEL_CHANNEL` 在编译时选择 `development` / `production`。普通开发与测试默认 `development`；打包工作流指定 `production`。
 
 开发通道未配置 CurseForge Key 时使用社区镜像；生产通道向官方 API 发请求并按真实响应处理错误。
 
@@ -54,7 +54,7 @@ $env:NICKEL_CHANNEL = "production"
 pnpm tauri build
 ```
 
-Windows 窗口排障可设置 `NICKEL_DIAG=1`，兼容 `NOWHERE_DIAG`：
+Windows 窗口排障可设置 `NICKEL_DIAG=1`：
 
 ```powershell
 $env:NICKEL_DIAG = "1"

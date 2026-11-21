@@ -8,7 +8,7 @@
  *   vanilla   原版资源页加载态（.van-page--loading）
  *   community 社区资源页加载态（.mr-page--loading）
  *   mods      Mod 扫描加载态（ModsPanel）
- *   settings  设置页首屏加载态（.nw-loading--viewport）
+ *   settings  设置页首屏加载态（.ni-loading--viewport）
  *   game      设置页「游戏」分区载入态（GamePanel）
  *   vsettings 实例设置首屏加载态
  *   versions  实例列表首屏加载态（.vs-root--loading）
@@ -55,7 +55,6 @@ const SETTINGS = {
   backgroundBlur: 0,
   backgroundOpacity: 0.5,
   privacyMode: false,
-  downloadSource: "official",
   versionListSource: "official_auto",
   fileDownloadSource: "official_auto",
   communityApiSource: "official_auto",
@@ -92,7 +91,7 @@ const DETAIL_HIT: ModrinthHit = {
 
 const VERSION_DETAIL = {
   id: "fixture-instance",
-  dir: "C:\\NoWheRE-loading-fixture\\.minecraft",
+  dir: "C:\\Nickel-loading-fixture\\.minecraft",
   name: "fixture-instance",
   type: "release",
   minecraftVersion: "1.21.1",
@@ -177,26 +176,26 @@ Object.assign(window, {
   },
 });
 
-window.localStorage.setItem("nowhere.settings", JSON.stringify(SETTINGS));
+window.localStorage.setItem("nickel.settings", JSON.stringify(SETTINGS));
 document.documentElement.dataset.theme = theme;
 document.documentElement.dataset.accent = "mono";
-document.documentElement.classList.add("nw-app-ready");
+document.documentElement.classList.add("ni-app-ready");
 
 /** 真实 PagerLayout 的页面容器由各页面组件自带，这里只补外壳。 */
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="nw-shell">
-      <div className="nw-titlebar">
-        <div className="nw-titlebar__left">
-          <span className="nw-brand">
-            <span className="nw-brand__text">Nickel</span>
+    <div className="ni-shell">
+      <div className="ni-titlebar">
+        <div className="ni-titlebar__left">
+          <span className="ni-brand">
+            <span className="ni-brand__text">Nickel</span>
           </span>
         </div>
       </div>
-      <div className="nw-body">
-        <main className="nw-content">
-          <div className="nw-swap">
-            <div className="nw-swap__layer nw-swap__layer--in">{children}</div>
+      <div className="ni-body">
+        <main className="ni-content">
+          <div className="ni-swap">
+            <div className="ni-swap__layer ni-swap__layer--in">{children}</div>
           </div>
         </main>
       </div>
@@ -207,7 +206,7 @@ function Shell({ children }: { children: ReactNode }) {
 /** 点击侧边栏项（按可见文案精确匹配）。 */
 function clickNav(label: string): boolean {
   const item = Array.from(
-    document.querySelectorAll<HTMLButtonElement>(".nw-pager__item")
+    document.querySelectorAll<HTMLButtonElement>(".ni-pager__item")
   ).find((node) => node.textContent?.trim() === label);
   if (!item) return false;
   item.click();
@@ -219,15 +218,15 @@ function watchReady() {
   let navClicked = false;
   let tries = 0;
   const target = (() => {
-    if (scenario === "vanilla") return ".van-page--loading .nw-loading";
-    if (scenario === "community") return ".mr-page--loading .nw-loading";
-    if (scenario === "mods") return ".vst-mods .nw-loading";
-    if (scenario === "settings") return ".nw-loading--viewport";
-    if (scenario === "game") return ".nw-pager__page .nw-loading";
-    if (scenario === "versions") return ".vs-root--loading .nw-loading";
-    if (scenario === "detail") return ".pd-downloads .nw-loading";
-    if (scenario === "error") return ".nw-loading--error";
-    return ".nw-pager__page .nw-loading";
+    if (scenario === "vanilla") return ".van-page--loading .ni-loading";
+    if (scenario === "community") return ".mr-page--loading .ni-loading";
+    if (scenario === "mods") return ".vst-mods .ni-loading";
+    if (scenario === "settings") return ".ni-loading--viewport";
+    if (scenario === "game") return ".ni-pager__page .ni-loading";
+    if (scenario === "versions") return ".vs-root--loading .ni-loading";
+    if (scenario === "detail") return ".pd-downloads .ni-loading";
+    if (scenario === "error") return ".ni-loading--error";
+    return ".ni-pager__page .ni-loading";
   })();
 
   const tick = () => {
@@ -237,7 +236,7 @@ function watchReady() {
       scenario === "mods" ||
       scenario === "game"
     ) {
-      if (!navClicked && document.querySelector(".nw-pager__item")) {
+      if (!navClicked && document.querySelector(".ni-pager__item")) {
         navClicked = clickNav(
           scenario === "community"
             ? "Mod"
@@ -264,7 +263,7 @@ function watchReady() {
 
 if (scenario === "mods" || scenario === "vsettings") {
   setVersionFocus({
-    root: "C:\\NoWheRE-loading-fixture\\.minecraft",
+    root: "C:\\Nickel-loading-fixture\\.minecraft",
     versionId: "fixture-instance",
   });
 }
@@ -300,9 +299,9 @@ root.render(
             install: async () => null,
           }}
           instance={{
-            root: "C:\\NoWheRE-loading-fixture\\.minecraft",
+            root: "C:\\Nickel-loading-fixture\\.minecraft",
             versionId: "fixture-instance",
-            dir: "C:\\NoWheRE-loading-fixture\\.minecraft",
+            dir: "C:\\Nickel-loading-fixture\\.minecraft",
             label: "fixture-instance",
             mcVersion: "1.21.1",
             loader: "fabric",

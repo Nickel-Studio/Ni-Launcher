@@ -67,16 +67,16 @@
 }
 
 /* 给右侧内容层一条确定高度：Mod 管理的批量操作窗才能用 min-height:100% 贴底。 */
-.vst-pager .nw-pager__swap {
+.vst-pager .ni-pager__swap {
   height: 100%;
 }
 
-.vst-pager .nw-pager__swap .nw-swap__layer--in {
+.vst-pager .ni-pager__swap .ni-swap__layer--in {
   height: 100%;
 }
 
 /* 加载态直接挂在右侧滚动页时，撑满可用高度并让卡片垂直居中。 */
-.vst-pager .nw-pager__page > .nw-loading {
+.vst-pager .ni-pager__page > .ni-loading {
   min-height: 100%;
 }
 
@@ -88,7 +88,7 @@
   max-width: 860px;
 }
 
-.vst-group.nw-card {
+.vst-group.ni-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -144,15 +144,15 @@
 }
 
 /* 仅按钮的控件保持紧凑宽度，靠 justify-content 贴右。 */
-.vst-row__control-inner:has(> .nw-btn) {
+.vst-row__control-inner:has(> .ni-btn) {
   width: auto;
   max-width: 100%;
 }
 
-.vst-row__control > .nw-select,
-.vst-row__control > .nw-slider-row,
-.vst-row__control-inner > .nw-select,
-.vst-row__control-inner > .nw-slider-row,
+.vst-row__control > .ni-select,
+.vst-row__control > .ni-slider-row,
+.vst-row__control-inner > .ni-select,
+.vst-row__control-inner > .ni-slider-row,
 .vst-row__control-inner > .vst-inherit,
 .vst-row__control-inner > .vst-inherit-boolean,
 .vst-row__control-inner > .vst-input {
@@ -269,7 +269,7 @@
   min-width: 0;
 }
 
-.vst-inherit__toggle.nw-btn {
+.vst-inherit__toggle.ni-btn {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -279,12 +279,12 @@
   color: var(--accent);
 }
 
-.vst-inherit__clear.nw-btn {
+.vst-inherit__clear.ni-btn {
   flex: 0 0 auto;
   color: var(--text-faint);
 }
 
-.vst-inherit__clear.nw-btn:hover {
+.vst-inherit__clear.ni-btn:hover {
   color: var(--text);
 }
 
@@ -297,7 +297,7 @@
   min-width: 0;
 }
 
-.vst-inherit-boolean > .nw-select {
+.vst-inherit-boolean > .ni-select {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -564,7 +564,7 @@
   border-radius: 50%;
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
-  animation: nw-spin 0.8s linear infinite;
+  animation: ni-spin 0.8s linear infinite;
 }
 
 .vst-notice {
@@ -581,7 +581,7 @@
   box-shadow: var(--shadow-2);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 
 .vst-notice__title {

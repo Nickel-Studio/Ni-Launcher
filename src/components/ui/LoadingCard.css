@@ -1,7 +1,7 @@
 /* 统一侧视线稿和线宽；完整保留蓄力挥动范围，落点沿同一时间线。
    画布裁切在 LoadingCard.tsx 的精确 viewBox 中完成，所有使用点共用同一留白。 */
-.nw-loading {
-  --nw-art-width: var(--loading-art-width);
+.ni-loading {
+  --ni-art-width: var(--loading-art-width);
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -10,9 +10,9 @@
   min-height: var(--loading-min-height);
   margin-inline: auto;
   padding: var(--space-5) 0;
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
-.nw-loading--viewport {
+.ni-loading--viewport {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
 }
 
@@ -20,18 +20,18 @@
    当页面唯一内容是加载卡片时，让 swap 与进入层显式撑满可滚动页，加载卡片
    再以 flex 填满该层；实例设置等 Pager 页面因此与 .van-page--loading 使用
    同一套内容区高度规则，不依赖各页面私加 padding 补偿。 */
-.nw-pager__page > .nw-pager__swap:has(> .nw-swap__layer--in > .nw-loading) {
+.ni-pager__page > .ni-pager__swap:has(> .ni-swap__layer--in > .ni-loading) {
   height: 100%;
 }
-.nw-pager__page > .nw-pager__swap > .nw-swap__layer--in:has(> .nw-loading) {
+.ni-pager__page > .ni-pager__swap > .ni-swap__layer--in:has(> .ni-loading) {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
-.nw-pager__page > .nw-pager__swap > .nw-swap__layer--in > .nw-loading {
+.ni-pager__page > .ni-pager__swap > .ni-swap__layer--in > .ni-loading {
   flex: 1 1 auto;
 }
-.nw-loading__card {
+.ni-loading__card {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -44,20 +44,20 @@
 }
 /* 动画内容区：画布已在 LoadingCard.tsx 按 160×114 精确裁切，
    这里只负责固定宽度并防住挥镐时可能溢出的描边。 */
-.nw-loading__clip {
+.ni-loading__clip {
   flex: 0 0 auto;
-  width: var(--nw-art-width);
+  width: var(--ni-art-width);
   aspect-ratio: 160 / 114;
   overflow: hidden;
 }
-.nw-loading__art {
+.ni-loading__art {
   display: block;
   width: 100%;
   height: auto;
   color: var(--text-dim);
   overflow: visible;
 }
-.nw-loading__label {
+.ni-loading__label {
   margin: 0;
   font-family: var(--font-sans);
   font-size: var(--fs-md);
@@ -66,32 +66,32 @@
   text-align: center;
   color: var(--text-dim);
 }
-.nw-loading__ground {
+.ni-loading__ground {
   opacity: 0.3;
 }
-.nw-loading__ore {
+.ni-loading__ore {
   opacity: 0.65;
 }
-.nw-loading__pick {
+.ni-loading__pick {
   transform-box: view-box;
   transform-origin: 45px 82px;
   transform: rotate(-16deg);
-  animation: nw-loading-swing var(--t-mining) infinite;
+  animation: ni-loading-swing var(--t-mining) infinite;
 }
-.nw-loading__block {
-  animation: nw-loading-hit var(--t-mining) infinite;
+.ni-loading__block {
+  animation: ni-loading-hit var(--t-mining) infinite;
 }
-.nw-loading__crack {
+.ni-loading__crack {
   opacity: 0;
-  animation: nw-loading-crack var(--t-mining) infinite;
+  animation: ni-loading-crack var(--t-mining) infinite;
 }
-.nw-loading__chips {
+.ni-loading__chips {
   transform-box: view-box;
   transform-origin: 104px 56px;
   opacity: 0;
-  animation: nw-loading-chips var(--t-mining) infinite;
+  animation: ni-loading-chips var(--t-mining) infinite;
 }
-@keyframes nw-loading-swing {
+@keyframes ni-loading-swing {
   0%,
   12%,
   100% {
@@ -113,7 +113,7 @@
     transform: rotate(-16deg);
   }
 }
-@keyframes nw-loading-hit {
+@keyframes ni-loading-hit {
   0%,
   44%,
   58%,
@@ -127,7 +127,7 @@
     transform: translateY(-0.5px);
   }
 }
-@keyframes nw-loading-crack {
+@keyframes ni-loading-crack {
   0%,
   44%,
   84%,
@@ -139,7 +139,7 @@
     opacity: 0.65;
   }
 }
-@keyframes nw-loading-chips {
+@keyframes ni-loading-chips {
   0%,
   44%,
   64%,
@@ -157,55 +157,55 @@
   }
 }
 /* 错误态：线稿整体转红，矿镐减速停住后平滑抬起，矿石叉号最后浮现。 */
-.nw-loading--error .nw-loading__art,
-.nw-loading--error .nw-loading__label {
+.ni-loading--error .ni-loading__art,
+.ni-loading--error .ni-loading__label {
   color: var(--danger);
 }
 
-.nw-loading--error .nw-loading__ground {
+.ni-loading--error .ni-loading__ground {
   opacity: 0.16;
 }
 
-.nw-loading--error .nw-loading__ore {
+.ni-loading--error .ni-loading__ore {
   opacity: 0.85;
 }
 
-.nw-loading--error .nw-loading__pick {
-  animation: nw-loading-error-pick 1.15s linear forwards;
+.ni-loading--error .ni-loading__pick {
+  animation: ni-loading-error-pick 1.15s linear forwards;
 }
 
-.nw-loading--error .nw-loading__block {
-  animation: nw-loading-error-block 1.15s ease-out forwards;
+.ni-loading--error .ni-loading__block {
+  animation: ni-loading-error-block 1.15s ease-out forwards;
 }
 
-.nw-loading--error .nw-loading__crack {
-  animation: nw-loading-error-crack 1.15s ease-out forwards;
+.ni-loading--error .ni-loading__crack {
+  animation: ni-loading-error-crack 1.15s ease-out forwards;
 }
 
-.nw-loading--error .nw-loading__chips {
+.ni-loading--error .ni-loading__chips {
   animation: none;
   opacity: 0;
 }
 
-.nw-loading__ore-x {
+.ni-loading__ore-x {
   transform-box: fill-box;
   transform-origin: center;
   opacity: 0;
   stroke-width: 2.4;
 }
 
-.nw-loading--error .nw-loading__ore-x {
-  animation: nw-loading-error-x 0.5s 0.42s cubic-bezier(0.2, 0.7, 0.3, 1)
+.ni-loading--error .ni-loading__ore-x {
+  animation: ni-loading-error-x 0.5s 0.42s cubic-bezier(0.2, 0.7, 0.3, 1)
     forwards;
 }
 
-.nw-loading__action {
+.ni-loading__action {
   display: flex;
   justify-content: center;
   margin-top: var(--space-1);
 }
 
-@keyframes nw-loading-error-pick {
+@keyframes ni-loading-error-pick {
   0% {
     transform: rotate(5deg);
     animation-timing-function: cubic-bezier(0.25, 0.8, 0.35, 1);
@@ -221,7 +221,7 @@
   }
 }
 
-@keyframes nw-loading-error-block {
+@keyframes ni-loading-error-block {
   0%,
   38% {
     transform: translateY(1px);
@@ -231,7 +231,7 @@
   }
 }
 
-@keyframes nw-loading-error-crack {
+@keyframes ni-loading-error-crack {
   0% {
     opacity: 0.65;
   }
@@ -240,7 +240,7 @@
   }
 }
 
-@keyframes nw-loading-error-x {
+@keyframes ni-loading-error-x {
   from {
     opacity: 0;
     transform: scale(0.55) rotate(-12deg);
@@ -251,46 +251,46 @@
   }
 }
 
-.nw-loading--inline {
-  --nw-art-width: var(--loading-art-inline-width);
+.ni-loading--inline {
+  --ni-art-width: var(--loading-art-inline-width);
   width: auto;
   min-height: 0;
   padding: var(--space-3) 0;
 }
-.nw-loading--inline .nw-loading__card {
+.ni-loading--inline .ni-loading__card {
   gap: var(--space-2);
   width: auto;
   padding: 0;
   background: transparent;
   box-shadow: none;
 }
-.nw-loading--inline .nw-loading__label {
+.ni-loading--inline .ni-loading__label {
   font-size: var(--fs-sm);
 }
 @media (prefers-reduced-motion: reduce) {
-  .nw-loading,
-  .nw-loading__pick,
-  .nw-loading__block,
-  .nw-loading__crack,
-  .nw-loading__chips,
-  .nw-loading__ore-x,
-  .nw-loading--error .nw-loading__pick,
-  .nw-loading--error .nw-loading__block,
-  .nw-loading--error .nw-loading__crack,
-  .nw-loading--error .nw-loading__ore-x {
+  .ni-loading,
+  .ni-loading__pick,
+  .ni-loading__block,
+  .ni-loading__crack,
+  .ni-loading__chips,
+  .ni-loading__ore-x,
+  .ni-loading--error .ni-loading__pick,
+  .ni-loading--error .ni-loading__block,
+  .ni-loading--error .ni-loading__crack,
+  .ni-loading--error .ni-loading__ore-x {
     animation: none;
   }
 
   /* 减弱动效下仍要表达“已失败”：直接定格在最后一幕。 */
-  .nw-loading--error .nw-loading__pick {
+  .ni-loading--error .ni-loading__pick {
     transform: rotate(-16deg);
   }
 
-  .nw-loading--error .nw-loading__crack {
+  .ni-loading--error .ni-loading__crack {
     opacity: 0.25;
   }
 
-  .nw-loading--error .nw-loading__ore-x {
+  .ni-loading--error .ni-loading__ore-x {
     opacity: 1;
     transform: none;
   }

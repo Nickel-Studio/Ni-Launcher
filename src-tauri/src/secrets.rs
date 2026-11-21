@@ -1,11 +1,17 @@
-//! 密钥候选顺序为 NICKEL_SECRETS、兼容别名 NOWHERE_SECRETS、选定配置根和开发根。
-//! 只使用候选中有效的所需字段；缺失、不可读或解析失败时返回 None。
-//! 密钥文件内容不进入日志或错误信息，CurseForge Key 仅供后端请求使用。
+//! API 配置优先读取运行时覆盖，最后回退构建内嵌的四字段白名单。
+//! 缺失、不可读或解析失败的字段跳过；用户凭据不参与构建投影。
+//! CurseForge Key 仅供后端请求，测试占位符永远不作为认证值发送。
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::AppHandle;
+
+// Build and runtime configuration share one whitelist and field-validation contract.
+#[allow(dead_code)]
+#[path = "../build_config.rs"]
+mod build_config;
 
 /// 返回给前端的 Microsoft 登录配置（序列化为 camelCase）。
 ///
@@ -18,41 +24,19 @@ pub struct MsaConfig {
     pub redirect_uri: String,
 }
 
-/// `secrets.local.json` 的 `microsoft` 段（字段名经 camelCase 映射，未知字段忽略）。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MicrosoftSection {
-    #[serde(default)]
-    client_id: Option<String>,
-    #[serde(default)]
-    authority: Option<String>,
-    #[serde(default)]
-    redirect_uri: Option<String>,
-}
-
-/// `secrets.local.json` 的 `curseforge` 段（CurseForge 社区资源检索引擎）。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CurseForgeSection {
-    #[serde(default)]
-    api_key: Option<String>,
-}
-
-/// `secrets.local.json` 顶层（允许存在 `curseforge` 等额外字段）。
-#[derive(Debug, Deserialize)]
-struct SecretsFile {
-    #[serde(default)]
-    microsoft: Option<MicrosoftSection>,
-    #[serde(default)]
-    curseforge: Option<CurseForgeSection>,
-}
-
 /// `authority` 缺省值：个人微软账号。
 const DEFAULT_AUTHORITY: &str = "consumers";
 /// `redirectUri` 缺省值。
-const DEFAULT_REDIRECT_URI: &str = "nowhere://auth";
+const DEFAULT_REDIRECT_URI: &str = "nickel://auth";
 /// 密钥文件名。
 const SECRETS_FILE_NAME: &str = "secrets.local.json";
+const EMBEDDED_CONFIG: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/nickel-embedded-secrets.json"));
+const TEST_CURSEFORGE_KEY: &str = build_config::TEST_CURSEFORGE_KEY;
+
+fn project_runtime_config(text: &str) -> Result<serde_json::Value, String> {
+    build_config::project(text).map_err(|error| format!("解析 {SECRETS_FILE_NAME} 失败：{error}"))
+}
 
 /// 解析密钥文件文本 → [`MsaConfig`]。
 ///
@@ -60,34 +44,21 @@ const SECRETS_FILE_NAME: &str = "secrets.local.json";
 /// - JSON 非法 → `Err`（错误信息只含行 / 列，不含任何密钥内容）
 /// - `authority` / `redirectUri` 缺失或为空白 → 使用缺省值
 fn parse_msa_config(text: &str) -> Result<Option<MsaConfig>, String> {
-    let file: SecretsFile =
-        serde_json::from_str(text).map_err(|e| format!("解析 {SECRETS_FILE_NAME} 失败: {e}"))?;
-
-    let Some(section) = file.microsoft else {
+    let value = project_runtime_config(text)?;
+    let section = &value["microsoft"];
+    let Some(client_id) = section["clientId"].as_str() else {
         return Ok(None);
     };
-
-    let client_id = section.client_id.unwrap_or_default().trim().to_string();
-    if client_id.is_empty() {
-        return Ok(None);
-    }
-
-    let authority = section
-        .authority
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_AUTHORITY.to_string());
-
-    let redirect_uri = section
-        .redirect_uri
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_REDIRECT_URI.to_string());
-
     Ok(Some(MsaConfig {
-        client_id,
-        authority,
-        redirect_uri,
+        client_id: client_id.to_owned(),
+        authority: section["authority"]
+            .as_str()
+            .unwrap_or(DEFAULT_AUTHORITY)
+            .to_owned(),
+        redirect_uri: section["redirectUri"]
+            .as_str()
+            .unwrap_or(DEFAULT_REDIRECT_URI)
+            .to_owned(),
     }))
 }
 
@@ -96,28 +67,33 @@ fn parse_msa_config(text: &str) -> Result<Option<MsaConfig>, String> {
 /// - 缺 `curseforge` 段、或 `apiKey` 缺失 / 为空 → `Ok(None)`（视为未配置）
 /// - JSON 非法 → `Err`（错误信息只含行 / 列，不含任何密钥内容）
 fn parse_curseforge_key(text: &str) -> Result<Option<String>, String> {
-    let file: SecretsFile =
-        serde_json::from_str(text).map_err(|e| format!("解析 {SECRETS_FILE_NAME} 失败: {e}"))?;
+    let value = project_runtime_config(text)?;
+    Ok(value["curseforge"]["apiKey"]
+        .as_str()
+        .filter(|key| *key != TEST_CURSEFORGE_KEY)
+        .map(str::to_owned))
+}
 
-    let key = file
-        .curseforge
-        .and_then(|section| section.api_key)
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    Ok(key)
+fn read_config_text(path: &Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut text = String::new();
+    file.take(build_config::MAX_CONFIG_BYTES as u64 + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    Some(text)
 }
 
 /// 读取单个路径的密钥文件。
 ///
 /// 文件不存在 / 不可读 / 解析失败 / 未配置 → `None`（静默跳过，绝不 panic）。
 fn read_msa_config_from(path: &Path) -> Option<MsaConfig> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = read_config_text(path)?;
     parse_msa_config(&text).ok().flatten()
 }
 
 /// 读取单个路径的 CurseForge API Key（语义与 [`read_msa_config_from`] 一致）。
 fn read_curseforge_key_from(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = read_config_text(path)?;
     parse_curseforge_key(&text).ok().flatten()
 }
 
@@ -131,54 +107,60 @@ fn first_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<Str
     paths.into_iter().find_map(|p| read_curseforge_key_from(&p))
 }
 
-fn env_secrets_paths(primary: Option<&str>, legacy: Option<&str>) -> Vec<PathBuf> {
-    [primary, legacy]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .collect()
+fn load_msa_config<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<MsaConfig> {
+    first_msa_config(paths).or_else(|| parse_msa_config(EMBEDDED_CONFIG).ok().flatten())
 }
 
-/// 开发期回退路径：`<CARGO_MANIFEST_DIR>/../secrets.local.json`。
-///
-/// release 构建下该路径通常不存在，`read_msa_config_from` 会自然跳过。
+fn load_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<String> {
+    first_curseforge_key(paths).or_else(|| parse_curseforge_key(EMBEDDED_CONFIG).ok().flatten())
+}
+
+/// 开发根仅用于调试构建；发行程序不会读取构建机的源码路径。
+#[cfg(debug_assertions)]
 fn dev_fallback_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join(SECRETS_FILE_NAME)
 }
 
-fn candidate_paths(app: &AppHandle) -> Vec<PathBuf> {
-    let primary = std::env::var("NICKEL_SECRETS").ok();
-    let legacy = std::env::var("NOWHERE_SECRETS").ok();
-    let mut paths = env_secrets_paths(primary.as_deref(), legacy.as_deref());
-    if let Ok(directory) = crate::app_paths::config_dir(app) {
+fn runtime_candidate_paths(
+    primary: Option<&str>,
+    config_directory: Option<&Path>,
+    executable_directory: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = primary.into_iter()
+        .map(str::trim).filter(|path| !path.is_empty()).map(PathBuf::from).collect();
+    for directory in [config_directory, executable_directory]
+        .into_iter()
+        .flatten()
+    {
         paths.push(directory.join(SECRETS_FILE_NAME));
     }
+    #[cfg(debug_assertions)]
     paths.push(dev_fallback_path());
     paths
 }
 
-/// 读取 Microsoft 登录配置。
-///
-/// 未配置（三处文件都不存在 / 都无有效 `clientId`）返回 `None`，前端据此显示
-/// 「复制示例文件并填入 Client ID」的可执行指引；配置存在但不可解析同样返回
-/// `None` —— 本命令**不会**向调用方抛出错误。
-#[tauri::command]
-pub fn msa_config_get(app: AppHandle) -> Result<Option<MsaConfig>, String> {
-    Ok(first_msa_config(candidate_paths(&app)))
+fn candidate_paths(app: &AppHandle) -> Vec<PathBuf> {
+    let primary = std::env::var("NICKEL_SECRETS").ok();
+    let config = crate::app_paths::config_dir(app).ok();
+    let executable = std::env::current_exe().ok();
+    runtime_candidate_paths(
+        primary.as_deref(),
+        config.as_deref(),
+        executable.as_deref().and_then(Path::parent),
+    )
 }
 
-/// 读取 CurseForge API Key（`curseforge.apiKey`）。
-///
-/// 读取顺序与 [`msa_config_get`] 完全一致；未配置返回 `None`，
-/// 前端据此给出「在 secrets.local.json 填入 curseforge.apiKey」的可执行指引。
-/// **key 本身只在本进程内使用（作为 CurseForge 请求头），不写日志、不进错误信息。**
+/// 公共登录配置可发送给设备码登录界面；优先采用运行时覆盖。
 #[tauri::command]
+pub fn msa_config_get(app: AppHandle) -> Result<Option<MsaConfig>, String> {
+    Ok(load_msa_config(candidate_paths(&app)))
+}
+
+/// 不注册为前端 IPC；真实 Key 只在后端用于官方请求。
 pub fn curseforge_api_key(app: AppHandle) -> Result<Option<String>, String> {
-    Ok(first_curseforge_key(candidate_paths(&app)))
+    Ok(load_curseforge_key(candidate_paths(&app)))
 }
 
 #[cfg(test)]
@@ -191,21 +173,26 @@ mod tests {
         "objectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "tenantId": "ffffffff-0000-1111-2222-333333333333",
         "authority": "common",
-        "redirectUri": "nowhere://auth"
+        "redirectUri": "nickel://auth"
       },
       "curseforge": { "apiKey": null }
     }"#;
 
     /// 生成唯一的临时文件路径。
     fn temp_path(tag: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "nowhere_secrets_{}_{}_{}.json",
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "nickel_secrets_{}_{}_{}_{}.json",
             std::process::id(),
-            crate::store::random_token(),
+            stamp,
+            SEQUENCE.fetch_add(1, Ordering::Relaxed),
             tag
-        ));
-        p
+        ))
     }
 
     #[test]
@@ -213,7 +200,7 @@ mod tests {
         let cfg = parse_msa_config(SAMPLE).unwrap().unwrap();
         assert_eq!(cfg.client_id, "11111111-2222-3333-4444-555555555555");
         assert_eq!(cfg.authority, "common");
-        assert_eq!(cfg.redirect_uri, "nowhere://auth");
+        assert_eq!(cfg.redirect_uri, "nickel://auth");
     }
 
     #[test]
@@ -301,6 +288,7 @@ mod tests {
         assert!(value.get("redirect_uri").is_none());
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn dev_fallback_path_is_derived_without_accessing_project_secrets() {
         assert_eq!(
@@ -317,40 +305,7 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
-    #[test]
-    fn secrets_aliases_prefer_primary_and_skip_blank_paths() {
-        let primary = temp_path("primary");
-        let legacy = temp_path("legacy");
-        let primary_text = primary.to_string_lossy();
-        let legacy_text = legacy.to_string_lossy();
-        assert_eq!(
-            env_secrets_paths(Some(&primary_text), Some(&legacy_text)),
-            vec![primary.clone(), legacy.clone()]
-        );
-        assert_eq!(
-            env_secrets_paths(Some(" "), Some(&legacy_text)),
-            vec![legacy.clone()]
-        );
-        assert!(env_secrets_paths(None, Some(" ")).is_empty());
-        std::fs::write(&primary, r#"{"microsoft":{"clientId":"primary-fixture"},"curseforge":{"apiKey":"primary-fixture"}}"#).unwrap();
-        std::fs::write(&legacy, SAMPLE).unwrap();
-        let paths = env_secrets_paths(Some(&primary_text), Some(&legacy_text));
-        assert_eq!(
-            first_msa_config(paths.clone()).unwrap().client_id,
-            "primary-fixture"
-        );
-        assert_eq!(
-            first_curseforge_key(paths.clone()).as_deref(),
-            Some("primary-fixture")
-        );
-        std::fs::write(&primary, "broken").unwrap();
-        assert_eq!(
-            first_msa_config(paths).unwrap().client_id,
-            "11111111-2222-3333-4444-555555555555"
-        );
-        std::fs::remove_file(primary).unwrap();
-        std::fs::remove_file(legacy).unwrap();
-    }
+
 
     // ── CurseForge API Key 读取 ────────────────────────────────────────────
 
@@ -406,5 +361,343 @@ mod tests {
         );
 
         std::fs::remove_file(&present).ok();
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(tag: &str) -> Self {
+            let path = temp_path(tag).with_extension("dir");
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn file(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn malformed_unrelated_sections_do_not_discard_valid_runtime_fields() {
+        let microsoft = r#"{"microsoft":{"clientId":"fixture-client","authority":42,"redirectUri":[]},"curseforge":{"apiKey":false}}"#;
+        let msa = parse_msa_config(microsoft).unwrap().unwrap();
+        assert_eq!(msa.client_id, "fixture-client");
+        assert_eq!(msa.authority, DEFAULT_AUTHORITY);
+        assert_eq!(msa.redirect_uri, DEFAULT_REDIRECT_URI);
+        assert!(parse_curseforge_key(microsoft).unwrap().is_none());
+        let curseforge = r#"{"microsoft":{"clientId":[]},"curseforge":{"apiKey":"fixture-key"}}"#;
+        assert_eq!(
+            parse_curseforge_key(curseforge).unwrap().as_deref(),
+            Some("fixture-key")
+        );
+        assert!(parse_msa_config(curseforge).unwrap().is_none());
+        for text in ["null", "[]", "false", "42", r#""fixture""#] {
+            assert!(parse_msa_config(text).unwrap().is_none());
+            assert!(parse_curseforge_key(text).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn runtime_rejects_control_characters_oversized_values_and_example_client_ids() {
+        for invalid in [
+            "bad\u{0000}value".into(),
+            "bad\nvalue".into(),
+            "x".repeat(8193),
+        ] {
+            let text = serde_json::json!({"microsoft":{"clientId":invalid},"curseforge":{"apiKey":invalid}}).to_string();
+            assert!(parse_msa_config(&text).unwrap().is_none());
+            assert!(parse_curseforge_key(&text).unwrap().is_none());
+        }
+        assert!(
+            parse_msa_config(
+                r#"{"microsoft":{"clientId":"00000000-0000-0000-0000-000000000000"}}"#
+            )
+            .unwrap()
+            .is_none()
+        );
+        let optional = r#"{"microsoft":{"clientId":"fixture-client","authority":"bad\u0000value","redirectUri":"bad\nvalue"}}"#;
+        let config = parse_msa_config(optional).unwrap().unwrap();
+        assert_eq!(config.authority, DEFAULT_AUTHORITY);
+        assert_eq!(config.redirect_uri, DEFAULT_REDIRECT_URI);
+    }
+
+    #[test]
+    fn runtime_file_reads_are_bounded_and_bad_files_are_skipped() {
+        let directory = TestDirectory::new("bounded");
+        let oversized = directory.file("oversized.json");
+        let invalid_utf8 = directory.file("invalid-utf8.json");
+        let valid = directory.file("valid.json");
+        std::fs::write(
+            &oversized,
+            " ".repeat(build_config::MAX_CONFIG_BYTES + 4096),
+        )
+        .unwrap();
+        std::fs::write(&invalid_utf8, [0xff, 0xfe, 0x00]).unwrap();
+        std::fs::write(&valid, CF_SAMPLE).unwrap();
+        assert_eq!(
+            read_config_text(&oversized).unwrap().len(),
+            build_config::MAX_CONFIG_BYTES + 1
+        );
+        assert!(read_msa_config_from(&oversized).is_none());
+        assert!(read_curseforge_key_from(&oversized).is_none());
+        assert!(read_config_text(&invalid_utf8).is_none());
+        assert!(read_msa_config_from(&directory.0).is_none());
+        let paths = vec![oversized, invalid_utf8, valid];
+        assert_eq!(first_msa_config(paths.clone()).unwrap().client_id, "cid");
+        assert_eq!(
+            first_curseforge_key(paths).as_deref(),
+            Some("$2a$10$TESTKEY")
+        );
+    }
+
+    #[test]
+    fn runtime_parse_failures_never_include_fixture_credentials() {
+        for text in [
+            r#"{"microsoft":{"clientId":"private-client-fixture"},"curseforge":{"apiKey":"private-key-fixture"},broken}"#,
+            r#"{"microsoft":{"clientId":"private-client-fixture"},"curseforge":{"apiKey":"private-key-fixture"}"#,
+        ] {
+            for error in [
+                parse_msa_config(text).unwrap_err(),
+                parse_curseforge_key(text).unwrap_err(),
+            ] {
+                assert!(!error.contains("private-client-fixture"));
+                assert!(!error.contains("private-key-fixture"));
+            }
+        }
+    }
+
+    #[test]
+    fn exact_curseforge_placeholder_is_never_an_authentication_value() {
+        for key in [
+            TEST_CURSEFORGE_KEY.to_owned(),
+            format!("  {TEST_CURSEFORGE_KEY}\r\n"),
+        ] {
+            let text = serde_json::json!({"curseforge":{"apiKey":key}}).to_string();
+            assert!(parse_curseforge_key(&text).unwrap().is_none());
+        }
+        let different_fixture = format!("{TEST_CURSEFORGE_KEY}-different-fixture");
+        let text = serde_json::json!({"curseforge":{"apiKey":different_fixture}}).to_string();
+        assert!(parse_curseforge_key(&text).unwrap().is_some());
+        let directory = TestDirectory::new("placeholder");
+        let placeholder = directory.file("placeholder.json");
+        let valid = directory.file("valid.json");
+        std::fs::write(
+            &placeholder,
+            serde_json::json!({"curseforge":{"apiKey":TEST_CURSEFORGE_KEY}}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(&valid, CF_SAMPLE).unwrap();
+        assert_eq!(
+            load_curseforge_key(vec![placeholder, valid]).as_deref(),
+            Some("$2a$10$TESTKEY")
+        );
+        let embedded = load_curseforge_key(Vec::<PathBuf>::new());
+        assert!(embedded.as_deref() != Some(TEST_CURSEFORGE_KEY));
+    }
+
+    #[test]
+    fn runtime_candidate_order_is_override_config_executable_then_debug_only_source() {
+        let directory = TestDirectory::new("candidate-order");
+        let primary = directory.file("primary.json");
+        let config = directory.file("config");
+        let executable = directory.file("executable");
+        let paths = runtime_candidate_paths(
+            Some(&primary.to_string_lossy()),
+            Some(&config),
+            Some(&executable),
+        );
+        assert_eq!(
+            &paths[..3],
+            &[
+                primary,
+                config.join(SECRETS_FILE_NAME),
+                executable.join(SECRETS_FILE_NAME)
+            ]
+        );
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(paths.len(), 4);
+            assert_eq!(paths.last(), Some(&dev_fallback_path()));
+        }
+        #[cfg(not(debug_assertions))]
+        assert_eq!(paths.len(), 3);
+    }
+
+    #[test]
+    fn runtime_precedence_and_missing_fields_are_resolved_independently() {
+        let directory = TestDirectory::new("precedence");
+        let primary = directory.file("primary.json");
+        let config = directory.file("config");
+        let executable = directory.file("executable");
+        std::fs::create_dir(&config).unwrap();
+        std::fs::create_dir(&executable).unwrap();
+        let paths = runtime_candidate_paths(
+            Some(&primary.to_string_lossy()),
+            Some(&config),
+            Some(&executable),
+        )
+        .into_iter()
+        .take(3)
+        .collect::<Vec<_>>();
+        for (path, name) in paths
+            .iter()
+            .zip(["primary", "config", "executable"])
+        {
+            std::fs::write(
+                path,
+                serde_json::json!({
+                    "microsoft":{"clientId":format!("{name}-client")},
+                    "curseforge":{"apiKey":format!("{name}-key")}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        for (index, name) in ["primary", "config", "executable"]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(
+                load_msa_config(paths.clone()).unwrap().client_id,
+                format!("{name}-client")
+            );
+            assert_eq!(
+                load_curseforge_key(paths.clone()).unwrap(),
+                format!("{name}-key")
+            );
+            std::fs::write(&paths[index], "broken").unwrap();
+        }
+        std::fs::write(
+            &primary,
+            r#"{"microsoft":{"clientId":"primary-client"},"curseforge":{"apiKey":false}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            config.join(SECRETS_FILE_NAME),
+            r#"{"microsoft":{"clientId":false},"curseforge":{"apiKey":"config-key"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load_msa_config(paths.clone()).unwrap().client_id,
+            "primary-client"
+        );
+        assert_eq!(load_curseforge_key(paths).as_deref(), Some("config-key"));
+    }
+
+    #[test]
+    fn missing_runtime_paths_fall_back_to_the_embedded_configuration() {
+        let missing = temp_path("embedded-fallback");
+        assert!(
+            load_msa_config(vec![missing.clone()]) == parse_msa_config(EMBEDDED_CONFIG).unwrap()
+        );
+        assert!(
+            load_curseforge_key(vec![missing]) == parse_curseforge_key(EMBEDDED_CONFIG).unwrap()
+        );
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_candidates_never_include_the_build_source_root() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../secrets.local.json");
+        assert!(runtime_candidate_paths(None, None, None).is_empty());
+        let directory = TestDirectory::new("release-candidates");
+        let paths = runtime_candidate_paths(None, Some(&directory.0), Some(&directory.0));
+        assert_eq!(paths.len(), 2);
+        assert!(paths.iter().all(|path| path != &source));
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    #[ignore = "Detached release acceptance; run only through tests/embedded-config/verify.mjs"]
+    fn detached_release_runtime_loads_embedded_configuration_without_external_files() {
+        let directory = PathBuf::from(
+            std::env::var_os("NICKEL_EMBEDDED_CONFIG_PROBE_DIR").expect("detached probe directory"),
+        );
+        let executable = std::env::current_exe().expect("probe executable");
+        assert!(
+            std::env::current_dir().unwrap() == directory,
+            "probe must run outside the source directory"
+        );
+        assert!(
+            executable.parent() == Some(directory.as_path()),
+            "probe executable must be detached"
+        );
+        assert!(
+            !Path::new(env!("CARGO_MANIFEST_DIR")).exists(),
+            "isolated build manifest must be removed before runtime acceptance"
+        );
+        for key in [
+            "NICKEL_SECRETS",
+            "NICKEL_BUILD_SECRETS",
+            "NICKEL_MSA_CLIENT_ID",
+            "NICKEL_MSA_AUTHORITY",
+            "NICKEL_MSA_REDIRECT_URI",
+            "NICKEL_CURSEFORGE_API_KEY",
+        ] {
+            assert!(
+                std::env::var_os(key).is_none(),
+                "runtime probe must not inherit configuration overrides"
+            );
+        }
+        let config = directory.join("config");
+        let paths = runtime_candidate_paths(None, Some(&config), executable.parent());
+        assert_eq!(paths.len(), 2);
+        assert!(
+            paths.iter().all(|path| !path.exists()),
+            "no external configuration may be supplied to the detached probe"
+        );
+        let embedded =
+            build_config::project(EMBEDDED_CONFIG).expect("embedded configuration is valid");
+        let raw: serde_json::Value = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            raw == embedded,
+            "embedded configuration must contain only the four allowed fields"
+        );
+        let expected_msa = parse_msa_config(EMBEDDED_CONFIG).unwrap();
+        let msa = load_msa_config(paths.clone());
+        assert!(
+            expected_msa.is_some(),
+            "microsoft.clientId must be embedded for this acceptance"
+        );
+        assert!(
+            msa == expected_msa,
+            "runtime Microsoft configuration must match the embedded configuration"
+        );
+        let curseforge = load_curseforge_key(paths);
+        assert!(
+            curseforge == parse_curseforge_key(EMBEDDED_CONFIG).unwrap(),
+            "runtime CurseForge configuration must match the embedded configuration"
+        );
+        let placeholder = embedded["curseforge"]["apiKey"].as_str() == Some(TEST_CURSEFORGE_KEY);
+        assert!(
+            !placeholder || curseforge.is_none(),
+            "CurseForge test placeholder must not leave the runtime loader"
+        );
+        println!(
+            "NICKEL_RUNTIME_PROBE={}",
+            serde_json::json!({
+                "releaseCompilation": !cfg!(debug_assertions),
+                "executableDetached": true,
+                "buildManifestUnavailable": true,
+                "externalConfigurationAbsent": true,
+                "runtimeOverridesAbsent": true,
+                "sourceRootExcluded": true,
+                "embeddedWhitelistOnly": true,
+                "runtimeMatchesEmbedded": true,
+                "microsoft.clientId": msa.as_ref().is_some_and(|value| !value.client_id.is_empty()),
+                "microsoft.authority": msa.as_ref().is_some_and(|value| !value.authority.is_empty()),
+                "microsoft.redirectUri": msa.as_ref().is_some_and(|value| !value.redirect_uri.is_empty()),
+                "curseforge.apiKeyEmbedded": embedded["curseforge"]["apiKey"].as_str().is_some(),
+                "curseforge.apiKeyUsable": curseforge.is_some(),
+                "curseforge.testPlaceholder": placeholder,
+                "curseforge.testPlaceholderRejected": !placeholder || curseforge.is_none()
+            })
+        );
     }
 }

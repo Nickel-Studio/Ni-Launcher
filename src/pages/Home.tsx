@@ -465,14 +465,20 @@ export function Home() {
     settings.fileDownloadSource,
   ]);
 
-  /** 启动失败弹窗里的「打开日志目录」：日志已落盘，界面只保留这一个入口。 */
+  // 保留失败时的实例，不跟随之后在侧边栏选择的新实例。
+  const reportTarget =
+    launcher.reportTarget ??
+    (instance
+      ? { versionId: instance.versionId, gameDir: instance.root }
+      : null);
   const handleOpenLogs = useCallback(() => {
-    if (!instance) return;
-    void launcher.openLogs({
-      versionId: instance.versionId,
-      gameDir: instance.root,
-    });
-  }, [instance, launcher.openLogs]);
+    if (reportTarget) void launcher.openLogs(reportTarget);
+  }, [reportTarget, launcher.openLogs]);
+  const handleExportReport = useCallback(() => {
+    if (!reportTarget)
+      return Promise.reject(new Error("请返回实例列表重新选择失败的实例。"));
+    return launcher.exportErrorReport(reportTarget);
+  }, [reportTarget, launcher.exportErrorReport]);
 
   const accountForm = (
     <AccountPanel
@@ -555,7 +561,10 @@ export function Home() {
     <div className="home">
       <Card className="home__card" padding="lg">
         {/* 顶部：账号形态胶囊（全应用唯一形态切换入口） */}
-        <div className="home__top home__stage home__stage--1">
+        <div
+          className="home__top home__stage home__stage--1"
+          inert={launcher.starting}
+        >
           <AccountTypeTabs
             className="home__accounts"
             value={accountType}
@@ -565,8 +574,41 @@ export function Home() {
 
         {/* 中部：角色区 / 未登录表单 */}
         <div className="home__body home__stage home__stage--2">
-          <div className="home__swap" key={swapDisplay} data-phase={swapPhase}>
-            {body}
+          <div className="home__presentation" data-starting={launcher.starting}>
+            <div
+              className="home__account"
+              inert={launcher.starting}
+              aria-hidden={launcher.starting}
+            >
+              <div
+                className="home__swap"
+                key={swapDisplay}
+                data-phase={swapPhase}
+              >
+                {body}
+              </div>
+            </div>
+            <div
+              className="home__launch-progress"
+              inert={!launcher.starting}
+              aria-hidden={!launcher.starting}
+            >
+              {launcher.starting ? (
+                <LaunchPanel
+                  instanceName={
+                    instance
+                      ? instance.displayName || instance.versionId
+                      : "未选择实例"
+                  }
+                  stage={launcher.stage}
+                  progress={launcher.progress}
+                  percent={launcher.percent}
+                  speedBps={launcher.speedBps}
+                  cancelRequested={launcher.cancelRequested}
+                  onCancel={launcher.cancel}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -577,64 +619,63 @@ export function Home() {
           </InlineNotice>
         ) : null}
 
-        {/* 底部：启动区（准备阶段显示挖矿动画 + 进度 + 取消，不展示运行日志） */}
+        {/* 启动进度顶替角色区，底部操作保持原有占位。 */}
         <div className="home__launch home__stage home__stage--3">
-          {launcher.starting ? (
-            <LaunchPanel
-              instanceName={
+          <>
+            <LaunchButton
+              running={launcher.running}
+              disabled={!canLaunch}
+              onClick={handleLaunch}
+              label={
+                launcher.starting
+                  ? launcher.cancelRequested
+                    ? "正在取消..."
+                    : "正在启动..."
+                  : launcher.running
+                  ? "游戏运行中"
+                  : "启动游戏"
+              }
+              subLabel={
                 instance
                   ? instance.displayName || instance.versionId
                   : "未选择实例"
               }
-              stage={launcher.stage}
-              progress={launcher.progress}
-              percent={launcher.percent}
-              speedBps={launcher.speedBps}
-              onCancel={launcher.cancel}
             />
-          ) : (
-            <>
-              <LaunchButton
-                running={launcher.running}
-                disabled={!canLaunch}
-                onClick={handleLaunch}
-                label={launcher.running ? "游戏运行中" : "启动游戏"}
-                subLabel={
-                  instance
-                    ? instance.displayName || instance.versionId
-                    : "未选择实例"
-                }
-              />
 
-              <div className="home__launch-secondary">
-                <Button
-                  variant="ghost"
-                  className="home__ghost"
-                  iconLeft={<IconLayers />}
-                  onClick={() => setRoute("instances")}
-                >
-                  选择版本
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="home__ghost"
-                  iconLeft={<IconSliders />}
-                  disabled={!instance}
-                  onClick={() => instance && openVersionSettings(instance)}
-                >
-                  版本设置
-                </Button>
-              </div>
-            </>
-          )}
+            <div className="home__launch-secondary">
+              <Button
+                variant="ghost"
+                className="home__ghost"
+                iconLeft={<IconLayers />}
+                disabled={launcher.starting}
+                onClick={() => setRoute("instances")}
+              >
+                选择版本
+              </Button>
+              <Button
+                variant="ghost"
+                className="home__ghost"
+                iconLeft={<IconSliders />}
+                disabled={!instance || launcher.starting}
+                onClick={() => instance && openVersionSettings(instance)}
+              >
+                版本设置
+              </Button>
+            </div>
+          </>
 
           {launchError ? (
             <LaunchErrorDialog
+              key={`${reportTarget?.gameDir ?? ""}:${
+                reportTarget?.versionId ?? ""
+              }:${launchError.reason}`}
               open
               title={launchError.title}
+              reason={launchError.reason}
               message={launchError.message}
               onClose={launcher.clearError}
-              onOpenLogs={instance ? handleOpenLogs : undefined}
+              onOpenLogs={reportTarget ? handleOpenLogs : undefined}
+              onExportReport={reportTarget ? handleExportReport : undefined}
             />
           ) : null}
         </div>

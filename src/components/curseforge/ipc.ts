@@ -4,7 +4,12 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../lib/settings";
-import { normalizeSearch, normalizeVersionPage } from "../modrinth/parse";
+import {
+  normalizeDependencyResolution,
+  normalizeSearch,
+  normalizeVersionPage,
+} from "../modrinth/parse";
+import type { DependencyLookup, ResolvedDependency } from "../modrinth/types";
 import type {
   CurseforgeFilesParams,
   CurseforgeInstallParams,
@@ -98,6 +103,19 @@ export async function saveAsCurseforge(params: {
     source: params.source ?? null,
   });
   return typeof raw === "string" ? raw.trim() : null;
+}
+
+/** relationType=3 的前置由项目编号解析；未指定文件时不代选最新文件。 */
+export async function resolveCurseforgeDependency(
+  dependency: DependencyLookup
+): Promise<ResolvedDependency> {
+  if (!isTauri()) throw new Error("未连接到启动器后端");
+  const raw = await invoke<string>("community_dependency_resolve", {
+    platform: "curseforge",
+    projectId: dependency.projectId || null,
+    versionId: dependency.versionId || null,
+  });
+  return normalizeDependencyResolution(raw, "curseforge");
 }
 
 /** 用系统默认浏览器打开 CurseForge 项目页。 */

@@ -8,6 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import {
+  ACCENT_IDS,
+  DEFAULT_CUSTOM_THEME,
+  normalizeCustomTheme,
+  startThemeRuntime,
+  type Accent,
+  type CustomTheme,
+} from "./theme";
+export type { Accent, CustomTheme, ThemeDecoration } from "./theme";
 
 /* ============================================================================
    Public contract
@@ -18,13 +27,6 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
  * 注意：明暗模式 **不是「主题」** —— 项目说的「主题」指下面的 Accent（颜色主题）。
  */
 export type ThemeMode = "system" | "light" | "dark";
-/**
- * 颜色主题（color theme / accent）—— 它才是本项目的「主题」：
- * 决定按钮、选中态、焦点环与高亮元素使用的信号色。
- * 默认 "mono"（黑与白），与 ThemeMode（明暗模式）是两件互不相干的事。
- */
-export type Accent = "mono" | "emerald" | "blue" | "violet" | "amber" | "rose";
-export type DownloadSource = "official" | "bmclapi";
 export type SourcePolicy = "mirror_first" | "official_auto" | "official_first";
 export const SOURCE_POLICIES: readonly SourcePolicy[] = [
   "mirror_first",
@@ -62,12 +64,12 @@ export function normalizeMirrorBase(value: string): string | null {
 export interface AppSettings {
   themeMode: ThemeMode;
   accent: Accent;
+  customTheme: CustomTheme;
+  titlebarTint: boolean;
   backgroundImage: string | null;
   backgroundBlur: number;
   backgroundOpacity: number;
   privacyMode: boolean;
-  /** 仅供旧调用者兼容；新入口分别使用三项策略。 */
-  downloadSource: DownloadSource;
   versionListSource: SourcePolicy;
   fileDownloadSource: SourcePolicy;
   communityApiSource: SourcePolicy;
@@ -83,18 +85,17 @@ export interface AppSettings {
   memoryMb: number;
   /** 前沿计划：添加孤立 `.minecraft` 时用上级目录名作为展示名。 */
   instanceNamingOptimize: boolean;
-  /** 前沿计划：手动内存优化时是否同时清空系统待命内存列表（仅 Windows）。 */
-  memoryPurgeStandby: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   themeMode: "dark",
   accent: "mono", // 颜色主题默认「黑与白」
+  customTheme: { ...DEFAULT_CUSTOM_THEME },
+  titlebarTint: false,
   backgroundImage: null,
   backgroundBlur: 0,
   backgroundOpacity: 0.5,
   privacyMode: false,
-  downloadSource: "official",
   versionListSource: "official_auto",
   fileDownloadSource: "official_auto",
   communityApiSource: "official_auto",
@@ -107,7 +108,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   littleskinServer: "https://littleskin.cn",
   memoryMb: 4096,
   instanceNamingOptimize: false,
-  memoryPurgeStandby: false,
 };
 
 export interface SettingsContextValue {
@@ -121,19 +121,10 @@ export interface SettingsContextValue {
    Environment helpers
    ========================================================================== */
 
-const STORAGE_KEY = "nowhere.settings";
+const STORAGE_KEY = "nickel.settings";
 
 const THEME_MODES: readonly ThemeMode[] = ["system", "light", "dark"];
-/** 颜色主题白名单；顺序 = 设置页色板顺序（mono 置顶）。 */
-const ACCENTS: readonly Accent[] = [
-  "mono",
-  "emerald",
-  "blue",
-  "violet",
-  "amber",
-  "rose",
-];
-const SOURCES: readonly DownloadSource[] = ["official", "bmclapi"];
+const ACCENTS: readonly Accent[] = ACCENT_IDS;
 const ACCOUNT_TYPES: readonly AppSettings["accountType"][] = [
   "microsoft",
   "littleskin",
@@ -227,14 +218,9 @@ export function normalizeSettings(input: unknown): AppSettings {
   if (THEME_MODES.includes(raw.themeMode as ThemeMode))
     out.themeMode = raw.themeMode as ThemeMode;
   if (ACCENTS.includes(raw.accent as Accent)) out.accent = raw.accent as Accent;
-  if (SOURCES.includes(raw.downloadSource as DownloadSource))
-    out.downloadSource = raw.downloadSource as DownloadSource;
-  const migrated: SourcePolicy =
-    raw.downloadSource === "bmclapi"
-      ? "mirror_first"
-      : raw.downloadSource === "official"
-      ? "official_first"
-      : "official_auto";
+  out.customTheme = normalizeCustomTheme(raw.customTheme);
+  out.titlebarTint =
+    typeof raw.titlebarTint === "boolean" ? raw.titlebarTint : false;
   for (const key of [
     "versionListSource",
     "fileDownloadSource",
@@ -242,11 +228,9 @@ export function normalizeSettings(input: unknown): AppSettings {
   ] as const) {
     out[key] = SOURCE_POLICIES.includes(raw[key] as SourcePolicy)
       ? (raw[key] as SourcePolicy)
-      : key === "communityApiSource"
-      ? "official_auto"
-      : migrated;
+      : DEFAULT_SETTINGS[key];
   }
-  // 镜像基址由应用固定；旧配置保留键形状，但不继续采用自定义地址。
+  // 镜像基址由服务常量提供，不接受配置文件覆盖。
   Object.assign(out, COMMUNITY_MIRRORS);
   out.maxDownloadThreads = Math.round(
     clampNumber(
@@ -296,10 +280,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     typeof raw.instanceNamingOptimize === "boolean"
       ? raw.instanceNamingOptimize
       : DEFAULT_SETTINGS.instanceNamingOptimize;
-  out.memoryPurgeStandby =
-    typeof raw.memoryPurgeStandby === "boolean"
-      ? raw.memoryPurgeStandby
-      : DEFAULT_SETTINGS.memoryPurgeStandby;
   return out;
 }
 
@@ -310,7 +290,7 @@ function readLocalSync(): AppSettings {
   } catch {
     // 损坏的首屏缓存不影响后端配置加载。
   }
-  return { ...DEFAULT_SETTINGS };
+  return normalizeSettings({});
 }
 
 async function loadSettings(): Promise<AppSettings> {
@@ -386,28 +366,44 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => normalizeSettings({ ...prev, ...patch }));
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.accent = settings.accent;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      root.dataset.theme =
-        settings.themeMode === "system"
-          ? mq.matches
-            ? "dark"
-            : "light"
-          : settings.themeMode;
-    };
-    apply();
-    if (settings.themeMode === "system") {
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-    return undefined;
-  }, [settings.themeMode, settings.accent]);
+  const {
+    hue,
+    saturation,
+    lightness,
+    titlebarHueShift,
+    decoration,
+    decorationOpacity,
+  } = settings.customTheme;
+  useEffect(
+    () =>
+      startThemeRuntime(document.documentElement, {
+        accent: settings.accent,
+        themeMode: settings.themeMode,
+        titlebarTint: settings.titlebarTint,
+        customTheme: {
+          hue,
+          saturation,
+          lightness,
+          titlebarHueShift,
+          decoration,
+          decorationOpacity,
+        },
+      }),
+    [
+      settings.accent,
+      settings.themeMode,
+      settings.titlebarTint,
+      hue,
+      saturation,
+      lightness,
+      titlebarHueShift,
+      decoration,
+      decorationOpacity,
+    ]
+  );
 
   useEffect(() => {
-    document.documentElement.dataset.hasBg = settings.backgroundImage
+    document.documentElement.dataset.hasBg = settings.backgroundImage?.trim()
       ? "true"
       : "false";
   }, [settings.backgroundImage]);

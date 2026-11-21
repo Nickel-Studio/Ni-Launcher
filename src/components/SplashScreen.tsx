@@ -102,7 +102,7 @@ function probeWindowVisibility(
 export function SplashScreen() {
   useEffect(() => {
     const root = document.documentElement;
-    const el = document.getElementById("nw-splash");
+    const el = document.getElementById("ni-splash");
     let released = false;
     let disposed = false;
     let revealTimer: number | undefined;
@@ -131,7 +131,7 @@ export function SplashScreen() {
      * 进入被闪屏覆盖的控件；`inert` 同时阻止焦点与交互。
      *
      * 目标必须是 `document.body`：Modal / Tooltip / Toast 等 portal 直接挂到
-     * body，不在 `.nw-shell` 内，只惰性化外壳会漏掉这些弹窗。`#nw-splash` 也是
+     * body，不在 `.ni-shell` 内，只惰性化外壳会漏掉这些弹窗。`#ni-splash` 也是
      * body 子节点，但它只是纯视觉层（`pointer-events: none`、无交互），inert
      * 不影响其淡出过渡。使用 setAttribute / removeAttribute 而非 `element.inert`，
      * 避免不同 TS DOM 版本的类型差异。
@@ -153,9 +153,9 @@ export function SplashScreen() {
       stopWatching();
       // 交接后解除启动遮挡：整个应用（含 body 级 portal）恢复指针与键盘交互。
       setAppInert(false);
-      root.classList.add("nw-app-ready");
+      root.classList.add("ni-app-ready");
       // 兜底可能已给外壳加过 hold；淡出开始后解除，让外壳恢复交互。
-      root.classList.remove("nw-splash-hold");
+      root.classList.remove("ni-splash-hold");
       if (!el) return;
 
       const reducedMotion = window.matchMedia(REDUCED_MOTION_QUERY);
@@ -181,7 +181,7 @@ export function SplashScreen() {
       el.addEventListener("transitionend", onTransitionEnd);
       el.addEventListener("transitioncancel", onTransitionEnd);
       reducedMotion.addEventListener("change", onMotionChange);
-      el.classList.add("nw-splash--leaving");
+      el.classList.add("ni-splash--leaving");
 
       const style = getComputedStyle(el);
       const durations = style.transitionDuration.split(",").map(parseFloat);
@@ -276,18 +276,18 @@ export function SplashScreen() {
 
     revealTimer = window.setTimeout(() => {
       if (disposed || released) return;
-      // 3 秒仍不可见：只解锁外壳透明度，不添加 nw-splash--leaving、不删除闪屏。
+      // 3 秒仍不可见：只解锁外壳透明度，不添加 ni-splash--leaving、不删除闪屏。
       // 这样窗口真正显示时仍能看到完整的启动画面，再由可见信号触发淡出。
-      // nw-splash-hold 让「已解锁但仍被闪屏覆盖」的外壳不抢点击；整个应用的
+      // ni-splash-hold 让「已解锁但仍被闪屏覆盖」的外壳不抢点击；整个应用的
       // inert 保持到 startFade / 硬截止再解除。
-      root.classList.add("nw-app-ready", "nw-splash-hold");
+      root.classList.add("ni-app-ready", "ni-splash-hold");
     }, REVEAL_FALLBACK_MS);
 
     hardRevealTimer = window.setTimeout(() => {
       if (disposed || released) return;
       // 正常路径仍等真实可见；硬截止只保证应用最终可用，避免启动期死锁。
       // 即使 isVisible() 永久悬挂或窗口从不给出可见信号，也在这里解除
-      // nw-splash-hold、移除整个应用的 inert 并淡出闪屏。
+      // ni-splash-hold、移除整个应用的 inert 并淡出闪屏。
       startFade();
     }, HARD_REVEAL_DEADLINE_MS);
 

@@ -33,7 +33,7 @@ import {
 } from "../../src/components/version/vsettings/panels";
 import type { InstanceEntry } from "../../src/components/version/instancesApi";
 
-const ROOT = "C:\\NoWheRE-regression\\.minecraft";
+const ROOT = "C:\\Nickel-regression\\.minecraft";
 
 /** 实例设置视觉检查固定夹具：覆盖继承、显式清空与覆盖三种状态。 */
 const VERSION_SETTINGS_FIXTURE = {
@@ -49,7 +49,6 @@ const VERSION_SETTINGS_FIXTURE = {
   memoryMode: "custom",
   memoryMb: 6144,
   memoryManagement: null,
-  memoryOptimize: null,
   highPerformanceGpu: null,
   offlineSkin: null,
   offlineSkinName: null,
@@ -63,7 +62,6 @@ const VERSION_SETTINGS_FIXTURE = {
   jvmArgs: null,
   gameArgs: null,
   preLaunchCommand: "",
-  noModUpdates: null,
   disableModUpdates: null,
   disableFileCheck: false,
   disableWrapper: null,
@@ -86,7 +84,6 @@ const GLOBAL_GAME_SETTINGS_FIXTURE = {
   memoryMode: "auto",
   memoryMb: 6144,
   memoryManagement: "g1-tuned",
-  memoryOptimize: true,
   highPerformanceGpu: false,
   disableWrapper: false,
   disableLwjglAgent: false,
@@ -295,7 +292,6 @@ window.__TAURI_INTERNALS__ = {
         availableMemoryMb: 10240,
         suggestedMemoryMb: 4096,
         capabilities: {
-          memoryOptimize: true,
           windowTitle: true,
           launchWrapper: true,
           lwjglAgent: true,

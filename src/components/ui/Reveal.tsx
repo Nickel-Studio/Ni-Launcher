@@ -14,7 +14,7 @@ import {
  *   <Reveal index={0}>…</Reveal>
  *   <Reveal index={1}>…</Reveal>
  *
- * The animation itself lives in `src/styles/ui.css` (`.nw-reveal`) and is fully
+ * The animation itself lives in `src/styles/ui.css` (`.ni-reveal`) and is fully
  * disabled under `prefers-reduced-motion`.
  */
 export interface RevealProps {
@@ -43,7 +43,7 @@ export function Reveal({
   const Tag = (as ?? "div") as ElementType;
   return (
     <Tag
-      className={["nw-reveal", className].filter(Boolean).join(" ")}
+      className={["ni-reveal", className].filter(Boolean).join(" ")}
       style={{ animationDelay: `${delay + index * step}ms`, ...style }}
     >
       {children}
@@ -77,11 +77,11 @@ export function Stagger({
   const Tag = (as ?? "div") as ElementType;
   const items = Children.toArray(children);
   return (
-    <Tag className={["nw-stagger", className].filter(Boolean).join(" ")}>
+    <Tag className={["ni-stagger", className].filter(Boolean).join(" ")}>
       {items.map((child, i) => (
         <div
           key={i}
-          className="nw-reveal"
+          className="ni-reveal"
           style={{ animationDelay: `${delay + i * step}ms` }}
         >
           {child}

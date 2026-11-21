@@ -413,9 +413,9 @@ try {
     JSON.stringify(settingsStructure.startup)
   );
   check(
-    "内存分配字段顺序为分配方式 → 最大内存 → 启动前优化内存",
+    "内存分配字段顺序为分配方式 → 最大内存",
     JSON.stringify(settingsStructure.memory) ===
-      JSON.stringify(["分配方式", "最大内存", "启动前优化内存"]),
+      JSON.stringify(["分配方式", "最大内存"]),
     JSON.stringify(settingsStructure.memory)
   );
   check(
@@ -427,7 +427,7 @@ try {
     const clicked = await evaluate(
       cdp,
       `(() => {
-        const tab = Array.from(document.querySelectorAll('.nw-seg [role="tab"]')).find(
+        const tab = Array.from(document.querySelectorAll('.ni-seg [role="tab"]')).find(
           (el) => el.textContent?.trim() === ${JSON.stringify(label)}
         );
         if (!tab) return false;
@@ -539,7 +539,7 @@ try {
   await hoverElement(cdp, `${rowExpr("游戏窗口标题")}?.querySelector('.vst-row__label')`);
   const labelTip = await evaluate(
     cdp,
-    "document.querySelector('.nw-tooltip')?.textContent?.trim() ?? ''"
+    "document.querySelector('.ni-tooltip')?.textContent?.trim() ?? ''"
   );
   check("悬浮标签不出现 Tooltip", labelTip === "", labelTip);
   await hoverElement(
@@ -548,7 +548,7 @@ try {
   );
   const controlTip = await evaluate(
     cdp,
-    "document.querySelector('.nw-tooltip')?.textContent?.trim() ?? ''"
+    "document.querySelector('.ni-tooltip')?.textContent?.trim() ?? ''"
   );
   check(
     "悬浮控件出现 Tooltip",

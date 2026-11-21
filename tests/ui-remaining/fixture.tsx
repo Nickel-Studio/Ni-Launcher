@@ -110,7 +110,7 @@ const TASK_SNAPSHOTS = [
     taskId: "task-running",
     kind: "resource",
     revision: 3,
-    target: "C:/NoWheRE-fixture/.minecraft/mods/example-mod.jar",
+    target: "C:/Nickel-fixture/.minecraft/mods/example-mod.jar",
     label: "动态资源包",
     status: "running",
     cancelRequested: false,
@@ -140,7 +140,7 @@ const TASK_SNAPSHOTS = [
     taskId: "task-done",
     kind: "resource",
     revision: 4,
-    target: "C:/NoWheRE-fixture/.minecraft/resourcepacks/fixture.zip",
+    target: "C:/Nickel-fixture/.minecraft/resourcepacks/fixture.zip",
     label: "已完成材质包",
     status: "done",
     cancelRequested: false,
@@ -164,7 +164,7 @@ const TASK_SNAPSHOTS = [
     taskId: "task-error",
     kind: "resource",
     revision: 5,
-    target: "C:/NoWheRE-fixture/.minecraft/shaderpacks/fixture-shader.zip",
+    target: "C:/Nickel-fixture/.minecraft/shaderpacks/fixture-shader.zip",
     label: "失败项目包",
     status: "error",
     cancelRequested: false,
@@ -193,7 +193,7 @@ window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
 window.__TAURI_INTERNALS__ = {
   invoke: async (command, args = {}) => {
     if (command === "settings_get") {
-      return window.localStorage.getItem("nowhere.settings") ?? "{}";
+      return window.localStorage.getItem("nickel.settings") ?? "{}";
     }
     if (command === "settings_set") return null;
     if (command === "accounts_list") return [];
@@ -451,9 +451,9 @@ const JEI_PAGE: ProjectVersionPage = {
 };
 
 const JEI_INSTANCE = {
-  root: "C:/NoWheRE-fixture/.minecraft",
+  root: "C:/Nickel-fixture/.minecraft",
   versionId: "fixture-instance",
-  dir: "C:/NoWheRE-fixture/.minecraft",
+  dir: "C:/Nickel-fixture/.minecraft",
   label: "Fixture 26.3",
   mcVersion: "26.3",
   loader: "neoforge",
@@ -842,11 +842,11 @@ async function runResultAndToolbarChecks(): Promise<void> {
   );
   const sourceTrigger = required<HTMLButtonElement>(
     toolbar,
-    ".cv-toolbar__source .nw-select__trigger"
+    ".cv-toolbar__source .ni-select__trigger"
   );
   const loaderTrigger = required<HTMLButtonElement>(
     toolbar,
-    ".cv-loader .nw-select__trigger"
+    ".cv-loader .ni-select__trigger"
   );
   expect(
     "来源与加载器默认文案能区分维度",
@@ -870,7 +870,7 @@ async function runResultAndToolbarChecks(): Promise<void> {
   sourceTrigger.focus();
   sourceTrigger.click();
   const sourceMenu = await waitFor(
-    () => document.querySelector<HTMLElement>(".nw-select__menu"),
+    () => document.querySelector<HTMLElement>(".ni-select__menu"),
     "来源菜单"
   );
   expect(
@@ -887,7 +887,7 @@ async function runResultAndToolbarChecks(): Promise<void> {
     })
   );
   await waitFor(
-    () => !document.querySelector(".nw-select__menu"),
+    () => !document.querySelector(".ni-select__menu"),
     "来源菜单关闭"
   );
 }
@@ -1059,14 +1059,14 @@ async function runDetailChecks(): Promise<void> {
       ) === "true",
     "Forge 分组展开"
   );
-  const collapse = required<HTMLElement>(forgeGroup, ".nw-collapse");
+  const collapse = required<HTMLElement>(forgeGroup, ".ni-collapse");
   await waitFor(
     () => parseFloat(collapse.style.height) > 0,
     "Collapse 目标高度展开"
   );
   expect(
     "分组展开由共享 Collapse 高度过渡接管",
-    collapse.classList.contains("nw-collapse") &&
+    collapse.classList.contains("ni-collapse") &&
       parseFloat(collapse.style.height) > 0 &&
       required<HTMLButtonElement>(forgeGroup, ".pd-group__toggle").getAttribute(
         "aria-controls"
@@ -1102,9 +1102,12 @@ async function runDetailChecks(): Promise<void> {
   );
   if (placeholder) {
     const placeholderHeight = placeholder.getBoundingClientRect().height;
+    const style = getComputedStyle(placeholder);
+    const reservedHeight = ["--pd-row-height", "--space-7", "--space-1"]
+      .reduce((total, token) => total + parseFloat(style.getPropertyValue(token)), 0);
     expect(
-      "懒挂载占位高度 = 行高",
-      placeholderHeight >= 40 && placeholderHeight <= 46,
+      "懒挂载占位保留版本行和依赖入口高度",
+      Math.abs(placeholderHeight - reservedHeight) <= 1,
       `${placeholderHeight}`
     );
   }
@@ -1474,16 +1477,16 @@ async function runRegression(): Promise<void> {
     } else {
       expect(
         "详情页使用共享进场动画",
-        getComputedStyle(project).animationName.includes("nw-fade-up"),
+        getComputedStyle(project).animationName.includes("ni-fade-up"),
         "no-preference"
       );
       if (downloadPage) {
         const card = downloadPage.querySelector<HTMLElement>(".dd-card");
         expect(
           "下载页与任务卡使用共享进场动画",
-          getComputedStyle(downloadPage).animationName.includes("nw-fade-up") &&
+          getComputedStyle(downloadPage).animationName.includes("ni-fade-up") &&
             (card === null ||
-              getComputedStyle(card).animationName.includes("nw-fade-up")),
+              getComputedStyle(card).animationName.includes("ni-fade-up")),
           "no-preference"
         );
       }

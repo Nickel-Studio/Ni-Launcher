@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 use crate::{instances, named_profiles};
 
-pub const SETTINGS_FILE_NAME: &str = "nowhere.settings.json";
+pub const SETTINGS_FILE_NAME: &str = "nickel.settings.json";
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
 const MAX_SERVER_TEXT_BYTES: usize = 4096;
@@ -26,7 +26,6 @@ const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("memoryMode", "内存模式"),
     ("memoryMb", "内存上限"),
     ("memoryManagement", "内存管理"),
-    ("memoryOptimize", "启动前内存回收"),
     ("highPerformanceGpu", "高性能 GPU"),
     ("processPriority", "进程优先级"),
     ("serverLogin", "服务器登录方式"),
@@ -37,7 +36,6 @@ const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("jvmArgs", "JVM 参数"),
     ("gameArgs", "游戏参数"),
     ("disableModUpdates", "禁止 Mod 更新"),
-    ("noModUpdates", "禁止 Mod 更新（旧字段）"),
     ("disableFileCheck", "跳过文件检查"),
     ("disableWrapper", "禁用 Java 包装器"),
     ("disableLwjglAgent", "禁用 LWJGL Agent"),
@@ -56,15 +54,12 @@ const CREDENTIAL_MARKERS: &[&str] = &[
     "authorization",
     "privatekey",
 ];
-const LEGACY_MEMORY_OPTIMIZE: &str = "memoryOptimization";
 const MEMORY_MANAGEMENT_VALUES: &[&str] = &[
     "auto-zgc",
     "generational-zgc",
     "g1",
     "g1-tuned",
     "custom",
-    "serial",
-    "parallel",
 ];
 const VISIBILITY_VALUES: &[&str] = &["keep", "hide", "hide-close", "close", "minimize"];
 const WINDOW_MODE_VALUES: &[&str] = &[
@@ -83,24 +78,7 @@ pub struct Projection {
 }
 
 fn field_allowed(key: &str) -> bool {
-    key == LEGACY_MEMORY_OPTIMIZE || ALLOWED_FIELDS.iter().any(|(field, _)| *field == key)
-}
-
-fn canonicalize_aliases(value: Value) -> Result<Value, String> {
-    let Some(mut fields) = value.as_object().cloned() else {
-        return Ok(value);
-    };
-    let Some(legacy) = fields.remove(LEGACY_MEMORY_OPTIMIZE) else {
-        return Ok(Value::Object(fields));
-    };
-    if let Some(canonical) = fields.get("memoryOptimize") {
-        if canonical != &legacy {
-            return Err("便携实例设置同时包含冲突的 memoryOptimize 与 memoryOptimization".into());
-        }
-    } else {
-        fields.insert("memoryOptimize".into(), legacy);
-    }
-    Ok(Value::Object(fields))
+    ALLOWED_FIELDS.iter().any(|(field, _)| *field == key)
 }
 
 fn contains_host_path(value: &str) -> bool {
@@ -167,8 +145,8 @@ fn valid_field(key: &str, value: &Value) -> bool {
         return true;
     }
     match key {
-        "versionIsolation" | "memoryOptimize" | "highPerformanceGpu"
-        | "disableModUpdates" | "noModUpdates" | "disableFileCheck"
+        "versionIsolation" | "highPerformanceGpu"
+        | "disableModUpdates" | "disableFileCheck"
         | "disableWrapper" | "disableLwjglAgent" => value.is_boolean(),
         "windowTitle" | "customInfo" | "jvmArgs" | "gameArgs" => valid_text(value, MAX_TEXT_BYTES),
         "launcherVisibility" => valid_choice(value, VISIBILITY_VALUES),
@@ -205,15 +183,7 @@ pub fn project(value: &Value) -> Projection {
     let mut included = Vec::new();
     let mut omitted = Vec::new();
     for (key, label) in ALLOWED_FIELDS {
-        let value = source
-            .get(*key)
-            .filter(|value| !value.is_null())
-            .or_else(|| {
-                (*key == "memoryOptimize")
-                    .then(|| source.get(LEGACY_MEMORY_OPTIMIZE))
-                    .flatten()
-                    .filter(|value| !value.is_null())
-            });
+        let value = source.get(*key).filter(|value| !value.is_null());
         let Some(value) = value else {
             continue;
         };
@@ -254,7 +224,6 @@ pub fn read_file(path: &Path) -> Result<Option<Value>, String> {
 
 /// 严格校验来自便携包的设置：未知键和不安全值都拒绝，避免把篡改内容写入实例。
 pub fn validate(value: &Value) -> Result<Value, String> {
-    let value = canonicalize_aliases(value.clone())?;
     let Some(source) = value.as_object() else {
         return Err("便携实例设置必须是 JSON 对象".into());
     };
@@ -368,7 +337,6 @@ mod tests {
             "memoryMode": "custom",
             "memoryMb": 6144,
             "memoryManagement": "g1-tuned",
-            "memoryOptimize": false,
             "serverLogin": "thirdParty",
             "serverName": "LittleSkin",
             "serverRegistration": "https://example.com/register",
@@ -440,21 +408,6 @@ mod tests {
             assert_eq!(projected.settings["memoryManagement"], *management);
             validated_roundtrip(&projected.settings);
         }
-
-        let legacy = project(&json!({ "memoryOptimization": true }));
-        assert_eq!(legacy.settings["memoryOptimize"], true);
-        assert!(legacy.settings.get("memoryOptimization").is_none());
-        let serialized: Value = serde_json::from_slice(
-            &serialize(&json!({ "memoryOptimization": false })).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(serialized["memoryOptimize"], false);
-        assert!(serialized.get("memoryOptimization").is_none());
-        assert!(validate(&json!({
-            "memoryOptimize": true,
-            "memoryOptimization": false
-        }))
-        .is_err());
     }
 
     #[test]
@@ -519,7 +472,7 @@ mod tests {
 
     #[test]
     fn apply_to_instance_preserves_unknown_and_never_overwrites_corruption() {
-        let root = std::env::temp_dir().join(format!("nowhere-instance-settings-{}", crate::store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-instance-settings-{}", crate::store::random_token()));
         let instance = root.join("versions/example");
         std::fs::create_dir_all(&instance).unwrap();
         let path = instance.join(SETTINGS_FILE_NAME);

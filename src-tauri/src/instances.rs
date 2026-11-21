@@ -1,7 +1,7 @@
 //! 实例注册表与本地版本、资源扫描。
 //!
 //! 注册表按有界 JSON 保存，缺失或损坏时回退空列表。
-//! 程序旁目录、便携标记与旧配置优先级统一由 app_paths 决定。
+//! 程序旁目录、便携标记与系统配置目录的优先级统一由 app_paths 决定。
 //! 扫描不得发起网络请求；目录身份用于启动与管理，展示名不得替代真实 MC 版本。
 
 use std::path::{Path, PathBuf};
@@ -93,6 +93,47 @@ pub fn registry_from_text(text: &str) -> Registry {
 /// 序列化注册表；结构固定、理论不会失败，失败时回退到空注册表文本。
 pub fn registry_to_text(registry: &Registry) -> String {
     serde_json::to_string(registry).unwrap_or_else(|_| EMPTY_REGISTRY.to_string())
+}
+
+fn root_identity(value: &str) -> String {
+    let value = value.trim().replace('\\', "/");
+    #[cfg(windows)]
+    let value = {
+        let value = value.to_lowercase();
+        if let Some(unc) = value.strip_prefix("//?/unc/") {
+            format!("//{unc}")
+        } else {
+            value
+        }
+    };
+    value.strip_prefix("//?/").unwrap_or(&value).trim_end_matches('/').to_owned()
+}
+
+/// 保存列表的先后顺序代表添加先后；默认目录置首，其余目录保持添加顺序。
+fn ordered_roots(incoming: &[String], previous: &[String], default: Option<&str>) -> Vec<String> {
+    let mut unique = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for value in incoming {
+        if !value.trim().is_empty() && seen.insert(root_identity(value)) {
+            unique.push(value.clone());
+        }
+    }
+    let mut result = Vec::with_capacity(unique.len());
+    for old in previous {
+        if let Some(index) = unique.iter().position(|value| root_identity(value) == root_identity(old)) {
+            result.push(unique.remove(index));
+        }
+    }
+    result.extend(unique);
+    if let Some(default) = default {
+        if let Some(index) = result.iter().position(|value| root_identity(value) == root_identity(default)) {
+            if index > 0 {
+                let value = result.remove(index);
+                result.insert(0, value);
+            }
+        }
+    }
+    result
 }
 
 pub(crate) fn reject_links(path: &Path) -> Result<(), String> {
@@ -459,23 +500,24 @@ pub fn instances_get(app: AppHandle) -> String {
         registry.roots.insert(0, portable.clone());
         registry.active = Some(portable);
     }
+    let default = crate::app_paths::bundled_game_dir(&app).ok();
+    registry.roots = ordered_roots(&registry.roots, &[], default.as_deref().and_then(Path::to_str));
     registry_to_text(&registry)
 }
 
-/// 写入实例注册表：>256KB 或非法 JSON 拒绝；合法则原子写入。
+/// 有界写入注册表；已有目录保持原顺序，新目录追加，默认目录优先。
 #[tauri::command]
 pub fn instances_set(app: AppHandle, json: String) -> Result<(), String> {
     if json.len() > INSTANCES_MAX_BYTES {
-        return Err(format!(
-            "实例注册表内容过大（{} 字节，上限 {} 字节）",
-            json.len(),
-            INSTANCES_MAX_BYTES
-        ));
+        return Err(format!("实例注册表内容过大（{} 字节，上限 {} 字节）", json.len(), INSTANCES_MAX_BYTES));
     }
-    // 校验合法性后原样透传（后端不解析业务字段）。
-    serde_json::from_str::<serde_json::Value>(&json).map_err(|e| format!("非法 JSON: {e}"))?;
+    let mut registry: Registry = serde_json::from_str(&json).map_err(|_| "实例注册表格式无效，请刷新后重试")?;
+    let _guard = store::lock();
     let path = store::instances_path(&app)?;
-    write_registry_atomic(&path, &json)
+    let previous = read_registry(&path);
+    let default = crate::app_paths::bundled_game_dir(&app).ok();
+    registry.roots = ordered_roots(&registry.roots, &previous.roots, default.as_deref().and_then(Path::to_str));
+    write_registry_atomic(&path, &registry_to_text(&registry))
 }
 
 /// 扫描 `<dir>/versions/*/` 下的版本实例，返回 JSON 数组文本；目录不存在 → `"[]"`。
@@ -723,7 +765,7 @@ pub(crate) fn pick_version_json(version_dir: &Path, dir_name: &str) -> Option<Pa
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")))
         .filter(|path| {
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
-            if name.eq_ignore_ascii_case("nowhere.settings.json") || name.eq_ignore_ascii_case("gameData.json") { return false; }
+            if name.eq_ignore_ascii_case("nickel.settings.json") || name.eq_ignore_ascii_case("gameData.json") { return false; }
             let Ok(metadata) = path.metadata() else { return false; };
             if metadata.len() > VERSION_JSON_MAX_BYTES { return false; }
             std::fs::read_to_string(path).ok()
@@ -763,7 +805,7 @@ fn classify_version(version_dir: &Path, dir_name: &str, json_text: Option<&str>)
         .filter(|value| !value.is_empty())
         .unwrap_or(dir_name);
     let display_name = json
-        .pointer("/nowhereCustom/name")
+        .pointer("/nickelCustom/name")
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -789,7 +831,7 @@ fn classify_version(version_dir: &Path, dir_name: &str, json_text: Option<&str>)
         .and_then(|setup| setup.get("VersionVanillaName"))
         .filter(|value| minecraft_metadata_id(value).is_some())
         .map(str::to_owned);
-    let profile = json.get("nowhereProfile");
+    let profile = json.get("nickelProfile");
     // 命名实例的运行档案优先于外层扫描描述，兼容旧描述缺失或残留的版本字段。
     let minecraft_version = version_dir.parent().and_then(Path::parent)
         .and_then(|root| crate::named_profiles::load(root, dir_name).ok().flatten())
@@ -829,9 +871,9 @@ fn classify_version(version_dir: &Path, dir_name: &str, json_text: Option<&str>)
     InstanceEntry {
         id: dir_name.into(),
         display_name,
-        favorite: json.pointer("/nowhereCustom/favorite").and_then(|v| v.as_bool()).unwrap_or(false),
-        favorite_at: json.pointer("/nowhereCustom/favoriteAt").and_then(|v| v.as_u64()),
-        category: json.pointer("/nowhereCustom/category").and_then(|v| v.as_str()).unwrap_or("").into(),
+        favorite: json.pointer("/nickelCustom/favorite").and_then(|v| v.as_bool()).unwrap_or(false),
+        favorite_at: json.pointer("/nickelCustom/favoriteAt").and_then(|v| v.as_u64()),
+        category: json.pointer("/nickelCustom/category").and_then(|v| v.as_str()).unwrap_or("").into(),
         version_type,
         loader: loader.into(),
         loader_version,
@@ -885,7 +927,7 @@ fn minecraft_version_from_metadata_in(
     depth: usize,
     chain: &mut Vec<String>,
 ) -> Option<String> {
-    json.pointer("/nowhereProfile/minecraftVersion")
+    json.pointer("/nickelProfile/minecraftVersion")
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1245,7 +1287,7 @@ mod tests {
 
     /// 测试用临时目录（唯一名，避免并行测试互相干扰）。
     fn temp_dir(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("nowhere-test-{tag}-{}", store::random_token()))
+        std::env::temp_dir().join(format!("nickel-test-{tag}-{}", store::random_token()))
     }
 
     #[test]
@@ -1438,6 +1480,30 @@ mod tests {
     }
 
     #[test]
+    fn root_addition_order_survives_activation_and_removal() {
+        let values = |items: &[&str]| items.iter().map(|value| value.to_string()).collect::<Vec<_>>();
+        let roots = values(&["Z:/old", "C:/default", "A:/new"]);
+        let initial = ordered_roots(&roots, &[], Some("C:/default"));
+        assert_eq!(initial, values(&["C:/default", "Z:/old", "A:/new"]));
+        let requested = values(&["B:/latest", "A:/new", "C:/default", "Z:/old"]);
+        let appended = ordered_roots(&requested, &initial, Some("C:/default"));
+        assert_eq!(appended, values(&["C:/default", "Z:/old", "A:/new", "B:/latest"]));
+        let removed = ordered_roots(&values(&["B:/latest", "C:/default", "A:/new"]), &appended, Some("C:/default"));
+        assert_eq!(removed, values(&["C:/default", "A:/new", "B:/latest"]));
+        let registry = Registry { roots: removed.clone(), active: Some("B:/latest".into()), ..Default::default() };
+        assert_eq!(registry_from_text(&registry_to_text(&registry)).roots, removed);
+        assert_eq!(ordered_roots(&[], &initial, Some("C:/default")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn root_order_collapses_path_aliases_without_sorting_names() {
+        let values = vec!["D:/older".into(), "D:/older/".into(), "D:/default".into(), "D:/latest".into()];
+        assert_eq!(ordered_roots(&values, &[], Some("D:/default")), vec!["D:/default", "D:/older", "D:/latest"]);
+        #[cfg(windows)]
+        assert_eq!(ordered_roots(&vec![r"\\?\D:\OLDER".into(), "d:/older".into()], &[], None).len(), 1);
+    }
+
+    #[test]
     fn classify_version_handles_missing_and_corrupt_json() {
         let root = Path::new("C:/mc/versions/1.20.1");
 
@@ -1507,8 +1573,8 @@ mod tests {
         for minecraft in ["1.26.3", "26.3", "26.3-snapshot-1", "3D Shareware v1.34"] {
             let json = serde_json::json!({
                 "id": "arbitrary-directory",
-                "nowhereCustom": {"name": "Foo 26.3"},
-                "nowhereProfile": {"minecraftVersion": minecraft, "loader": "fabric"},
+                "nickelCustom": {"name": "Foo 26.3"},
+                "nickelProfile": {"minecraftVersion": minecraft, "loader": "fabric"},
             });
             let entry = classify_version(Path::new("community-fixture/versions/arbitrary-directory"),
                 "arbitrary-directory", Some(&json.to_string()));
@@ -1522,9 +1588,9 @@ mod tests {
     fn community_version_unknown_metadata_never_falls_back_to_instance_name() {
         for json in [
             serde_json::json!({"id": "Foo 26.3"}),
-            serde_json::json!({"nowhereCustom": {"name": "Foo 26.3"}}),
+            serde_json::json!({"nickelCustom": {"name": "Foo 26.3"}}),
             serde_json::json!({"id": "Foo 26.3", "inheritsFrom": "Other 1.26.3"}),
-            serde_json::json!({"id": "Foo 26.3", "nowhereProfile": {"minecraftVersion": "  "}}),
+            serde_json::json!({"id": "Foo 26.3", "nickelProfile": {"minecraftVersion": "  "}}),
         ] {
             let entry = classify_version(Path::new("community-fixture/versions/26.3"),
                 "26.3", Some(&json.to_string()));
@@ -1540,7 +1606,7 @@ mod tests {
         }
         let json = serde_json::json!({
             "id": "Foo 26.3", "inheritsFrom": "26.3",
-            "nowhereProfile": {"minecraftVersion": ""},
+            "nickelProfile": {"minecraftVersion": ""},
         });
         assert_eq!(minecraft_version_from_metadata(&json, &[]).as_deref(), Some("26.3"));
         let json = serde_json::json!({"id": "Foo 26.3", "inheritsFrom": "base-instance"});
@@ -1553,8 +1619,8 @@ mod tests {
         let root = temp_dir("community-version");
         let (_, directory) = crate::named_profiles::reserve(&root, "Foo 26.3", "1.26.3", None, "")?;
         for descriptor in [
-            serde_json::json!({"id": "Foo 26.3", "nowhereCustom": {"name": "My pack"}}),
-            serde_json::json!({"id": "Foo 26.3", "inheritsFrom": "Foo 26.3", "nowhereProfile": {"minecraftVersion": "Foo 26.3"}}),
+            serde_json::json!({"id": "Foo 26.3", "nickelCustom": {"name": "My pack"}}),
+            serde_json::json!({"id": "Foo 26.3", "inheritsFrom": "Foo 26.3", "nickelProfile": {"minecraftVersion": "Foo 26.3"}}),
         ] {
             std::fs::write(directory.join("Foo 26.3.json"), descriptor.to_string()).map_err(|error| error.to_string())?;
             let entries = scan_instances(&root);
@@ -1562,14 +1628,14 @@ mod tests {
             assert_eq!(entries[0].minecraft_version.as_deref(), Some("1.26.3"));
             assert_eq!(entries[0].id, "Foo 26.3");
         }
-        std::fs::write(directory.join("nowhere.profile.json"), "{broken").map_err(|error| error.to_string())?;
+        std::fs::write(directory.join("nickel.profile.json"), "{broken").map_err(|error| error.to_string())?;
         std::fs::write(directory.join("Foo 26.3.json"), r#"{"id":"Foo 26.3"}"#).map_err(|error| error.to_string())?;
         assert_eq!(scan_instances(&root)[0].minecraft_version, None);
         std::fs::remove_dir_all(root).map_err(|error| error.to_string())
     }
 
     #[test]
-    fn registry_labels_roundtrip_without_changing_legacy_empty_shape() {
+    fn registry_labels_roundtrip_and_omit_empty_labels() {
         let mut registry = Registry::default();
         assert_eq!(registry_to_text(&registry), EMPTY_REGISTRY);
         registry.labels.insert("C:/mc".into(), "Survival".into());
@@ -2066,11 +2132,11 @@ mod tests {
     #[test]
     #[ignore]
     fn legacy_launcher_instances_are_detected() {
-        let Some(root) = std::env::var_os("NOWHERE_PCL_ROOT").map(PathBuf::from) else {
-            eprintln!("[pcl-compat] 未设置 NOWHERE_PCL_ROOT，跳过真实 PCL 根目录验收");
+        let Some(root) = std::env::var_os("NICKEL_PCL_ROOT").map(PathBuf::from) else {
+            eprintln!("[pcl-compat] 未设置 NICKEL_PCL_ROOT，跳过真实 PCL 根目录验收");
             return;
         };
-        assert!(root.is_absolute(), "NOWHERE_PCL_ROOT 必须是绝对路径");
+        assert!(root.is_absolute(), "NICKEL_PCL_ROOT 必须是绝对路径");
         let entries = scan_instances(&root);
         assert!(!entries.is_empty(), "PCL 根目录下没有实例");
 

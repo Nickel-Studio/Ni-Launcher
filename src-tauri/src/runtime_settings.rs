@@ -31,7 +31,6 @@ pub struct EffectiveSettings {
     pub width: u32,
     pub height: u32,
     pub memory_mb: u64,
-    pub memory_optimize: bool,
     pub high_performance_gpu: bool,
     pub disable_wrapper: bool,
     pub disable_lwjgl_agent: bool,
@@ -113,11 +112,9 @@ pub fn split_arguments(raw: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-/// 旧 `default` 的一次性迁移：它过去仍会过滤并追加 G1，已不再等于“不指定”。
 pub fn normalize_memory_management(value: &str) -> Result<String, String> {
     let mode = match value.trim() {
         "" => "g1-tuned",
-        "default" => "custom",
         other => other,
     };
     choice(
@@ -128,8 +125,6 @@ pub fn normalize_memory_management(value: &str) -> Result<String, String> {
             "g1",
             "g1-tuned",
             "custom",
-            "serial",
-            "parallel",
         ],
         "内存管理",
     )
@@ -166,8 +161,6 @@ pub fn gc_arguments(
         args.push("-XX:+UseCompactObjectHeaders".into());
     }
     match mode.as_str() {
-        "serial" => args.push("-XX:+UseSerialGC".into()),
-        "parallel" => args.push("-XX:+UseParallelGC".into()),
         _ if use_zgc => {
             args.push("-XX:+UseZGC".into());
             if (21..=22).contains(&java_major) {
@@ -198,18 +191,16 @@ pub fn gc_arguments(
     Ok(Some(args))
 }
 
-/// 兼容旧测试入口；真实启动使用 [`resolve_with_memory`]。
+/// 测试用简化内存探测；真实启动同时提供总量、可用量和 Mod 数。
 #[cfg(test)]
 pub fn resolve(
     global: &Value,
     local: &Value,
-    legacy_memory: Option<u64>,
     available: Option<u64>,
 ) -> Result<EffectiveSettings, String> {
     resolve_with_memory(
         global,
         local,
-        legacy_memory,
         available,
         available,
         0,
@@ -220,7 +211,6 @@ pub fn resolve(
 pub fn resolve_with_memory(
     global: &Value,
     local: &Value,
-    legacy_memory: Option<u64>,
     total_memory: Option<u64>,
     available_memory: Option<u64>,
     mod_count: u64,
@@ -231,11 +221,7 @@ pub fn resolve_with_memory(
             global,
             local,
             "memoryMode",
-            if legacy_memory.is_some() {
-                "custom"
-            } else {
-                "auto"
-            },
+            "auto",
         ),
         &["auto", "custom"],
         "内存模式",
@@ -245,7 +231,6 @@ pub fn resolve_with_memory(
     } else {
         let saved = inherited(global, local, "memoryMb")
             .and_then(Value::as_u64)
-            .or(legacy_memory)
             .unwrap_or(DEFAULT_MEMORY_MB);
         memory_plan::manual_memory_mb(saved, total_memory)?
     };
@@ -292,10 +277,6 @@ pub fn resolve_with_memory(
         width,
         height,
         memory_mb,
-        memory_optimize: inherited(global, local, "memoryOptimize")
-            .and_then(Value::as_bool)
-            .or_else(|| inherited(global, local, "memoryOptimization").and_then(Value::as_bool))
-            .unwrap_or(false),
         high_performance_gpu: inherited(global, local, "highPerformanceGpu")
             .and_then(Value::as_bool)
             .unwrap_or(false),
@@ -334,12 +315,7 @@ pub fn resolve_with_memory(
         )?,
         server_name,
         auth_server: text(global, local, "authServer", ""),
-        server_address: text(
-            global,
-            local,
-            "serverAddress",
-            &text(global, local, "autoJoinServer", ""),
-        ),
+        server_address: text(global, local, "serverAddress", ""),
     })
 }
 
@@ -465,9 +441,6 @@ pub fn version_server_open_registration(
     tauri_plugin_opener::open_url(url, None::<&str>)
         .map_err(|e| format!("打开{name}注册页面失败，请检查默认浏览器：{e}"))
 }
-
-// 主动内存优化已迁移到 `crate::memory_optimize`：全进程工作集回收、Windows 分页回收
-// 与提权路径都在那边统一实现，这里只保留内存容量读取等运行时信息。
 
 fn supports_quick_play(version: &str) -> bool {
     let mut parts = version.split('.');
@@ -701,9 +674,7 @@ pub fn game_runtime_info() -> RuntimeInfo {
         suggested_memory_mb: plan.suggested_memory_mb,
         capabilities: serde_json::json!({
             "windowTitle": cfg!(windows), "processPriority": cfg!(windows),
-            // 完整内存优化在 Windows / macOS / Linux 均可运行；非 Windows 可能因缺少
-            // sudo 能力按「跳过并继续」处理，因此这里仍视为支持（具体由能力命令告知）。
-            "memoryOptimize": cfg!(any(windows, unix)), "offlineSkin": true,
+            "offlineSkin": true,
             "launchWrapper": cfg!(windows), "lwjglAgent": true,
             "highPerformanceGpu": cfg!(windows)
         }),
@@ -719,23 +690,23 @@ pub fn start_launch_log(directory: &Path) -> PathBuf {
     store.log_path().to_path_buf()
 }
 
-/// 前端缓冲与落盘共用同一脱敏 / 截断结果，避免超长行放大内存占用。
+/// Complete dynamic messages are redacted before the frontend length cap.
 pub fn bounded_log_line(line: &str) -> String {
-    let sanitized = launch_log_store::redact_sensitive_text(line);
-    if sanitized.chars().count() > LOG_LINE_MAX_CHARS {
-        sanitized.chars().take(LOG_LINE_MAX_CHARS).collect()
-    } else {
-        sanitized
-    }
+    bounded_safe_log_line(&launch_log_store::redact_sensitive_text(line))
 }
 
-/// 旧调用点继续以文件路径追加；存储、脱敏、轮转由 `launch_log_store` 统一负责。
+/// Session output is already redacted; a presentation cap must not reinterpret fragments.
+pub(crate) fn bounded_safe_log_line(line: &str) -> String {
+    line.chars().take(LOG_LINE_MAX_CHARS).collect()
+}
+
+/// Complete launcher-generated messages use the store's document API, not the process stream API.
 pub fn append_launch_log(path: &Path, line: &str) -> Result<(), String> {
     let base = path
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| format!("无法从日志路径解析实例目录：{}", path.display()))?;
-    LaunchLogStore::instance(base).append_text(&bounded_log_line(line))
+    LaunchLogStore::instance(base).append_text(line)
 }
 
 /// 读取实例内最近的有界游戏日志并分类；任一文件损坏都只跳过该来源。
@@ -805,9 +776,8 @@ pub fn launch_log_open(app: AppHandle, dir: String, version_id: String) -> Resul
         .map_err(|error| format!("打开日志目录失败：{error}"))
 }
 
-/// 物理内存（字节）。内存优化需要字节级精度来判断「释放了多少」。
 #[cfg(windows)]
-pub(crate) fn physical_memory_bytes() -> (Option<u64>, Option<u64>) {
+fn physical_memory_bytes() -> (Option<u64>, Option<u64>) {
     #[repr(C)]
     struct MemoryStatus {
         length: u32,
@@ -925,12 +895,19 @@ mod tests {
         }
         assert!(redacted.contains("accessToken"));
         assert!(redacted.contains("***"));
+        assert!(!redacted.contains(launch_log_store::REDACTION_FAILURE));
+        let yaml = "Authorization: Bearer abc123\n  continuation-secret\nnext: visible\n";
+        let redacted_yaml = launch_log_store::redact_sensitive_text(yaml);
+        assert!(!redacted_yaml.contains("abc123"));
+        assert!(!redacted_yaml.contains("continuation-secret"));
+        assert!(redacted_yaml.contains("next: visible"));
+        assert!(!redacted_yaml.contains(launch_log_store::REDACTION_FAILURE));
     }
 
     #[test]
     fn launch_log_is_bounded_and_rotates() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-log-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-log-{}", crate::store::random_token()));
         let logs = root.join("logs");
         std::fs::create_dir_all(&logs).unwrap();
         let path = logs.join(launch_log_store::LOG_FILE_NAME);
@@ -948,7 +925,7 @@ mod tests {
     #[test]
     fn launch_failure_analysis_reads_bounded_logs_and_java_context() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-diag-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-diag-{}", crate::store::random_token()));
         std::fs::create_dir_all(root.join("logs")).unwrap();
         let mut latest = vec![0xff, 0xfe, b'\n'];
         latest.extend_from_slice(b"java.lang.OutOfMemoryError: Java heap space\n");
@@ -977,7 +954,7 @@ mod tests {
     #[test]
     fn failed_launch_report_propagates_stored_log_truncation() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-diag-truncated-{}",
+            "nickel-diag-truncated-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(root.join("logs")).unwrap();
@@ -1002,7 +979,7 @@ mod tests {
     #[test]
     fn broken_log_sources_fall_back_without_hiding_process_output() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-diag-bad-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-diag-bad-{}", crate::store::random_token()));
         std::fs::create_dir_all(root.join("logs")).unwrap();
         // latest.log 是目录、crash-reports 是普通文件：两个来源都应被安全跳过。
         std::fs::create_dir_all(root.join("logs").join("latest.log")).unwrap();
@@ -1051,8 +1028,6 @@ mod tests {
         assert!(args("g1", 21, Some(17_763)).contains(&"-XX:+UseG1GC".into()));
         assert!(args("g1-tuned", 8, Some(17_763)).contains(&"-XX:+ParallelRefProcEnabled".into()));
         assert!(args("g1-tuned", 21, Some(17_763)).contains(&"-XX:MaxHeapFreeRatio=40".into()));
-        assert!(args("serial", 21, Some(17_763)).contains(&"-XX:+UseSerialGC".into()));
-        assert!(args("parallel", 21, Some(17_763)).contains(&"-XX:+UseParallelGC".into()));
         assert!(args("g1", 24, Some(17_763)).contains(&"-XX:+UseCompactObjectHeaders".into()));
         assert!(
             args("g1", 23, Some(17_763))
@@ -1140,8 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_gc_values_migrate_without_changing_g1() {
-        assert_eq!(normalize_memory_management("default").unwrap(), "custom");
+    fn memory_management_validates_current_modes() {
         assert_eq!(normalize_memory_management("").unwrap(), "g1-tuned");
         assert_eq!(normalize_memory_management("g1").unwrap(), "g1");
         assert_eq!(normalize_memory_management("auto-zgc").unwrap(), "auto-zgc");
@@ -1155,7 +1129,6 @@ mod tests {
         let result = resolve_with_memory(
             &global,
             &local,
-            None,
             Some(16_384),
             Some(12_000),
             0,
@@ -1175,7 +1148,7 @@ mod tests {
             "javaPath": "global-java", "windowTitle": "global-title",
             "jvmArgs": "-Dglobal=1", "gameArgs": "--demo",
             "preLaunchCommand": "echo ready", "serverAddress": "server.example",
-            "autoJoinServer": "legacy.example", "versionIsolation": true
+            "versionIsolation": true
         });
         let local = serde_json::json!({
             "javaPath": "", "windowTitle": "", "jvmArgs": "", "gameArgs": "",
@@ -1184,7 +1157,6 @@ mod tests {
         let result = resolve_with_memory(
             &global,
             &local,
-            None,
             Some(16_384),
             Some(12_000),
             0,
@@ -1204,7 +1176,7 @@ mod tests {
     #[tokio::test]
     async fn pre_launch_preserves_cmd_quotes_and_working_directory() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere prelaunch {}",
+            "nickel prelaunch {}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -1214,7 +1186,6 @@ mod tests {
         let mut settings = resolve_with_memory(
             &serde_json::json!({}),
             &serde_json::json!({}),
-            None,
             None,
             None,
             0,
@@ -1254,7 +1225,7 @@ mod tests {
 
     fn cleanup_temp_root(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "nowhere-runtime-cleanup-{tag}-{}",
+            "nickel-runtime-cleanup-{tag}-{}",
             crate::store::random_token()
         ))
     }

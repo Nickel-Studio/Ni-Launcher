@@ -316,7 +316,7 @@ mod tests {
     fn temp_path(tag: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!(
-            "nowhere_vault_{}_{}_{}.key",
+            "nickel_vault_{}_{}_{}.key",
             std::process::id(),
             crate::store::random_token(),
             tag

@@ -4,7 +4,7 @@
    设计语言：Graphite Console —— 填充式圆角、无描边；
    层次靠「填充亮度差 + 柔和阴影」，颜色主题（accent）仅用于选中态/主操作/焦点环。
    术语：明暗模式（themeMode）≠ 主题；本项目的「主题」＝颜色主题（accent）。
-   分组卡片复用 UI 基元 Card（.nw-card），此处仅补充布局与少量自定义部件。
+   分组卡片复用 UI 基元 Card（.ni-card），此处仅补充布局与少量自定义部件。
    ========================================================================== */
 
 .st-root {
@@ -129,10 +129,10 @@
   min-width: 0;
 }
 
-/* ---------- 分组（基于 .nw-card，仅补充布局/入场动画） ---------- */
+/* ---------- 分组（基于 .ni-card，仅补充布局/入场动画） ---------- */
 .st-group {
   scroll-margin-top: var(--space-4);
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 
 .st-group:nth-child(2) {
@@ -189,7 +189,7 @@
   color: var(--text-dim);
   font-size: var(--fs-sm);
 }
-.st-group--collapsible .nw-collapse[data-open="true"] {
+.st-group--collapsible .ni-collapse[data-open="true"] {
   overflow: visible;
 }
 
@@ -234,12 +234,12 @@
   gap: var(--space-5);
 }
 .st-row--fill .st-row__control,
-.st-row--fill .nw-slider-row,
-.st-row--fill .nw-select {
+.st-row--fill .ni-slider-row,
+.st-row--fill .ni-select {
   width: 100%;
   min-width: 0;
 }
-.st-row--fill .nw-slider-row__val {
+.st-row--fill .ni-slider-row__val {
   min-width: var(--setting-value-width);
 }
 @media (max-width: 640px) {
@@ -318,7 +318,7 @@
 .st-game__java {
   flex-wrap: wrap;
 }
-.st-game__java .nw-select {
+.st-game__java .ni-select {
   flex: 1;
 }
 
@@ -348,14 +348,14 @@
 }
 
 /* 展开的下拉菜单需要跨过相邻分组的入场动画层。 */
-.st-game .st-group:has(.nw-select__trigger[data-open="true"]) {
+.st-game .st-group:has(.ni-select__trigger[data-open="true"]) {
   z-index: var(--z-content);
 }
 .st-game .st-row {
   padding-block: var(--space-2);
   box-shadow: none;
 }
-.st-game .st-group .nw-select__trigger {
+.st-game .st-group .ni-select__trigger {
   min-height: calc(var(--space-7) + var(--space-1));
   padding-block: var(--space-1);
 }
@@ -370,10 +370,10 @@
   gap: var(--space-3);
   padding-top: var(--space-3);
 }
-.st-game__toggles .nw-field {
+.st-game__toggles .ni-field {
   width: 100%;
 }
-.st-game__toggles .nw-field__label strong {
+.st-game__toggles .ni-field__label strong {
   font-weight: 500;
 }
 .st-game__skin-options {
@@ -491,10 +491,10 @@
   font-size: var(--fs-md);
   padding: var(--space-3);
 }
-.st-group .nw-select__value {
+.st-group .ni-select__value {
   white-space: normal;
 }
-.st-group .nw-select__trigger {
+.st-group .ni-select__trigger {
   height: auto;
   min-height: var(--space-8);
   padding-block: var(--space-2);
@@ -542,8 +542,8 @@
 
 .st-swatch.is-active {
   color: var(--text);
-  background: color-mix(in srgb, var(--swatch) 18%, transparent);
-  box-shadow: 0 0 0 2px var(--swatch);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-text, var(--accent));
 }
 
 /* mono（黑与白）的圆点：用「文字色 / 背景色」两个令牌做对角黑白分割，
@@ -638,19 +638,51 @@
 }
 
 .st-preview {
+  position: relative;
+  isolation: isolate;
   border: 0;
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  background: var(--bg);
   overflow: hidden;
   box-shadow: var(--shadow-2);
 }
+.st-preview__art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.st-preview__image {
+  position: absolute;
+  inset: -8%;
+  background-size: cover;
+  background-position: center;
+  opacity: var(--preview-bg-opacity, 0.5);
+  filter: blur(var(--preview-bg-blur, 0px));
+}
+.st-preview[data-user-background="true"] .st-preview__art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
 
 .st-preview__bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 10px var(--space-4);
-  background: var(--surface-3);
+  background: var(--chrome-bg);
+  overflow: hidden;
+}
+.st-preview__bar[data-tinted="true"] {
+  background: var(--theme-chrome-bg, var(--chrome-bg));
+}
+.st-preview__bar > :not(.ni-theme-artwork) {
+  position: relative;
+  z-index: 1;
 }
 
 .st-preview__dot {
@@ -667,13 +699,20 @@
 .st-preview__bar-title {
   margin-left: 6px;
   font-family: var(--font-sans);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   letter-spacing: var(--tr-wide);
-  text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-dim);
+}
+.st-preview__bar[data-tinted="true"] .st-preview__bar-title {
+  color: var(--theme-chrome-text, var(--text));
+}
+.st-preview__dot:nth-of-type(1) {
+  background: var(--accent);
 }
 
 .st-preview__body {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-5);
@@ -904,5 +943,108 @@
   .st-group__toggle svg,
   .st-game__skin-option {
     transition: none;
+  }
+}
+
+.st-swatch--fortyTwo .st-swatch__dot {
+  background: linear-gradient(135deg, var(--swatch), var(--swatch-end));
+}
+.st-swatch--custom .st-swatch__dot {
+  background: conic-gradient(
+    from 45deg,
+    var(--swatch),
+    var(--surface-3),
+    var(--swatch)
+  );
+}
+.st-theme-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+.st-custom-decorations {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  width: 100%;
+}
+.st-custom-decoration {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  position: relative;
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--fill-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.st-custom-decoration:hover {
+  background: var(--fill-3);
+}
+.st-custom-decoration[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--accent-text, var(--accent));
+}
+.st-custom-decoration:has(input:focus-visible) {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.st-custom-decoration input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.st-custom-decoration__art {
+  position: relative;
+  width: 100%;
+  height: 40px;
+  pointer-events: none;
+}
+.st-custom-decoration__art .ni-theme-artwork--titlebar {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+.st-custom-decoration__empty {
+  position: absolute;
+  width: 24px;
+  height: 2px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--text-faint);
+}
+.st-custom-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+}
+@media (max-width: 640px) {
+  .st-custom-decorations {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .st-preview__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .st-preview__col--right {
+    align-items: flex-start;
   }
 }

@@ -18,9 +18,7 @@ export function mcHeadsUrl(name: string, size = 160): string {
 }
 
 /* --------------------------------------------------------------- 本地缓存 */
-/** 原缓存是满幅头图，透明留白版使用独立版本键，避免同一角色显示两种大小。 */
-const CACHE_PREFIX = "nowhere.avatar2.";
-const LEGACY_PREFIX = "nowhere.avatar.";
+const CACHE_PREFIX = "nickel.avatar.";
 
 function cacheKey(name: string): string {
   const key = (name || "").trim().toLowerCase();
@@ -55,22 +53,6 @@ export function clearAvatarCache(name: string): void {
     /* ignore */
   }
 }
-
-/** 丢掉上一版几何的缓存键（`nowhere.avatar.*`），避免它们永久占着存储。 */
-function pruneLegacyCache(): void {
-  try {
-    const stale: string[] = [];
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
-      if (key && key.startsWith(LEGACY_PREFIX)) stale.push(key);
-    }
-    for (const key of stale) window.localStorage.removeItem(key);
-  } catch {
-    /* 存储禁用：忽略 */
-  }
-}
-
-pruneLegacyCache();
 
 /* ----------------------------------------------------------- 皮肤裁切 API */
 function loadImage(src: string): Promise<HTMLImageElement> {

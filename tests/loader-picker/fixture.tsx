@@ -32,7 +32,6 @@ import {
   optifineOptionsView,
   resolvedDownloadIdentity,
 } from "../../src/components/vanilla/loaderCompatibility";
-import { normalizeLoaders } from "../../src/components/download/parse";
 
 type LoaderKey = keyof Pick<
   LoaderCatalog,
@@ -484,9 +483,9 @@ function Fixture() {
       </div>
       <LoaderPicker
         version={version}
-        source="official"
-        fileSource="official"
-        instanceDir="C:/NoWheRE-regression"
+        source="official_auto"
+        fileSource="official_auto"
+        instanceDir="C:/Nickel-regression"
         onBack={() => {}}
       />
     </div>
@@ -598,39 +597,20 @@ async function runRegression(): Promise<void> {
     );
     expect("加载中 provider 显示真实 loading", true);
 
-    const compatibility = JSON.parse(
+    const catalog = JSON.parse(
       String(
         await window.__TAURI_INTERNALS__.invoke("list_loaders", {
           mcVersion: VERSION_263.id,
-          source: "official",
+          source: "official_first",
         })
       )
     ) as LoaderCatalog;
     expect(
-      "兼容 list_loaders 返回全量清单",
-      compatibility.forge.length === 18 &&
-        compatibility.neoforge.length === 98 &&
-        compatibility.fabric.length === 255
+      "list_loaders 返回全量清单",
+      catalog.forge.length === 18 &&
+        catalog.neoforge.length === 98 &&
+        catalog.fabric.length === 255
     );
-    const directMetadata = normalizeLoaders({
-      optifine: [
-        {
-          version: "OptiFine_1.8.9_HD_U_M5",
-          label: "OptiFine 1.8.9 HD U M5",
-          minecraftId: "1.8.9",
-          forgeRequirement: "11.15.1.2318",
-          installerUrl: "https://example.invalid/installer.jar",
-        },
-      ],
-    });
-    expect(
-      "旧后端顶层 OptiFine 元数据不丢失",
-      directMetadata.optifine[0].artifact?.rawMetadata.forgeRequirement ===
-        "11.15.1.2318" &&
-        directMetadata.optifine[0].artifact?.rawMetadata.installerUrl ===
-          undefined
-    );
-
     for (const left of MAIN_LOADER_IDS) {
       for (const right of MAIN_LOADER_IDS) {
         if (left === right) continue;
@@ -915,7 +895,7 @@ async function runRegression(): Promise<void> {
     expect(
       "manualOnly 行保留另存入口",
       neoCard.querySelectorAll(
-        ".van-builds--all .van-build__actions .nw-iconbtn"
+        ".van-builds--all .van-build__actions .ni-iconbtn"
       ).length === 98
     );
 
@@ -1122,7 +1102,7 @@ async function runRegression(): Promise<void> {
     expect(
       "Forge + OptiFine 保留真实另存入口",
       manualOptifineCard.querySelectorAll(
-        ".van-builds--all .van-build__actions .nw-iconbtn"
+        ".van-builds--all .van-build__actions .ni-iconbtn"
       ).length === 2
     );
 

@@ -44,7 +44,7 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
             .join(" ") || undefined
         }
         data-on={checked}
-        className={["nw-switch", !hasField && className]
+        className={["ni-switch", !hasField && className]
           .filter(Boolean)
           .join(" ")}
         onClick={(event) => {
@@ -52,13 +52,13 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
           if (!event.defaultPrevented) onChange(!checked);
         }}
       >
-        <span className="nw-switch__knob" />
+        <span className="ni-switch__knob" />
       </button>
     );
     if (!hasField) return control;
     return (
-      <div className={["nw-field", className].filter(Boolean).join(" ")}>
-        <span className="nw-field__label">
+      <div className={["ni-field", className].filter(Boolean).join(" ")}>
+        <span className="ni-field__label">
           {label != null ? <strong id={labelId}>{label}</strong> : null}
           {description != null ? (
             <span id={descriptionId}>{description}</span>

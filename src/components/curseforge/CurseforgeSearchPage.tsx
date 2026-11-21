@@ -4,6 +4,7 @@ import { IconRefresh } from "../ui/icons";
 import { IconAlert } from "../resources/icons";
 import { failureLabel } from "../../lib/failure";
 import { CurseforgeResultCard } from "./CurseforgeResultCard";
+import { projectIdentity } from "../community/dependencies";
 import type { CommunitySearchView } from "../community/searchView";
 import type { CurseforgeKind } from "./types";
 import type { CurseforgeHit } from "../modrinth/types";
@@ -69,7 +70,7 @@ export function CurseforgeSearchPage({ kind, view, onOpen }: Props) {
             if (!hit) return null;
             return (
               <CurseforgeResultCard
-                key={`${hit.source}:${hit.slug}`}
+                key={projectIdentity(hit)}
                 hit={hit}
                 kind={kind}
                 onOpen={onOpen}

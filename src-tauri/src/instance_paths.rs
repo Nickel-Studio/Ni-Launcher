@@ -57,7 +57,7 @@ mod tests {
 
     fn fixture() -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-instance-paths-{}",
+            "nickel-instance-paths-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -73,7 +73,7 @@ mod tests {
             ""
         };
         std::fs::write(
-            directory.join("nowhere.profile.json"),
+            directory.join("nickel.profile.json"),
             serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": 1,
                 "name": name,
@@ -90,7 +90,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "id": name,
                 "inheritsFrom": minecraft,
-                "nowhereProfile": {
+                "nickelProfile": {
                     "minecraftVersion": minecraft,
                     "loader": loader,
                     "loaderVersion": loader_version

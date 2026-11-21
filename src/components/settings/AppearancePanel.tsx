@@ -2,16 +2,18 @@ import { useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties } from "react";
 import { Button, SegmentedControl, Slider, Tooltip } from "../ui";
 import { useBackgroundSrc } from "../../lib/settings";
+import { FORTY_TWO_END, hslToRgb, rgbToHex } from "../../lib/theme";
 import { ACCENT_OPTIONS, THEME_OPTIONS } from "./accents";
 import { pickImagePath, readFileAsDataUrl } from "./backgroundImage";
 import { SettingRow } from "./SettingRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { ThemePreview } from "./ThemePreview";
-import type { AccentColor, AppSettings, ThemeMode } from "./types";
+import type { AppSettings, ThemeMode } from "./types";
 
 type Props = {
   settings: AppSettings;
   update: (patch: Partial<AppSettings>) => void;
+  onOpenCustom?: () => void;
 };
 
 const THEME_SEGMENTS = THEME_OPTIONS.map((o) => ({
@@ -29,14 +31,23 @@ function blurLabel(value: number): string {
   return BLUR_LABELS[idx];
 }
 
-/** A. 外观：明暗 / 颜色主题 / 背景图 / 模糊 / 遮罩 / 实时预览。 */
-export function AppearancePanel({ settings, update }: Props) {
+/** Appearance owns background controls; custom color controls have their own page. */
+export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
-
   const backgroundUrl = useBackgroundSrc(settings.backgroundImage);
   const hasBackground = Boolean(backgroundUrl);
+  const selectedAccent = ACCENT_OPTIONS.find(
+    (option) => option.value === settings.accent
+  );
+  const customColor = rgbToHex(
+    hslToRgb(
+      settings.customTheme.hue,
+      settings.customTheme.saturation,
+      settings.customTheme.lightness
+    )
+  );
 
   async function handleChoose() {
     if (picking) return;
@@ -46,7 +57,6 @@ export function AppearancePanel({ settings, update }: Props) {
       const path = await pickImagePath();
       if (path) update({ backgroundImage: path });
     } catch {
-      // 插件不可用或不在 Tauri 环境：回退到原生文件选择
       fileRef.current?.click();
     } finally {
       setPicking(false);
@@ -82,30 +92,63 @@ export function AppearancePanel({ settings, update }: Props) {
           />
         }
       />
-
       <SettingRow
         stacked
         label="颜色主题"
-        description="选择颜色主题，应用于按钮、选中态与高亮元素"
+        description="保留中性阅读区域；新主题还带有原创背景与顶栏装饰"
         control={
           <div className="st-accents" role="radiogroup" aria-label="颜色主题">
-            {ACCENT_OPTIONS.map((a) => {
+            {ACCENT_OPTIONS.map((a, index) => {
               const active = settings.accent === a.value;
-              // mono（黑与白）的圆点是黑白分割的双色块，需要额外的修饰类。
-              const mono = a.value === "mono";
               return (
-                <Tooltip key={a.value} label={a.label}>
+                <Tooltip
+                  key={a.value}
+                  label={
+                    a.description ? `${a.label} · ${a.description}` : a.label
+                  }
+                >
                   <button
                     type="button"
                     role="radio"
+                    aria-label={a.label}
                     aria-checked={active}
-                    className={`st-swatch${mono ? " st-swatch--mono" : ""}${
+                    tabIndex={active ? 0 : -1}
+                    className={`st-swatch st-swatch--${a.value}${
                       active ? " is-active" : ""
                     }`}
-                    style={{ "--swatch": a.color } as CSSProperties}
-                    onClick={() => update({ accent: a.value as AccentColor })}
+                    style={
+                      {
+                        "--swatch":
+                          a.value === "custom" ? customColor : a.color,
+                        "--swatch-end": FORTY_TWO_END,
+                      } as CSSProperties
+                    }
+                    onClick={() => update({ accent: a.value })}
+                    onKeyDown={(event) => {
+                      const step =
+                        event.key === "ArrowRight" || event.key === "ArrowDown"
+                          ? 1
+                          : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                          ? -1
+                          : 0;
+                      if (!step && event.key !== "Home" && event.key !== "End")
+                        return;
+                      event.preventDefault();
+                      const next =
+                        event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                          ? ACCENT_OPTIONS.length - 1
+                          : (index + step + ACCENT_OPTIONS.length) %
+                            ACCENT_OPTIONS.length;
+                      update({ accent: ACCENT_OPTIONS[next].value });
+                      event.currentTarget
+                        .closest(".st-accents")
+                        ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+                        [next]?.focus();
+                    }}
                   >
-                    <span className="st-swatch__dot" />
+                    <span className="st-swatch__dot" aria-hidden="true" />
                     <span className="st-swatch__name">{a.label}</span>
                   </button>
                 </Tooltip>
@@ -114,11 +157,25 @@ export function AppearancePanel({ settings, update }: Props) {
           </div>
         }
       />
-
+      {selectedAccent?.description ? (
+        <div className="st-theme-note">
+          <p>
+            {selectedAccent.description}
+            {settings.accent === "fortyTwo"
+              ? "。窗口隐藏时暂停，减弱动效时使用静态青绿。"
+              : "。"}
+          </p>
+          {settings.accent === "custom" && onOpenCustom ? (
+            <Button variant="secondary" size="sm" onClick={onOpenCustom}>
+              调整自定义主题
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <SettingRow
         stacked
         label="背景图片"
-        description="选择一张本地图片作为启动器背景"
+        description="选择本地图片后优先显示用户背景，不叠加主题背景装饰"
         control={
           <div className="st-bg">
             <div
@@ -157,7 +214,6 @@ export function AppearancePanel({ settings, update }: Props) {
           </div>
         }
       />
-
       <SettingRow
         fill
         label="背景模糊度"
@@ -174,7 +230,6 @@ export function AppearancePanel({ settings, update }: Props) {
           />
         }
       />
-
       <SettingRow
         fill
         label="背景遮罩浓度"
@@ -193,15 +248,13 @@ export function AppearancePanel({ settings, update }: Props) {
           />
         }
       />
-
-      {error && (
+      {error ? (
         <p className="st-error" role="alert">
           {error}
         </p>
-      )}
-
+      ) : null}
       <div className="st-preview-wrap">
-        <div className="st-preview-wrap__hint nw-eyebrow">实时预览</div>
+        <div className="st-preview-wrap__hint ni-eyebrow">实时预览</div>
         <ThemePreview />
       </div>
     </SettingsGroup>

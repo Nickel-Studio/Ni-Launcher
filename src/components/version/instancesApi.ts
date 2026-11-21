@@ -71,8 +71,7 @@ function trimSeparators(dir: string): string {
 
 /**
  * 归一化 `instances_get` 返回值。
- * `roots` 按契约是字符串数组；同时容忍 `{ dir }` 对象写法与重复项，
- * 避免一份残缺/历史数据导致整个实例列表丢失。
+ * `roots` 只接受字符串路径；无效条目和重复项不会丢弃其余有效目录。
  */
 export function normalizeRegistry(raw: unknown): InstanceRegistry {
   const data = toData(raw);
@@ -83,12 +82,7 @@ export function normalizeRegistry(raw: unknown): InstanceRegistry {
   const seen = new Set<string>();
   const rawRoots = Array.isArray(record.roots) ? record.roots : [];
   for (const item of rawRoots) {
-    const candidate =
-      typeof item === "string"
-        ? item
-        : item && typeof item === "object"
-        ? String((item as Record<string, unknown>).dir ?? "")
-        : "";
+    const candidate = typeof item === "string" ? item : "";
     const dir = trimSeparators(candidate.trim());
     if (!dir || seen.has(dir)) continue;
     seen.add(dir);
@@ -106,6 +100,49 @@ export function normalizeRegistry(raw: unknown): InstanceRegistry {
     }
   }
   return { roots, active, labels };
+}
+
+/** 路径别名只用于比较，不改目录原有拼写或添加顺序。 */
+export function instanceRootIdentity(dir: string): string {
+  const normalized = trimSeparators(dir.trim())
+    .replace(/\\/g, "/")
+    .replace(/^\/\/\?\/UNC\//i, "//")
+    .replace(/^\/\/\?\//, "");
+  return /^[a-z]:(?:\/|$)/i.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+/** 将激活、默认与移除目标对齐到列表中最早保留的目录身份。 */
+export function resolveInstanceRoot(
+  roots: readonly string[],
+  dir: string
+): string {
+  const target = trimSeparators(dir.trim());
+  if (!target) return "";
+  const key = instanceRootIdentity(target);
+  return roots.find((root) => instanceRootIdentity(root) === key) ?? target;
+}
+
+/** 旧记录保留添加顺序，仅把默认目录放在最前。 */
+export function orderInstanceRoots(
+  roots: readonly string[],
+  defaultDir: string
+): string[] {
+  const seen = new Set<string>();
+  const ordered = roots.filter((dir) => {
+    const key = instanceRootIdentity(dir);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const index = defaultDir
+    ? ordered.findIndex(
+        (dir) => instanceRootIdentity(dir) === instanceRootIdentity(defaultDir)
+      )
+    : -1;
+  if (index > 0) ordered.unshift(...ordered.splice(index, 1));
+  return ordered;
 }
 
 /** 序列化注册表；`active` 为空时写 `null`，与后端 `Option<String>` 对齐。 */

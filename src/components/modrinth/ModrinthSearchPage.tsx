@@ -4,6 +4,7 @@ import { IconRefresh } from "../ui/icons";
 import { IconAlert } from "../resources/icons";
 import { failureLabel } from "../../lib/failure";
 import { ModrinthResultCard } from "./ModrinthResultCard";
+import { projectIdentity } from "../community/dependencies";
 import type { CommunitySearchView } from "../community/searchView";
 import type { ModrinthHit, ModrinthKind } from "./types";
 
@@ -69,7 +70,7 @@ export function ModrinthSearchPage({
         <ul className="mr-list" role="list">
           {view.hits.map((hit) => (
             <ModrinthResultCard
-              key={`${hit.source}:${hit.slug}`}
+              key={projectIdentity(hit)}
               hit={hit}
               kind={kind}
               onOpen={onOpen}

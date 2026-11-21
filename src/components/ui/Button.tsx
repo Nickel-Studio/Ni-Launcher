@@ -46,17 +46,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const NamedIcon = icon ? ICONS[icon] : undefined;
 
     const cls = [
-      "nw-btn",
-      `nw-btn--${variant}`,
-      size !== "md" && `nw-btn--${size}`,
-      fullWidth || block ? "nw-btn--full" : false,
+      "ni-btn",
+      `ni-btn--${variant}`,
+      size !== "md" && `ni-btn--${size}`,
+      fullWidth || block ? "ni-btn--full" : false,
       className,
     ]
       .filter(Boolean)
       .join(" ");
 
     const leading = loading ? (
-      <span className="nw-btn__spinner" aria-hidden />
+      <span className="ni-btn__spinner" aria-hidden />
     ) : iconLeft != null ? (
       iconLeft
     ) : NamedIcon ? (

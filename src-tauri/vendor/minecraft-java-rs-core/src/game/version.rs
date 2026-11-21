@@ -175,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_version_json_reads_third_party_instance() {
-        let root = std::env::temp_dir().join(format!("nowhere-local-profile-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("nickel-local-profile-{}", std::process::id()));
         let directory = root.join("versions").join("Pack");
         tokio::fs::create_dir_all(&directory).await.unwrap();
         tokio::fs::write(

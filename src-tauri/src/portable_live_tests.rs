@@ -219,11 +219,11 @@ async fn import(app: &tauri::App) -> Result<Value, String> {
 #[ignore = "真实 Wry 本地导入原始名称/唯一终态/提交，以及目录 create/rename/delete；仅基础缓存为确定性种子"]
 fn live_local_import_name_and_root_lifecycle() -> Result<(), String> {
     let app = app(&format!(
-        "com.youtu.nowhere.r6localimport.{}",
+        "studio.nickel.launcher.r6localimport.{}",
         store::random_token()
     ))?;
     let root =
-        std::env::temp_dir().join(format!("nowhere-r6-local-import-{}", store::random_token()));
+        std::env::temp_dir().join(format!("nickel-r6-local-import-{}", store::random_token()));
     let package = root.join("fixture");
     let manifest = fixture(&package, app_paths::DATA_DIRECTORY, false)?;
     app.manage(app_paths::TestExecutableRoot(root.clone()));
@@ -328,12 +328,12 @@ fn live_local_import_name_and_root_lifecycle() -> Result<(), String> {
     let installed = game.join("versions").join(name);
     assert!(!named_profiles::is_pending_pack(&installed));
     assert_eq!(
-        read_json(&installed.join("nowhere.profile.json"))?["name"],
+        read_json(&installed.join("nickel.profile.json"))?["name"],
         name
     );
     let descriptor = read_json(&installed.join(format!("{name}.json")))?;
-    assert_eq!(descriptor["nowhereCustom"]["name"], name);
-    assert!(descriptor["nowherePack"].is_object());
+    assert_eq!(descriptor["nickelCustom"]["name"], name);
+    assert!(descriptor["nickelPack"].is_object());
     assert_eq!(
         std::fs::read(installed.join("config/portable.txt")).unwrap(),
         b"portable content"
@@ -366,189 +366,182 @@ fn live_local_import_name_and_root_lifecycle() -> Result<(), String> {
 #[test]
 #[ignore = "真实 Wry 新旧布局首启/个性化/重定位/取消/重试/永久 marker；仅基础缓存为确定性种子"]
 fn live_portable_bootstrap_transaction_and_paths() -> Result<(), String> {
-    for data_directory in [app_paths::DATA_DIRECTORY, app_paths::LEGACY_DATA_DIRECTORY] {
-        let identifier = format!("com.youtu.nowhere.r6portable.{}", store::random_token());
-        let original_root =
-            std::env::temp_dir().join(format!("nowhere-r6-portable-{}", store::random_token()));
-        let manifest = fixture(&original_root, data_directory, false)?;
-        let original_root = std::fs::canonicalize(original_root).map_err(|e| e.to_string())?;
-        let background = format!("{}/background.png", manifest.data_directory);
-        let initial_app = app(&identifier)?;
-        let legacy = initial_app
-            .path()
-            .app_config_dir()
-            .map_err(|e| e.to_string())?;
-        write(&legacy.join("settings.json"), br#"{"accent":"rose"}"#)?;
-        initial_app.manage(app_paths::TestExecutableRoot(original_root.clone()));
-        let marker = std::fs::read(original_root.join(portable_pack::MANIFEST_FILE)).unwrap();
-        let original_configuration = original_root.join(&manifest.data_directory);
-        assert_eq!(
-            app_paths::config_dir(initial_app.handle())?,
-            original_configuration
-        );
-        assert_eq!(
-            default_game_dir(initial_app.handle())?,
-            original_root.join(&manifest.game_directory)
-        );
-        let mut displayed: Value =
-            serde_json::from_str(&settings_get(initial_app.handle().clone())?).unwrap();
-        assert_eq!(displayed["themeMode"], "light");
-        assert_eq!(displayed["accent"], "emerald");
-        assert_eq!(displayed["backgroundBlur"].as_f64(), Some(12.0));
-        assert_eq!(displayed["backgroundOpacity"], json!(0.4));
-        assert_eq!(
-            Path::new(displayed["backgroundImage"].as_str().unwrap()),
-            original_root.join(&background)
-        );
-        displayed["backgroundBlur"] = json!(18);
-        settings_set(initial_app.handle().clone(), displayed.to_string())?;
-        let saved_settings = std::fs::read(original_configuration.join("settings.json")).unwrap();
-        assert_eq!(
-            read_json(&original_configuration.join("settings.json"))?["backgroundImage"],
-            background
-        );
-        assert_eq!(read_json(&legacy.join("settings.json"))?["accent"], "rose");
-        drop(initial_app);
+    let data_directory = app_paths::DATA_DIRECTORY;
+    let identifier = format!("studio.nickel.launcher.r6portable.{}", store::random_token());
+    let original_root =
+        std::env::temp_dir().join(format!("nickel-r6-portable-{}", store::random_token()));
+    let manifest = fixture(&original_root, data_directory, false)?;
+    let original_root = std::fs::canonicalize(original_root).map_err(|e| e.to_string())?;
+    let background = format!("{}/background.png", manifest.data_directory);
+    let initial_app = app(&identifier)?;
+    let system_configuration = initial_app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    write(&system_configuration.join("settings.json"), br#"{"accent":"rose"}"#)?;
+    initial_app.manage(app_paths::TestExecutableRoot(original_root.clone()));
+    let marker = std::fs::read(original_root.join(portable_pack::MANIFEST_FILE)).unwrap();
+    let original_configuration = original_root.join(&manifest.data_directory);
+    assert_eq!(
+        app_paths::config_dir(initial_app.handle())?,
+        original_configuration
+    );
+    assert_eq!(
+        default_game_dir(initial_app.handle())?,
+        original_root.join(&manifest.game_directory)
+    );
+    let mut displayed: Value =
+        serde_json::from_str(&settings_get(initial_app.handle().clone())?).unwrap();
+    assert_eq!(displayed["themeMode"], "light");
+    assert_eq!(displayed["accent"], "emerald");
+    assert_eq!(displayed["backgroundBlur"].as_f64(), Some(12.0));
+    assert_eq!(displayed["backgroundOpacity"], json!(0.4));
+    assert_eq!(
+        Path::new(displayed["backgroundImage"].as_str().unwrap()),
+        original_root.join(&background)
+    );
+    displayed["backgroundBlur"] = json!(18);
+    settings_set(initial_app.handle().clone(), displayed.to_string())?;
+    let saved_settings = std::fs::read(original_configuration.join("settings.json")).unwrap();
+    assert_eq!(
+        read_json(&original_configuration.join("settings.json"))?["backgroundImage"],
+        background
+    );
+    assert_eq!(read_json(&system_configuration.join("settings.json"))?["accent"], "rose");
+    drop(initial_app);
 
-        // 模拟关闭后整体移动便携包；重开真实 Wry 验证相对路径，而不修改生产根选择逻辑。
-        let relocated = original_root.with_file_name(format!(
-            "nowhere-r6-portable-relocated-{}",
-            store::random_token()
-        ));
-        std::fs::rename(&original_root, &relocated).map_err(|e| e.to_string())?;
-        let root = std::fs::canonicalize(relocated).map_err(|e| e.to_string())?;
-        let app = app(&identifier)?;
-        app.manage(app_paths::TestExecutableRoot(root.clone()));
-        let configuration = root.join(&manifest.data_directory);
-        let game_directory = root.join(&manifest.game_directory);
-        let installed = game_directory
-            .join("versions")
-            .join(&manifest.instance_name);
-        let settings_path = configuration.join("settings.json");
-        let record = configuration.join("portable-import.json");
-        assert!(!original_root.exists());
-        assert_eq!(app_paths::config_dir(app.handle())?, configuration);
-        assert_eq!(default_game_dir(app.handle())?, game_directory);
-        let displayed: Value = serde_json::from_str(&settings_get(app.handle().clone())?).unwrap();
-        assert_eq!(displayed["themeMode"], "light");
-        assert_eq!(displayed["accent"], "emerald");
-        assert_eq!(displayed["backgroundBlur"].as_f64(), Some(18.0));
-        assert_eq!(displayed["backgroundOpacity"], json!(0.4));
-        let resolved_background = Path::new(displayed["backgroundImage"].as_str().unwrap());
-        assert_eq!(resolved_background, root.join(&background));
-        assert!(resolved_background.is_file());
-        assert_eq!(std::fs::read(&settings_path).unwrap(), saved_settings);
-        settings_set(app.handle().clone(), displayed.to_string())?;
-        assert_eq!(read_json(&settings_path)?["backgroundImage"], background);
-        assert_eq!(read_json(&legacy.join("settings.json"))?["accent"], "rose");
-        tauri::async_runtime::block_on(async {
-            let payload = root.join(&manifest.payload);
-            let saved = std::fs::read(&payload).unwrap();
-            std::fs::remove_file(&payload).unwrap();
-            assert_eq!(import(&app).await?["ok"], false);
-            assert!(!record.exists());
-            write(&payload, &saved)?;
-            let listener = attach_seed(&app, true, None, None);
-            let cancelled = import(&app).await?;
-            app.unlisten(listener);
-            assert_eq!(cancelled["cancelled"], true);
-            assert!(!record.exists());
-            assert!(
-                serde_json::from_str::<Vec<Value>>(&instances::instance_scan(
-                    game_directory.to_string_lossy().into()
-                ))
+    // 模拟关闭后整体移动便携包；重开真实 Wry 验证相对路径，而不修改生产根选择逻辑。
+    let relocated = original_root.with_file_name(format!(
+        "nickel-r6-portable-relocated-{}",
+        store::random_token()
+    ));
+    std::fs::rename(&original_root, &relocated).map_err(|e| e.to_string())?;
+    let root = std::fs::canonicalize(relocated).map_err(|e| e.to_string())?;
+    let app = app(&identifier)?;
+    app.manage(app_paths::TestExecutableRoot(root.clone()));
+    let configuration = root.join(&manifest.data_directory);
+    let game_directory = root.join(&manifest.game_directory);
+    let installed = game_directory
+        .join("versions")
+        .join(&manifest.instance_name);
+    let settings_path = configuration.join("settings.json");
+    let record = configuration.join("portable-import.json");
+    assert!(!original_root.exists());
+    assert_eq!(app_paths::config_dir(app.handle())?, configuration);
+    assert_eq!(default_game_dir(app.handle())?, game_directory);
+    let displayed: Value = serde_json::from_str(&settings_get(app.handle().clone())?).unwrap();
+    assert_eq!(displayed["themeMode"], "light");
+    assert_eq!(displayed["accent"], "emerald");
+    assert_eq!(displayed["backgroundBlur"].as_f64(), Some(18.0));
+    assert_eq!(displayed["backgroundOpacity"], json!(0.4));
+    let resolved_background = Path::new(displayed["backgroundImage"].as_str().unwrap());
+    assert_eq!(resolved_background, root.join(&background));
+    assert!(resolved_background.is_file());
+    assert_eq!(std::fs::read(&settings_path).unwrap(), saved_settings);
+    settings_set(app.handle().clone(), displayed.to_string())?;
+    assert_eq!(read_json(&settings_path)?["backgroundImage"], background);
+    assert_eq!(read_json(&system_configuration.join("settings.json"))?["accent"], "rose");
+    tauri::async_runtime::block_on(async {
+        let payload = root.join(&manifest.payload);
+        let saved = std::fs::read(&payload).unwrap();
+        std::fs::remove_file(&payload).unwrap();
+        assert_eq!(import(&app).await?["ok"], false);
+        assert!(!record.exists());
+        write(&payload, &saved)?;
+        let listener = attach_seed(&app, true, None, None);
+        let cancelled = import(&app).await?;
+        app.unlisten(listener);
+        assert_eq!(cancelled["cancelled"], true);
+        assert!(!record.exists());
+        assert!(
+            serde_json::from_str::<Vec<Value>>(&instances::instance_scan(
+                game_directory.to_string_lossy().into()
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        let listener = attach_seed(&app, false, Some(record.clone()), None);
+        let failed_record = import(&app).await?;
+        app.unlisten(listener);
+        assert_eq!(failed_record["ok"], false);
+        assert!(installed.join("config/portable.txt").is_file());
+        assert!(record.is_dir());
+        assert!(
+            portable_bootstrap::portable_bootstrap_start(app.handle().clone())
+                .await?
+                .is_none()
+        );
+        std::fs::remove_dir(&record).unwrap();
+        let status = serde_json::to_value(
+            portable_bootstrap::portable_bootstrap_status(app.handle().clone()).await?,
+        )
+        .unwrap();
+        assert_eq!(status["state"], "installed");
+        assert_eq!(status["versionId"], manifest.instance_name);
+        assert!(record.is_file());
+        let completed = read_json(&record)?;
+        assert_eq!(completed["packageId"], manifest.package_id);
+        assert_eq!(completed["versionId"], manifest.instance_name);
+        assert!(
+            portable_bootstrap::portable_bootstrap_start(app.handle().clone())
+                .await?
+                .is_none()
+        );
+        assert_eq!(
+            std::fs::read_dir(game_directory.join("versions"))
                 .unwrap()
-                .is_empty()
-            );
-            let listener = attach_seed(&app, false, Some(record.clone()), None);
-            let failed_record = import(&app).await?;
-            app.unlisten(listener);
-            assert_eq!(failed_record["ok"], false);
-            assert!(installed.join("config/portable.txt").is_file());
-            assert!(record.is_dir());
-            assert!(
-                portable_bootstrap::portable_bootstrap_start(app.handle().clone())
-                    .await?
-                    .is_none()
-            );
-            std::fs::remove_dir(&record).unwrap();
-            let status = serde_json::to_value(
-                portable_bootstrap::portable_bootstrap_status(app.handle().clone()).await?,
-            )
-            .unwrap();
-            assert_eq!(status["state"], "installed");
-            assert_eq!(status["versionId"], manifest.instance_name);
-            assert!(record.is_file());
-            let completed = read_json(&record)?;
-            assert_eq!(completed["packageId"], manifest.package_id);
-            assert_eq!(completed["versionId"], manifest.instance_name);
-            assert!(
-                portable_bootstrap::portable_bootstrap_start(app.handle().clone())
-                    .await?
-                    .is_none()
-            );
-            assert_eq!(
-                std::fs::read_dir(game_directory.join("versions"))
-                    .unwrap()
-                    .count(),
-                1
-            );
-            let context = instances::resource_instance_context(
-                app.handle().clone(),
-                game_directory.to_string_lossy().into(),
-                manifest.instance_name.clone(),
-            )?
-            .ok_or("missing portable resource")?;
-            assert_eq!(
-                serde_json::to_value(context).unwrap()["resourceDir"],
-                installed.to_string_lossy().as_ref()
-            );
-            Ok::<_, String>(())
-        })?;
+                .count(),
+            1
+        );
+        let context = instances::resource_instance_context(
+            app.handle().clone(),
+            game_directory.to_string_lossy().into(),
+            manifest.instance_name.clone(),
+        )?
+        .ok_or("missing portable resource")?;
         assert_eq!(
-            std::fs::read(root.join(portable_pack::MANIFEST_FILE)).unwrap(),
-            marker
+            serde_json::to_value(context).unwrap()["resourceDir"],
+            installed.to_string_lossy().as_ref()
         );
-        let registry =
-            instances::registry_from_text(&instances::instances_get(app.handle().clone()));
-        assert_eq!(
-            registry.active,
-            Some(game_directory.to_string_lossy().into())
-        );
-        assert_eq!(read_json(&settings_path)?["backgroundImage"], background);
-        let other_directory = if data_directory == app_paths::DATA_DIRECTORY {
-            app_paths::LEGACY_DATA_DIRECTORY
-        } else {
-            app_paths::DATA_DIRECTORY
-        };
-        assert!(!root.join(other_directory).exists());
-        let marker_path = root.join(portable_pack::MANIFEST_FILE);
-        let held_marker = root.join("marker-held.json");
-        std::fs::rename(&marker_path, &held_marker).unwrap();
-        assert_eq!(app_paths::config_dir(app.handle())?, legacy);
-        std::fs::rename(held_marker, marker_path).unwrap();
-        eprintln!(
-            "[portable-wry] layout={data_directory} marker priority + personalization relocation + relative background + parse retry + cancel cleanup + commit/record recovery + import-once + resource identity passed"
-        );
-        drop(app);
-        std::fs::remove_dir_all(&legacy).map_err(|e| e.to_string())?;
-        std::fs::remove_dir_all(root).map_err(|e| e.to_string())?;
-    }
+        Ok::<_, String>(())
+    })?;
+    assert_eq!(
+        std::fs::read(root.join(portable_pack::MANIFEST_FILE)).unwrap(),
+        marker
+    );
+    let registry =
+        instances::registry_from_text(&instances::instances_get(app.handle().clone()));
+    assert_eq!(
+        registry.active,
+        Some(game_directory.to_string_lossy().into())
+    );
+    assert_eq!(read_json(&settings_path)?["backgroundImage"], background);
+    let marker_path = root.join(portable_pack::MANIFEST_FILE);
+    let held_marker = root.join("marker-held.json");
+    std::fs::rename(&marker_path, &held_marker).unwrap();
+    assert_eq!(app_paths::config_dir(app.handle())?, system_configuration);
+    std::fs::rename(held_marker, marker_path).unwrap();
+    eprintln!(
+        "[portable-wry] layout={data_directory} marker priority + personalization relocation + relative background + parse retry + cancel cleanup + commit/record recovery + import-once + resource identity passed"
+    );
+    drop(app);
+    std::fs::remove_dir_all(&system_configuration).map_err(|e| e.to_string())?;
+    std::fs::remove_dir_all(root).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[test]
-#[ignore = "真实 Wry 无manifest首运行/旧配置优先/只读错误；全部使用唯一identifier和临时目录"]
-fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
-    let identifier = format!("com.youtu.nowhere.r6ordinary.{}", store::random_token());
+#[ignore = "真实 Wry 无manifest首运行/系统配置优先/只读错误；全部使用唯一identifier和临时目录"]
+fn live_ordinary_first_run_and_configured_paths() -> Result<(), String> {
+    let identifier = format!("studio.nickel.launcher.r6ordinary.{}", store::random_token());
     let app = app(&identifier)?;
-    let legacy = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let system_configuration = app.path().app_config_dir().map_err(|e| e.to_string())?;
     assert_eq!(
-        legacy.file_name().and_then(|value| value.to_str()),
+        system_configuration.file_name().and_then(|value| value.to_str()),
         Some(identifier.as_str())
     );
-    assert!(!legacy.join("settings.json").exists());
-    let root = std::env::temp_dir().join(format!("nowhere-r6-ordinary-{}", store::random_token()));
+    assert!(!system_configuration.join("settings.json").exists());
+    let root = std::env::temp_dir().join(format!("nickel-r6-ordinary-{}", store::random_token()));
     std::fs::create_dir(&root).map_err(|e| e.to_string())?;
     app.manage(app_paths::TestExecutableRoot(root.clone()));
     assert!(app_paths::portable_root(app.handle())?.is_none());
@@ -570,7 +563,7 @@ fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
         read_json(&configuration.join("settings.json"))?["accent"],
         "emerald"
     );
-    assert!(!legacy.join("settings.json").exists());
+    assert!(!system_configuration.join("settings.json").exists());
 
     // Windows 只读目标让真实原子替换失败；先恢复权限，再断言，避免失败污染临时目录。
     let settings_path = configuration.join("settings.json");
@@ -591,17 +584,17 @@ fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
     std::fs::remove_file(&configuration).map_err(|e| e.to_string())?;
     std::fs::rename(&held, &configuration).map_err(|e| e.to_string())?;
     assert!(denied_directory.unwrap_err().contains("有写入权限的文件夹"));
-    assert!(!legacy.join("settings.json").exists());
+    assert!(!system_configuration.join("settings.json").exists());
 
     let old_game = root.join("existing-game");
     write(&old_game.join("saves/sentinel.txt"), b"keep existing save")?;
-    write(&legacy.join("settings.json"), br#"{"accent":"rose"}"#)?;
+    write(&system_configuration.join("settings.json"), br#"{"accent":"rose"}"#)?;
     write(
-        &legacy.join("game.json"),
+        &system_configuration.join("game.json"),
         json!({"gameDir":old_game}).to_string().as_bytes(),
     )?;
-    assert_eq!(app_paths::config_dir(app.handle())?, legacy);
-    assert_eq!(read_json(&legacy.join("settings.json"))?["accent"], "rose");
+    assert_eq!(app_paths::config_dir(app.handle())?, system_configuration);
+    assert_eq!(read_json(&system_configuration.join("settings.json"))?["accent"], "rose");
     assert_eq!(
         serde_json::from_str::<Value>(&settings_get(app.handle().clone())?).unwrap()["accent"],
         "rose"
@@ -610,11 +603,11 @@ fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
         PathBuf::from(instances::instance_ensure_default(app.handle().clone())?),
         old_game
     );
-    write(&legacy.join("settings.json"), b"{broken")?;
-    assert_eq!(app_paths::config_dir(app.handle())?, legacy);
+    write(&system_configuration.join("settings.json"), b"{broken")?;
+    assert_eq!(app_paths::config_dir(app.handle())?, system_configuration);
     assert_eq!(settings_get(app.handle().clone())?, "{}");
     assert_eq!(
-        std::fs::read(legacy.join("settings.json")).unwrap(),
+        std::fs::read(system_configuration.join("settings.json")).unwrap(),
         b"{broken"
     );
     assert_eq!(
@@ -628,10 +621,10 @@ fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
     assert!(!root.join(portable_pack::MANIFEST_FILE).exists());
     assert!(!configuration.join("portable-import.json").exists());
     eprintln!(
-        "[ordinary-wry] no-manifest first-run settings + .minecraft created; readonly/blocked writes reject without fallback; existing/broken legacy wins and save preserved"
+        "[ordinary-wry] no-manifest first-run settings + .minecraft created; readonly/blocked writes reject without fallback; existing/broken system configuration wins and save preserved"
     );
     drop(app);
-    std::fs::remove_dir_all(&legacy).map_err(|e| e.to_string())?;
+    std::fs::remove_dir_all(&system_configuration).map_err(|e| e.to_string())?;
     std::fs::remove_dir_all(&root).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -640,9 +633,9 @@ fn live_ordinary_first_run_and_legacy_paths() -> Result<(), String> {
 #[ignore = "真实磁盘 settings/favoriteAt 跨子进程；显式单线程执行"]
 fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
     const TEST: &str = "portable_live_tests::live_instance_settings_and_favorite_restart";
-    let mode = std::env::var("NOWHERE_R6_DISK_MODE").ok();
+    let mode = std::env::var("NICKEL_R6_DISK_MODE").ok();
     if mode.is_none() {
-        let root = std::env::temp_dir().join(format!("nowhere-r6-disk-{}", store::random_token()));
+        let root = std::env::temp_dir().join(format!("nickel-r6-disk-{}", store::random_token()));
         for mode in ["write", "reload"] {
             let output =
                 std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
@@ -653,8 +646,8 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
                         "--nocapture",
                         "--test-threads=1",
                     ])
-                    .env("NOWHERE_R6_DISK_MODE", mode)
-                    .env("NOWHERE_R6_DISK_ROOT", &root)
+                    .env("NICKEL_R6_DISK_MODE", mode)
+                    .env("NICKEL_R6_DISK_ROOT", &root)
                     .stdin(std::process::Stdio::null())
                     .output()
                     .map_err(|e| e.to_string())?;
@@ -670,20 +663,20 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
         std::fs::remove_dir_all(root).map_err(|e| e.to_string())?;
         return Ok(());
     }
-    let root = PathBuf::from(std::env::var_os("NOWHERE_R6_DISK_ROOT").ok_or("missing root")?);
+    let root = PathBuf::from(std::env::var_os("NICKEL_R6_DISK_ROOT").ok_or("missing root")?);
     if !root.is_absolute()
         || !root
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
-            .starts_with("nowhere-r6-disk-")
+            .starts_with("nickel-r6-disk-")
     {
         return Err("invalid fixture root".into());
     }
     let dir = root.to_string_lossy().into_owned();
     let id = "disk-instance";
     let descriptor = root.join("versions/disk-instance/disk-instance.json");
-    let settings_file = root.join("versions/disk-instance/nowhere.settings.json");
+    let settings_file = root.join("versions/disk-instance/nickel.settings.json");
     if mode.as_deref() == Some("write") {
         write(
             &descriptor,
@@ -697,7 +690,7 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
             "Group".into(),
             true,
         )?;
-        let favorite = read_json(&descriptor)?["nowhereCustom"]["favoriteAt"].clone();
+        let favorite = read_json(&descriptor)?["nickelCustom"]["favoriteAt"].clone();
         assert!(favorite.as_u64().unwrap() > 0);
         version_settings::version_rename(
             dir.clone(),
@@ -708,7 +701,7 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
             true,
         )?;
         assert_eq!(
-            read_json(&descriptor)?["nowhereCustom"]["favoriteAt"],
+            read_json(&descriptor)?["nickelCustom"]["favoriteAt"],
             favorite
         );
         write(
@@ -718,20 +711,20 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
         let global = json!({"disableFileCheck":true,"disableWrapper":true,"disableLwjglAgent":true,"jvmArgs":"-Dglobal=1"});
         for input in [
             json!({}),
-            json!({"disableFileCheck":null,"disableWrapper":null,"disableLwjglAgent":null,"noModUpdates":null}),
-            json!({"disableFileCheck":"global","disableWrapper":"global","disableLwjglAgent":"global","noModUpdates":"global"}),
+            json!({"disableFileCheck":null,"disableWrapper":null,"disableLwjglAgent":null,"disableModUpdates":null}),
+            json!({"disableFileCheck":"global","disableWrapper":"global","disableLwjglAgent":"global","disableModUpdates":"global"}),
         ] {
             version_settings::version_settings_set(dir.clone(), id.into(), input.to_string())?;
             let local = runtime_settings::read_local(&root, id);
-            let resolved = runtime_settings::resolve(&global, &local, None, None)?;
+            let resolved = runtime_settings::resolve(&global, &local, None)?;
             assert!(
                 resolved.disable_file_check
                     && resolved.disable_wrapper
                     && resolved.disable_lwjgl_agent
             );
-            assert!(local["noModUpdates"].is_null() || local["noModUpdates"] == "global");
+            assert!(local["disableModUpdates"].is_null() || local["disableModUpdates"] == "global");
         }
-        let explicit = json!({"disableFileCheck":false,"disableWrapper":false,"disableLwjglAgent":false,"noModUpdates":false,"jvmArgs":"","preLaunchCommand":""});
+        let explicit = json!({"disableFileCheck":false,"disableWrapper":false,"disableLwjglAgent":false,"disableModUpdates":false,"jvmArgs":"","preLaunchCommand":""});
         version_settings::version_settings_set(dir.clone(), id.into(), explicit.to_string())?;
         let before_cancel = std::fs::read(&settings_file).unwrap();
         let mut draft = read_json(&settings_file)?;
@@ -741,13 +734,13 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
     } else {
         let expected = read_json(&root.join("expected-favorite.json"))?;
         assert_eq!(
-            read_json(&descriptor)?["nowhereCustom"]["favoriteAt"],
+            read_json(&descriptor)?["nickelCustom"]["favoriteAt"],
             expected
         );
         assert_eq!(read_json(&descriptor)?["keep"], "original");
         let global = json!({"disableFileCheck":true,"disableWrapper":true,"disableLwjglAgent":true,"jvmArgs":"-Dglobal=1"});
         let local = runtime_settings::read_local(&root, id);
-        let resolved = runtime_settings::resolve(&global, &local, None, None)?;
+        let resolved = runtime_settings::resolve(&global, &local, None)?;
         assert!(
             !resolved.disable_file_check
                 && !resolved.disable_wrapper
@@ -759,7 +752,6 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
             runtime_settings::resolve(
                 &global,
                 &runtime_settings::read_local(&root, id),
-                None,
                 None
             )?
             .disable_wrapper
@@ -772,7 +764,7 @@ fn live_instance_settings_and_favorite_restart() -> Result<(), String> {
             "".into(),
             false,
         )?;
-        assert!(read_json(&descriptor)?["nowhereCustom"]["favoriteAt"].is_null());
+        assert!(read_json(&descriptor)?["nickelCustom"]["favoriteAt"].is_null());
     }
     eprintln!(
         "[disk-restart] mode={:?} pid={} inheritance/null/global/false/empty/reset/favoriteAt passed",
@@ -787,26 +779,26 @@ pub struct LaunchPid(pub std::sync::atomic::AtomicU32);
 fn native_launch_snapshot(java: &Path, pid: u32) -> Result<Value, String> {
     let script = r#"
 $ErrorActionPreference='Stop'
-$name=$env:NOWHERE_TEST_JAVA
+$name=$env:NICKEL_TEST_JAVA
 if ($name.StartsWith('\\?\UNC\')) { $name='\\'+$name.Substring(8) }
 elseif ($name.StartsWith('\\?\')) { $name=$name.Substring(4) }
 $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\DirectX\UserGpuPreferences')
 $gpu=$null
 if ($key) { try { $gpu=$key.GetValue($name,$null) } finally { $key.Dispose() } }
 $result=@{ gpu=$gpu }
-if ($env:NOWHERE_TEST_PID -ne '0') {
-    $process=Get-Process -Id ([int]$env:NOWHERE_TEST_PID)
-    $native=Get-CimInstance Win32_Process -Filter ('ProcessId='+$env:NOWHERE_TEST_PID)
+if ($env:NICKEL_TEST_PID -ne '0') {
+    $process=Get-Process -Id ([int]$env:NICKEL_TEST_PID)
+    $native=Get-CimInstance Win32_Process -Filter ('ProcessId='+$env:NICKEL_TEST_PID)
     $result.priority=$process.PriorityClass.ToString()
     $result.title=$process.MainWindowTitle
-    $result.jvmMarker=$native.CommandLine.Contains('-Dnowhere.r6=accepted')
+    $result.jvmMarker=$native.CommandLine.Contains('-Dnickel.r6=accepted')
 }
 $result | ConvertTo-Json -Compress
 "#;
     let output = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .env("NOWHERE_TEST_JAVA", java)
-        .env("NOWHERE_TEST_PID", pid.to_string())
+        .env("NICKEL_TEST_JAVA", java)
+        .env("NICKEL_TEST_PID", pid.to_string())
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| e.to_string())?;
@@ -825,18 +817,18 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
     let source = PathBuf::from(
-        std::env::var_os("NOWHERE_R6_REAL_CACHE")
-            .ok_or("请设置 NOWHERE_R6_REAL_CACHE 为隔离缓存绝对路径")?,
+        std::env::var_os("NICKEL_R6_REAL_CACHE")
+            .ok_or("请设置 NICKEL_R6_REAL_CACHE 为隔离缓存绝对路径")?,
     );
     let root = PathBuf::from(
-        std::env::var_os("NOWHERE_R6_REAL_ROOT")
-            .ok_or("请设置 NOWHERE_R6_REAL_ROOT 为独立验收目录")?,
+        std::env::var_os("NICKEL_R6_REAL_ROOT")
+            .ok_or("请设置 NICKEL_R6_REAL_ROOT 为独立验收目录")?,
     );
     if !source.is_absolute() || !root.is_absolute() || source == root {
         return Err("验收路径必须独立且为绝对路径".into());
     }
     let app = app(&format!(
-        "com.youtu.nowhere.r6real.{}",
+        "studio.nickel.launcher.r6real.{}",
         store::random_token()
     ))?;
     if !root.join(portable_pack::MANIFEST_FILE).exists() {
@@ -873,9 +865,9 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
         if !java.is_file() {
             return Err(format!("Java不存在：{}", java.display()));
         }
-        let observe = std::env::var_os("NOWHERE_R6_OBSERVE_GAME").is_some();
-        let custom_skin = std::env::var_os("NOWHERE_R6_CUSTOM_SKIN").map(PathBuf::from);
-        let native = std::env::var_os("NOWHERE_R6_NATIVE_FLAGS").is_some();
+        let observe = std::env::var_os("NICKEL_R6_OBSERVE_GAME").is_some();
+        let custom_skin = std::env::var_os("NICKEL_R6_CUSTOM_SKIN").map(PathBuf::from);
+        let native = std::env::var_os("NICKEL_R6_NATIVE_FLAGS").is_some();
         let original_gpu = if native {
             Some(native_launch_snapshot(&java, 0)?)
         } else {
@@ -886,14 +878,13 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
         let mut settings = json!({"memoryMode":"custom","memoryMb":1024,
             "versionIsolation":true,"disableWrapper":true,"disableLwjglAgent":true,
             "offlineSkin":if custom_skin.is_some() { "custom" } else { "steve" },
-            "offlineSkinPath":custom_skin,"offlineSkinSlim":false,"memoryManagement":"default",
+            "offlineSkinPath":custom_skin,"offlineSkinSlim":false,"memoryManagement":"custom",
             "windowMode":"custom","windowWidth":854,"windowHeight":480});
         if native {
             settings["windowTitle"] = json!("Nickel native acceptance");
             settings["processPriority"] = json!("high");
             settings["highPerformanceGpu"] = json!(true);
-            settings["memoryOptimize"] = json!(true);
-            settings["jvmArgs"] = json!("-Dnowhere.r6=accepted");
+            settings["jvmArgs"] = json!("-Dnickel.r6=accepted");
             settings["preLaunchCommand"] = json!(format!("(echo accepted& cd)>{before_name}"));
         }
         game::game_settings_set(app.handle().clone(), settings.to_string())?;
@@ -901,8 +892,6 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
         let observed = lines.clone();
         let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let closed_event = closed.clone();
-        let memory_optimized = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let memory_event = memory_optimized.clone();
         let log_path = root.join(if native {
             "game-native.log"
         } else if observe {
@@ -918,10 +907,6 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
             if value["type"] == "close" {
                 closed_event.store(true, Ordering::Release);
             }
-            if value["type"] == "stage" && value["message"] == "已回收启动器工作集，正在启动游戏"
-            {
-                memory_event.store(true, Ordering::Release);
-            }
             if let Some(line) = value["line"].as_str() {
                 let _ = writeln!(log.lock().unwrap(), "{line}");
                 observed.lock().unwrap().push(line.into());
@@ -933,22 +918,22 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
             java.display()
         );
         let result = async {
-            tokio::time::timeout(Duration::from_secs(90), run_launch(app.handle().clone(), ResolvedLaunch {
-                version: version.into(), username: "PortableTest".into(), memory_min: "512M".into(), memory_max: "1G".into(), game_dir: Some(game_root.to_string_lossy().into())
-            })).await.map_err(|_| "production launch timeout")??;
+            tokio::time::timeout(Duration::from_secs(90), run_launch_scoped(app.handle().clone(), ResolvedLaunch {
+                version: version.into(), username: "PortableTest".into(), memory_max: "1G".into(), game_dir: Some(game_root.to_string_lossy().into())
+            }, store::random_token())).await.map_err(|_| "production launch timeout")??;
             let deadline = Instant::now() + Duration::from_secs(90);
             loop {
                 if closed.load(Ordering::Acquire) { return Err("游戏渲染前退出，请查看游戏日志".into()); }
                 let (renderer, skin) = {
                     let lines = lines.lock().unwrap();
                     (lines.iter().any(|line| line.contains("Created:") && line.contains("textures/atlas/")),
-                     lines.iter().any(|line| line.contains("Reloading ResourceManager") && line.contains("NoWheRE-offline-skin")))
+                     lines.iter().any(|line| line.contains("Reloading ResourceManager") && line.contains("Nickel-offline-skin")))
                 };
                 if renderer && skin { break; }
                 if Instant::now() >= deadline { return Err("未观测到皮肤包加载和渲染器初始化，请查看游戏日志".into()); }
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
-            let pack = directory.join("resourcepacks/NoWheRE-offline-skin");
+            let pack = directory.join("resourcepacks/Nickel-offline-skin");
             for texture in ["steve.png", "alex.png"] {
                 let bytes = std::fs::read(pack.join("assets/minecraft/textures/entity").join(texture)).map_err(|e| e.to_string())?;
                 minecraft_java_rs_core::utils::image::decode_skin_png(&bytes)?;
@@ -965,11 +950,11 @@ fn live_portable_real_cache_launch_and_skin() -> Result<(), String> {
                 let gpu = snapshot["gpu"].as_str().unwrap_or_default();
                 if snapshot["priority"] != "AboveNormal" || snapshot["title"] != "Nickel native acceptance"
                     || snapshot["jvmMarker"] != true || !gpu.split(';').any(|part| part == "GpuPreference=2")
-                    || !memory_optimized.load(Ordering::Acquire) || !before.contains("accepted")
+                    || !before.contains("accepted")
                     || !before.lines().any(|line| line.trim().eq_ignore_ascii_case(&expected_directory)) {
-                    return Err(format!("native flags mismatch: {snapshot}; memory={}; before={before:?}", memory_optimized.load(Ordering::Acquire)));
+                    return Err(format!("native flags mismatch: {snapshot}; before={before:?}"));
                 }
-                eprintln!("[native-flags] running={snapshot}; memoryOptimize=true; beforeLaunchCwd=true");
+                eprintln!("[native-flags] running={snapshot}; beforeLaunchCwd=true");
             }
             if observe {
                 // 有界保留本次子进程供原生角色界面观察；截图结论由人工核验，不由标记文件代替。

@@ -349,7 +349,7 @@ mod tests {
             .iter()
             .find(|entry| entry.minecraft_id == "1.12.2")
             .unwrap();
-        let root = std::env::temp_dir().join("nowhere-liteloader-plan");
+        let root = std::env::temp_dir().join("nickel-liteloader-plan");
         let plan = install_plan(&root, entry).unwrap();
         assert!(plan
             .profile_path
@@ -365,7 +365,7 @@ mod tests {
             .find(|entry| entry.minecraft_id == "1.12.2")
             .unwrap();
         let root = std::env::temp_dir().join(format!(
-            "nowhere-liteloader-write-{}",
+            "nickel-liteloader-write-{}",
             crate::store::random_token()
         ));
         let path = write_profile_atomic(&root, entry).unwrap();

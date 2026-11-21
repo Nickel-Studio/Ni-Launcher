@@ -71,7 +71,7 @@ export function VersionRootNav({
   return (
     <nav className="vs-nav" aria-label="实例目录" ref={nav}>
       <div className="vs-nav__head">
-        <div className="vs-nav__title nw-eyebrow">实例目录</div>
+        <div className="vs-nav__title ni-eyebrow">实例目录</div>
       </div>
       <ul className="vs-nav__list">
         {roots.map((dir) => {
@@ -102,7 +102,7 @@ export function VersionRootNav({
                     <IconFolder />
                   </span>
                   <span className="vs-nav__name">{label}</span>
-                  <span className="vs-nav__path nw-mono">
+                  <span className="vs-nav__path ni-mono">
                     {pathEllipsis(dir, 34)}
                   </span>
                 </button>
@@ -181,7 +181,7 @@ export function VersionRootNav({
         </p>
       ) : null}
       <div className="vs-nav__add">
-        <span className="nw-eyebrow">添加或导入</span>
+        <span className="ni-eyebrow">添加或导入</span>
         <Button
           variant="ghost"
           size="sm"

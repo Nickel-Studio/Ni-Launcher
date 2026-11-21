@@ -27,6 +27,7 @@ struct SearchHit {
     versions: Vec<String>,
     loaders: Vec<String>,
     date_modified: String,
+    project_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +50,7 @@ struct VersionFile {
 #[serde(rename_all = "camelCase")]
 struct ProjectVersion {
     id: String,
+    project_id: String,
     name: String,
     version_number: String,
     loaders: Vec<String>,
@@ -56,6 +58,7 @@ struct ProjectVersion {
     date_published: String,
     release_type: String,
     files: Vec<VersionFile>,
+    dependencies: Option<Vec<crate::community_dependencies::RequiredDependency>>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,16 +150,14 @@ fn str_array(value: &serde_json::Value, key: &str) -> Vec<String> {
 }
 
 /// 把 Labrinth 搜索响应归一化为前端契约的 JSON 文本。
-fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
+pub(crate) fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
     let hits = value
         .get("hits")
         .and_then(|h| h.as_array())
         .ok_or_else(|| "Modrinth 搜索结果格式无法识别".to_string())?;
-
     let out: Vec<SearchHit> = hits
         .iter()
         .filter_map(|h| {
-            // slug 是结果卡片的唯一标识（详情 / 项目页都靠它），缺失或为空的条目丢弃。
             let slug = h.get("slug")?.as_str()?.trim().to_string();
             if slug.is_empty() {
                 return None;
@@ -172,10 +173,10 @@ fn normalize_search(value: &serde_json::Value) -> Result<String, String> {
                 versions: str_array(h, "versions"),
                 loaders: str_array(h, "loaders"),
                 date_modified: str_field(h, "date_modified"),
+                project_id: str_field(h, "project_id"),
             })
         })
         .collect();
-
     let total = value
         .get("total")
         .and_then(|t| t.as_u64())
@@ -207,9 +208,7 @@ fn normalize_file(file: &serde_json::Value) -> Option<VersionFile> {
     })
 }
 
-/// 按 MC 版本与加载器过滤并归一化版本列表（纯函数，便于测试）。
-///
-/// `game_version` / `loader` 为空串时对应维度不过滤。
+/// 按 MC 版本与加载器过滤并归一化版本列表；必要前置保留在各自版本中。
 fn filter_versions(
     value: &serde_json::Value,
     game_version: &str,
@@ -218,7 +217,6 @@ fn filter_versions(
     let items = value
         .as_array()
         .ok_or_else(|| "Modrinth 版本数据格式无法识别".to_string())?;
-
     let mut out = Vec::new();
     for item in items {
         let id = str_field(item, "id");
@@ -242,6 +240,7 @@ fn filter_versions(
             .unwrap_or_default();
         out.push(ProjectVersion {
             id,
+            project_id: str_field(item, "project_id"),
             name: str_field(item, "name"),
             version_number: str_field(item, "version_number"),
             loaders: str_array(item, "loaders"),
@@ -249,9 +248,15 @@ fn filter_versions(
             date_published: str_field(item, "date_published"),
             release_type: normalize_release_type(item.get("version_type")),
             files,
+            dependencies: crate::community_dependencies::modrinth_dependencies(item),
         });
     }
     Ok(out)
+}
+
+pub(crate) fn normalize_dependency_versions(value: &serde_json::Value) -> Result<String, String> {
+    serde_json::to_string(&filter_versions(value, "", "")?)
+        .map_err(|error| format!("前置版本序列化失败：{error}"))
 }
 
 /// SHA1 十六进制比较：忽略大小写与首尾空白；期望值为空时视为「无校验值」。

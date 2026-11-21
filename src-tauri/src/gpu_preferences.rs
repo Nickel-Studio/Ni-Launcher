@@ -170,7 +170,7 @@ mod platform {
 
         #[test]
         fn guard_restores_original_and_preserves_user_change() {
-            let root = std::env::temp_dir().join(format!("nowhere-gpu-{}", crate::store::random_token()));
+            let root = std::env::temp_dir().join(format!("nickel-gpu-{}", crate::store::random_token()));
             std::fs::create_dir_all(&root).unwrap();
             let java = root.join("java.exe");
             std::fs::write(&java, b"test-path-only").unwrap();

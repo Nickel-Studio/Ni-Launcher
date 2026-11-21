@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn missing_path_returns_readable_error() {
-        let err = image_data_url("Z:/nowhere/definitely-missing.png".into());
+        let err = image_data_url("Z:/nickel/definitely-missing.png".into());
         assert!(err.is_err());
         assert!(err.unwrap_err().contains("文件不存在"));
     }

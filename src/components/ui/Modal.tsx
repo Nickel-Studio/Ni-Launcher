@@ -12,6 +12,7 @@ export interface ModalProps {
   footer?: ReactNode;
   width?: number;
   closeOnBackdrop?: boolean;
+  dismissible?: boolean;
   ariaLabel?: string;
   /** 只影响当前弹窗的局部样式。 */
   className?: string;
@@ -45,6 +46,7 @@ export function Modal({
   footer,
   width = 480,
   closeOnBackdrop = true,
+  dismissible = true,
   ariaLabel = "对话框",
   className,
 }: ModalProps) {
@@ -74,7 +76,7 @@ export function Modal({
     const trigger = triggerRef.current;
     const isTopmost = () =>
       Array.from(
-        document.querySelectorAll(".nw-modal[aria-modal='true']")
+        document.querySelectorAll(".ni-modal[aria-modal='true']")
       ).pop() === dialog;
     const focusFirst = () =>
       (focusableElements(dialog)[0] ?? dialog).focus({ preventScroll: true });
@@ -85,7 +87,7 @@ export function Modal({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        closeRef.current();
+        if (dismissible) closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -135,20 +137,25 @@ export function Modal({
         }
       });
     };
-  }, [open]);
+  }, [open, dismissible]);
 
   if (!open) return null;
 
   return createPortal(
     <div
-      className="nw-modal__backdrop"
+      className="ni-modal__backdrop"
       onMouseDown={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+        if (
+          dismissible &&
+          closeOnBackdrop &&
+          event.target === event.currentTarget
+        )
+          onClose();
       }}
     >
       <div
         ref={dialogRef}
-        className={["nw-modal", className].filter(Boolean).join(" ")}
+        className={["ni-modal", className].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title != null ? titleId : undefined}
@@ -158,28 +165,30 @@ export function Modal({
         style={{ maxWidth: width }}
       >
         {(title != null || description != null) && (
-          <div className="nw-modal__head">
+          <div className="ni-modal__head">
             <div>
               {title != null ? (
-                <div id={titleId} className="nw-modal__title">
+                <div id={titleId} className="ni-modal__title">
                   {title}
                 </div>
               ) : null}
               {description != null ? (
-                <div id={descriptionId} className="nw-modal__desc">
+                <div id={descriptionId} className="ni-modal__desc">
                   {description}
                 </div>
               ) : null}
             </div>
-            <IconButton label="关闭" size="sm" onClick={onClose}>
-              <IconClose />
-            </IconButton>
+            {dismissible ? (
+              <IconButton label="关闭" size="sm" onClick={onClose}>
+                <IconClose />
+              </IconButton>
+            ) : null}
           </div>
         )}
         {children != null ? (
-          <div className="nw-modal__body">{children}</div>
+          <div className="ni-modal__body">{children}</div>
         ) : null}
-        {footer != null ? <div className="nw-modal__foot">{footer}</div> : null}
+        {footer != null ? <div className="ni-modal__foot">{footer}</div> : null}
       </div>
     </div>,
     document.body

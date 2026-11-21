@@ -1,5 +1,5 @@
 //! 显式运行的 Windows 真后端验收：公开小包、独立根目录、已有 Java；不改产品入口。
-//! 设置 NOWHERE_PACK_TEST_JAVA_HOME_8 后用 --ignored --test-threads=1 执行。
+//! 设置 NICKEL_PACK_TEST_JAVA_HOME_8 后用 --ignored --test-threads=1 执行。
 use super::*;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -29,7 +29,7 @@ fn copy_existing_runtime(source: &Path, target: &Path) -> Result<(), String> {
 }
 
 fn seed_existing_base(directory: &Path) -> Result<(), String> {
-    let Some(cache) = std::env::var_os("NOWHERE_PACK_TEST_CACHE").map(PathBuf::from) else {
+    let Some(cache) = std::env::var_os("NICKEL_PACK_TEST_CACHE").map(PathBuf::from) else {
         return Ok(());
     };
     // 只复用可校验的原版文件，不复制绝对路径缓存、实例身份或整合包文件。
@@ -51,7 +51,6 @@ async fn prepare_existing_java(
     let params = crate::ResolvedLaunch {
         version: version.into(),
         username: "PackTest".into(),
-        memory_min: "512M".into(),
         memory_max: "2G".into(),
         game_dir: Some(directory.to_string_lossy().into()),
     };
@@ -63,7 +62,7 @@ async fn prepare_existing_java(
         .await
         .map_err(|e| e.to_string())?;
     let (component, major) = java::java_component(&options, &metadata);
-    let key = format!("NOWHERE_PACK_TEST_JAVA_HOME_{major}");
+    let key = format!("NICKEL_PACK_TEST_JAVA_HOME_{major}");
     let home = std::env::var_os(&key)
         .map(PathBuf::from)
         .ok_or_else(|| format!("设置 {key} 指向本机已有 Java {major}；测试不下载运行时"))?;
@@ -179,7 +178,7 @@ async fn install_real_pack(
     let metadata: serde_json::Value =
         serde_json::from_slice(&std::fs::read(descriptor).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
-    if metadata["nowherePack"] != installed.source {
+    if metadata["nickelPack"] != installed.source {
         return Err("提交后丢失整合包来源".into());
     }
     eprintln!(
@@ -197,7 +196,6 @@ async fn launch_real_pack(
     let params = crate::ResolvedLaunch {
         version: installed.version_id.clone(),
         username: "PackTest".into(),
-        memory_min: "512M".into(),
         memory_max: "2G".into(),
         game_dir: Some(installed.root.clone()),
     };
@@ -259,11 +257,11 @@ async fn launch_real_pack(
 }
 
 #[test]
-#[ignore = "只复验已提交测试实例的真实启动；需 NOWHERE_PACK_TEST_EXISTING"]
+#[ignore = "只复验已提交测试实例的真实启动；需 NICKEL_PACK_TEST_EXISTING"]
 fn live_existing_pack_launch() -> Result<(), String> {
-    let directory = std::env::var_os("NOWHERE_PACK_TEST_EXISTING")
+    let directory = std::env::var_os("NICKEL_PACK_TEST_EXISTING")
         .map(PathBuf::from)
-        .ok_or("设置 NOWHERE_PACK_TEST_EXISTING 指向本轮已提交测试实例")?;
+        .ok_or("设置 NICKEL_PACK_TEST_EXISTING 指向本轮已提交测试实例")?;
     let name = directory
         .file_name()
         .and_then(|name| name.to_str())
@@ -276,17 +274,17 @@ fn live_existing_pack_launch() -> Result<(), String> {
         &std::fs::read(directory.join(format!("{name}.json"))).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    if !descriptor["nowherePack"].is_object() {
+    if !descriptor["nickelPack"].is_object() {
         return Err("指定目录不是已提交整合包实例".into());
     }
     let installed = app_tasks::InstalledInstance {
         root: root.to_string_lossy().into(),
         version_id: name.into(),
-        display_name: descriptor["nowhereCustom"]["name"]
+        display_name: descriptor["nickelCustom"]["name"]
             .as_str()
             .unwrap_or(name)
             .into(),
-        source: descriptor["nowherePack"].clone(),
+        source: descriptor["nickelPack"].clone(),
     };
     tauri::async_runtime::block_on(launch_real_pack(
         &installed,
@@ -297,23 +295,23 @@ fn live_existing_pack_launch() -> Result<(), String> {
 #[test]
 #[ignore = "真实平台下载与游戏窗口；需已有 Java 8，单线程执行并保存独立测试根"]
 fn live_mr_cf_pack_install_and_launch() -> Result<(), String> {
-    let parent = std::env::var_os("NOWHERE_PACK_TEST_ROOT")
+    let parent = std::env::var_os("NICKEL_PACK_TEST_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    let selected_platform = std::env::var("NOWHERE_PACK_TEST_PLATFORM").ok();
+    let selected_platform = std::env::var("NICKEL_PACK_TEST_PLATFORM").ok();
     if selected_platform
         .as_deref()
         .is_some_and(|value| !matches!(value, "modrinth" | "curseforge"))
     {
-        return Err("NOWHERE_PACK_TEST_PLATFORM 仅接受 modrinth 或 curseforge".into());
+        return Err("NICKEL_PACK_TEST_PLATFORM 仅接受 modrinth 或 curseforge".into());
     }
-    let root = parent.join(format!("nowhere-pack-live-{}", store::random_token()));
+    let root = parent.join(format!("nickel-pack-live-{}", store::random_token()));
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     eprintln!("[pack-live] root={}", root.display());
     let mut context = tauri::generate_context!();
     context.config_mut().app.windows.clear();
     context.config_mut().identifier =
-        format!("com.youtu.nowhere.packtest.{}", store::random_token());
+        format!("studio.nickel.launcher.packtest.{}", store::random_token());
     let app = tauri::Builder::default()
         .any_thread()
         .build(context)
@@ -424,8 +422,8 @@ fn live_settings_persist_and_reload() -> Result<(), String> {
     use crate::network_settings::{self, NetworkSettings, SourcePolicy};
     use tauri::Manager;
     const TEST_NAME: &str = "install::live_tests::live_settings_persist_and_reload";
-    const ID_PREFIX: &str = "com.youtu.nowhere.settingstest.";
-    let mode = std::env::var("NOWHERE_SETTINGS_TEST_MODE").ok();
+    const ID_PREFIX: &str = "studio.nickel.launcher.settingstest.";
+    let mode = std::env::var("NICKEL_SETTINGS_TEST_MODE").ok();
     let Some(mode) = mode else {
         let identifier = format!("{ID_PREFIX}{}", store::random_token());
         let executable = std::env::current_exe().map_err(|error| error.to_string())?;
@@ -438,8 +436,8 @@ fn live_settings_persist_and_reload() -> Result<(), String> {
                     "--nocapture",
                     "--test-threads=1",
                 ])
-                .env("NOWHERE_SETTINGS_TEST_MODE", mode)
-                .env("NOWHERE_SETTINGS_TEST_ID", &identifier)
+                .env("NICKEL_SETTINGS_TEST_MODE", mode)
+                .env("NICKEL_SETTINGS_TEST_ID", &identifier)
                 .stdin(std::process::Stdio::null())
                 .output()
                 .map_err(|error| error.to_string())?;
@@ -452,7 +450,7 @@ fn live_settings_persist_and_reload() -> Result<(), String> {
         return Ok(());
     };
     let identifier =
-        std::env::var("NOWHERE_SETTINGS_TEST_ID").map_err(|error| error.to_string())?;
+        std::env::var("NICKEL_SETTINGS_TEST_ID").map_err(|error| error.to_string())?;
     if !identifier.starts_with(ID_PREFIX) || !matches!(mode.as_str(), "write" | "reload") {
         return Err("隔离设置测试参数无效".into());
     }
@@ -540,14 +538,14 @@ fn live_pack_transaction_stage_failures_and_cancellations() -> Result<(), String
     use std::collections::HashMap;
     use tauri::Manager;
     let app = acceptance_app(&format!(
-        "com.youtu.nowhere.transactiontest.{}",
+        "studio.nickel.launcher.transactiontest.{}",
         store::random_token()
     ))?;
     let cache = app
         .path()
         .app_cache_dir()
         .map_err(|error| error.to_string())?;
-    let root = std::env::temp_dir().join(format!("nowhere-stage-matrix-{}", store::random_token()));
+    let root = std::env::temp_dir().join(format!("nickel-stage-matrix-{}", store::random_token()));
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let watched = Arc::new(Mutex::new(HashMap::<String, (PathBuf, PathBuf)>::new()));
     let observations = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
@@ -729,8 +727,8 @@ fn live_pack_transaction_stage_failures_and_cancellations() -> Result<(), String
 #[ignore = "真实 Wry 下载事件序列与快照；显式单线程执行，不联网"]
 fn live_pump_events_resets_batches_without_speed_overwriting_counts() -> Result<(), String> {
     use tauri::Manager;
-    let app = acceptance_app(&format!("com.youtu.nowhere.r6pump.{}", store::random_token()))?;
-    let root = std::env::temp_dir().join(format!("nowhere-r6-pump-{}", store::random_token()));
+    let app = acceptance_app(&format!("studio.nickel.launcher.r6pump.{}", store::random_token()))?;
+    let root = std::env::temp_dir().join(format!("nickel-r6-pump-{}", store::random_token()));
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let task = app_tasks::begin(app.handle(), &root, None)?;
     let snapshot = || -> Result<serde_json::Value, String> {

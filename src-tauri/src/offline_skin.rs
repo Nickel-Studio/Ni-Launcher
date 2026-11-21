@@ -19,12 +19,12 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::{http, store};
 
-const PACK_FOLDER: &str = "NoWheRE-offline-skin";
-const PACK_ID: &str = "file/NoWheRE-offline-skin";
-const OWNER_FILE: &str = ".nowhere-owner";
-const OWNER_CONTENT: &[u8] = b"NoWheRE offline skin pack v1\n";
-const SOURCE_FILE: &str = ".nowhere-source.png";
-const SOURCE_RECORD: &str = ".nowhere-source.json";
+const PACK_FOLDER: &str = "Nickel-offline-skin";
+const PACK_ID: &str = "file/Nickel-offline-skin";
+const OWNER_FILE: &str = ".nickel-owner";
+const OWNER_CONTENT: &[u8] = b"Nickel offline skin pack v1\n";
+const SOURCE_FILE: &str = ".nickel-source.png";
+const SOURCE_RECORD: &str = ".nickel-source.json";
 const OPTIONS_FILE: &str = "options.txt";
 const MAX_OPTIONS_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RECORD_BYTES: usize = 4096;
@@ -319,7 +319,7 @@ fn replace_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| "文件名无效，请重新选择游戏目录".to_string())?;
-    let temp = path.with_file_name(format!(".{name}.nowhere-{}", store::random_token()));
+    let temp = path.with_file_name(format!(".{name}.nickel-{}", store::random_token()));
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -738,7 +738,7 @@ mod tests {
     impl TestDirectory {
         fn new() -> Self {
             let path =
-                std::env::temp_dir().join(format!("nowhere-skin-test-{}", store::random_token()));
+                std::env::temp_dir().join(format!("nickel-skin-test-{}", store::random_token()));
             fs::create_dir(&path).unwrap();
             Self(path)
         }
@@ -1219,11 +1219,11 @@ mod tests {
 
     #[test]
     fn options_preserve_unknown_fields_user_pack_order_and_line_endings() {
-        let original = "\u{feff}gamma:0.75\r\nresourcePacks:[\"vanilla\",\"file/用户包.zip\",\"file/NoWheRE-offline-skin\"]\r\nincompatibleResourcePacks:[\"file/old.zip\",\"NoWheRE-offline-skin\"]\r\nkey_key.forward:87";
+        let original = "\u{feff}gamma:0.75\r\nresourcePacks:[\"vanilla\",\"file/用户包.zip\",\"file/Nickel-offline-skin\"]\r\nincompatibleResourcePacks:[\"file/old.zip\",\"Nickel-offline-skin\"]\r\nkey_key.forward:87";
         let updated = patch_options(original, Some(PACK_ID)).unwrap();
         assert!(updated.starts_with("\u{feff}gamma:0.75\r\n"));
         assert!(updated.contains(
-            "resourcePacks:[\"vanilla\",\"file/用户包.zip\",\"file/NoWheRE-offline-skin\"]\r\n"
+            "resourcePacks:[\"vanilla\",\"file/用户包.zip\",\"file/Nickel-offline-skin\"]\r\n"
         ));
         assert!(updated.contains("incompatibleResourcePacks:[\"file/old.zip\"]\r\n"));
         assert!(updated.ends_with("key_key.forward:87"));
@@ -1235,10 +1235,10 @@ mod tests {
 
     #[test]
     fn random_only_removes_exact_owned_pack_names() {
-        let original = "resourcePacks:[\"NoWheRE-offline-skin\",\"file/NoWheRE-offline-skin\",\"file/NoWheRE-offline-skin-user.zip\",\"file/mine.zip\"]\n";
+        let original = "resourcePacks:[\"Nickel-offline-skin\",\"file/Nickel-offline-skin\",\"file/Nickel-offline-skin-user.zip\",\"file/mine.zip\"]\n";
         assert_eq!(
             patch_options(original, None).unwrap(),
-            "resourcePacks:[\"file/NoWheRE-offline-skin-user.zip\",\"file/mine.zip\"]\n"
+            "resourcePacks:[\"file/Nickel-offline-skin-user.zip\",\"file/mine.zip\"]\n"
         );
         assert_eq!(
             patch_options("broken:still:here\n", None).unwrap(),
@@ -1249,7 +1249,7 @@ mod tests {
             "resourcePacks:broken\n"
         );
         assert!(patch_options("resourcePacks:broken\n", Some(PACK_ID)).is_err());
-        assert!(patch_options("resourcePacks:[NoWheRE-offline-skin]\n", None).is_err());
+        assert!(patch_options("resourcePacks:[Nickel-offline-skin]\n", None).is_err());
         assert_eq!(patch_options("", None).unwrap(), "");
     }
 

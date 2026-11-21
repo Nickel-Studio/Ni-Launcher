@@ -1,4 +1,4 @@
-//! 网络配置由 settings.json 迁移得到；每个操作读取独立快照，不临时改写全局源。
+//! 每个操作从 settings.json 读取独立网络策略快照，不临时改写全局源。
 pub use minecraft_java_rs_core::net::transfer::SourcePolicy;
 use minecraft_java_rs_core::net::transfer::{
     CancellationToken, TransferContext, configure_transfer_limits,
@@ -15,9 +15,9 @@ pub const COMMUNITY_FILE_MIRROR: &str = "https://mod.mcimirror.top/";
 
 pub fn parse_source_policy(value: &str) -> Result<SourcePolicy, String> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "mirror_first" | "bmclapi" => Ok(SourcePolicy::MirrorFirst),
+        "mirror_first" => Ok(SourcePolicy::MirrorFirst),
         "official_auto" => Ok(SourcePolicy::OfficialAuto),
-        "official_first" | "official" => Ok(SourcePolicy::OfficialFirst),
+        "official_first" => Ok(SourcePolicy::OfficialFirst),
         _ => Err("下载源策略无效，请在设置中重新选择".into()),
     }
 }
@@ -90,18 +90,14 @@ fn normalize_base(value: &str) -> Result<String, String> {
 
 pub fn from_value(raw: &serde_json::Value) -> Result<NetworkSettings, String> {
     let mut out = NetworkSettings::default();
-    let legacy = raw
-        .get("downloadSource")
-        .and_then(|v| v.as_str())
-        .and_then(|v| parse_source_policy(v).ok());
     let policy = |key: &str, fallback: SourcePolicy| -> Result<SourcePolicy, String> {
         match raw.get(key).and_then(|v| v.as_str()) {
             Some(value) => parse_source_policy(value),
             None => Ok(fallback),
         }
     };
-    out.version_list_source = policy("versionListSource", legacy.unwrap_or_default())?;
-    out.file_download_source = policy("fileDownloadSource", legacy.unwrap_or_default())?;
+    out.version_list_source = policy("versionListSource", SourcePolicy::OfficialAuto)?;
+    out.file_download_source = policy("fileDownloadSource", SourcePolicy::OfficialAuto)?;
     out.community_api_source = policy("communityApiSource", SourcePolicy::OfficialAuto)?;
     out.max_download_threads = raw
         .get("maxDownloadThreads")
@@ -117,7 +113,7 @@ pub fn from_value(raw: &serde_json::Value) -> Result<NetworkSettings, String> {
         .get("verifyMicrosoftSsl")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    // 镜像基址固定为服务常量；旧配置地址不覆盖它们，三项来源策略独立读取。
+    // 镜像基址固定为服务常量，三项来源策略独立读取。
     Ok(out)
 }
 
@@ -136,14 +132,6 @@ pub fn apply(settings: NetworkSettings) {
     *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = settings;
 }
 
-pub fn set_legacy_source(source: &str) -> Result<(), String> {
-    let policy = parse_source_policy(source)?;
-    let mut settings = CURRENT.write().unwrap_or_else(|e| e.into_inner());
-    settings.version_list_source = policy;
-    settings.file_download_source = policy;
-    Ok(())
-}
-
 pub fn list_policy(source: Option<&str>) -> Result<SourcePolicy, String> {
     source
         .map(parse_source_policy)
@@ -154,23 +142,15 @@ pub fn list_policy(source: Option<&str>) -> Result<SourcePolicy, String> {
 mod tests {
     use super::*;
     #[test]
-    fn migrates_legacy_without_overwriting_new_independent_policies() {
+    fn independent_policies_have_explicit_defaults() {
         let fresh = from_value(&serde_json::json!({})).unwrap();
         assert_eq!(fresh.version_list_source, SourcePolicy::OfficialAuto);
         assert_eq!(fresh.max_download_threads, 10);
         assert!(fresh.verify_microsoft_ssl);
-        for (old, expected) in [
-            ("official", SourcePolicy::OfficialFirst),
-            ("bmclapi", SourcePolicy::MirrorFirst),
-        ] {
-            let migrated = from_value(&serde_json::json!({"downloadSource":old})).unwrap();
-            assert_eq!(migrated.version_list_source, expected);
-            assert_eq!(migrated.file_download_source, expected);
-            assert_eq!(migrated.community_api_source, SourcePolicy::OfficialAuto);
-        }
-        let mixed = from_value(&serde_json::json!({"downloadSource":"bmclapi", "versionListSource":"official_first", "fileDownloadSource":"official_auto"})).unwrap();
+        let mixed = from_value(&serde_json::json!({"versionListSource":"official_first", "fileDownloadSource":"mirror_first"})).unwrap();
         assert_eq!(mixed.version_list_source, SourcePolicy::OfficialFirst);
-        assert_eq!(mixed.file_download_source, SourcePolicy::OfficialAuto);
+        assert_eq!(mixed.file_download_source, SourcePolicy::MirrorFirst);
+        assert_eq!(mixed.community_api_source, SourcePolicy::OfficialAuto);
     }
     #[test]
     fn validates_mirrors_and_budget() {
@@ -201,7 +181,7 @@ mod tests {
             ..NetworkSettings::default()
         };
         let original = settings.transfer(None).unwrap();
-        let override_file = settings.transfer(Some("official")).unwrap();
+        let override_file = settings.transfer(Some("official_first")).unwrap();
         settings.version_list_source = SourcePolicy::OfficialFirst;
         settings.file_download_source = SourcePolicy::MirrorFirst;
         assert_eq!(original.list_policy(), SourcePolicy::MirrorFirst);

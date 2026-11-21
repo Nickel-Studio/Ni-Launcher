@@ -78,7 +78,8 @@ interface Props {
   kind: ModrinthKind;
   label: string;
   target?: VersionFocus | null;
-  /** 打开独立详情页（Resources.tsx 状态提升：侧边栏让位给详情页）。 */
+  active?: boolean;
+  /** 打开独立详情页；隐藏检索页时保留筛选和结果。 */
   onOpenDetail: (hit: ModrinthHit, kind: ModrinthKind) => void;
 }
 
@@ -86,6 +87,7 @@ export function CommunitySearchPage({
   kind,
   label,
   target,
+  active = true,
   onOpenDetail,
 }: Props) {
   const { settings } = useSettings();
@@ -147,55 +149,52 @@ export function CommunitySearchPage({
     [mcVersion, loader]
   );
 
-  // 翻页 / 重置后把列表滚回可视区顶部（reduced-motion 下瞬时跳转）。
-  // 锚点是结果区顶端的空 div；滚动容器由它向上找（.nw-pager__page），
-  // 只改 scrollTop 才能把标题行也带回来，scrollIntoView 会停在锚点上。
   const listAnchorRef = useRef<HTMLDivElement | null>(null);
   const scrollTimer = useRef<number | null>(null);
-  const scrollToTop = useCallback(() => {
+  const scrollFrame = useRef<number | null>(null);
+  const scrollKey = useRef("");
+  const cancelScroll = useCallback(() => {
     if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current);
-    const reduced =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (scrollFrame.current !== null)
+      window.cancelAnimationFrame(scrollFrame.current);
+    scrollTimer.current = null;
+    scrollFrame.current = null;
+  }, []);
+  const scrollToTop = useCallback(() => {
+    cancelScroll();
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
     scrollTimer.current = window.setTimeout(() => {
       scrollTimer.current = null;
       const anchor = listAnchorRef.current;
-      if (!anchor) return;
-      let scroller: HTMLElement | null = anchor.parentElement;
-      while (
-        scroller &&
-        scroller !== document.body &&
-        scroller.scrollHeight <= scroller.clientHeight
-      ) {
-        scroller = scroller.parentElement;
+      if (!anchor || anchor.getClientRects().length === 0) return;
+      const scroller = anchor.closest<HTMLElement>(".ni-pager__page");
+      if (!scroller) return;
+      if (reduced) {
+        scroller.scrollTop = 0;
+        return;
       }
-      if (scroller && scroller !== document.body) {
-        const target = Math.max(0, anchor.offsetTop - 8);
-        if (reduced) {
-          scroller.scrollTop = target;
-          return;
-        }
-        const start = scroller.scrollTop;
-        const delta = target - start;
-        const startedAt = performance.now();
-        const step = (now: number) => {
-          const progress = Math.min(1, (now - startedAt) / 220);
-          scroller.scrollTop = start + delta * (1 - Math.pow(1 - progress, 3));
-          if (progress < 1) window.requestAnimationFrame(step);
-        };
-        window.requestAnimationFrame(step);
-      }
+      const start = scroller.scrollTop;
+      const startedAt = performance.now();
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - startedAt) / 220);
+        scroller.scrollTop = start * Math.pow(1 - progress, 3);
+        scrollFrame.current =
+          progress < 1 ? window.requestAnimationFrame(step) : null;
+      };
+      scrollFrame.current = window.requestAnimationFrame(step);
     }, 80);
-  }, []);
+  }, [cancelScroll]);
   useLayoutEffect(() => {
-    scrollToTop();
-    return () => {
-      if (scrollTimer.current !== null) {
-        window.clearTimeout(scrollTimer.current);
-        scrollTimer.current = null;
-      }
-    };
-  }, [page, kind, scrollToTop]);
+    const key = `${page}:${kind}`;
+    // Resuming the retained search page is not pagination; never erase its scroll.
+    if (active && scrollKey.current !== key) {
+      scrollKey.current = key;
+      scrollToTop();
+    }
+    return cancelScroll;
+  }, [active, page, kind, scrollToTop, cancelScroll]);
 
   // 三种来源各持一个检索 hook（hooks 顺序稳定），但只启用当前来源的那个，
   // 未启用的 hook 不发请求；同一时刻只消费被启用 hook 的返回值。

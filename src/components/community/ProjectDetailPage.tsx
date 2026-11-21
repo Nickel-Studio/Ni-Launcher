@@ -15,10 +15,12 @@ import { formatBytes } from "../resources/format";
 import type { ResourceInstance } from "../resources/types";
 import { formatDownloads, formatIsoDate } from "../modrinth/parse";
 import type {
+  DependencyLookup,
   ModrinthHit,
   ModrinthKind,
   ModrinthVersion,
   ProjectVersionPage,
+  ResolvedDependency,
 } from "../modrinth/types";
 import { CommunityKindIcon } from "./CommunityKindIcon";
 import { RELEASE_TYPES } from "./releaseTypes";
@@ -35,6 +37,8 @@ import {
   loaderLabel,
   type VersionGroup,
 } from "./versionFilters";
+import { RequiredDependencies } from "./RequiredDependencies";
+import { prioritizeDependencyVersion, projectIdentity } from "./dependencies";
 import "./projectDetail.css";
 
 export interface VersionQuery {
@@ -45,6 +49,9 @@ export interface VersionQuery {
 export interface ProjectDetailAdapter<K> {
   openProject: (hit: K) => Promise<unknown>;
   fetchVersions: (hit: K, query: VersionQuery) => Promise<ProjectVersionPage>;
+  resolveDependency?: (
+    dependency: DependencyLookup
+  ) => Promise<ResolvedDependency>;
   /** 普通资源 = 另存为（taskId 或 null=取消）；整合包 = 命名后安装。 */
   install: (
     hit: K,
@@ -59,13 +66,25 @@ export interface GroupMemory {
   read: (projectId: string) => ReadonlySet<string> | undefined;
   write: (projectId: string, open: ReadonlySet<string>) => void;
 }
+export interface DependencyContext {
+  parentTitle: string;
+  parentVersion: ModrinthVersion;
+  requiredVersion: ModrinthVersion | null;
+}
 interface Props<K> {
   kind: ModrinthKind;
   hit: K;
   adapter: ProjectDetailAdapter<K>;
   instance: DetailInstance;
   onBack: () => void;
+  backLabel?: string;
   groupMemory?: GroupMemory;
+  dependencyContext?: DependencyContext;
+  onOpenDependency?: (
+    dependency: ResolvedDependency,
+    version: ModrinthVersion
+  ) => void;
+  onReady?: () => void;
 }
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -113,10 +132,14 @@ export function ProjectDetailPage<K extends ModrinthHit>({
   adapter,
   instance,
   onBack,
+  backLabel = "返回检索",
   groupMemory,
+  dependencyContext,
+  onOpenDependency,
+  onReady,
 }: Props<K>) {
   const pack = kind === "modpack";
-  const projectId = `${hit.source}:${hit.slug}`;
+  const projectId = projectIdentity(hit);
   const [versions, setVersions] = useState<ModrinthVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
@@ -151,17 +174,17 @@ export function ProjectDetailPage<K extends ModrinthHit>({
     };
   }, []);
   useEffect(() => {
-    backButton.current?.focus();
+    backButton.current?.focus({ preventScroll: true });
   }, []);
   useEffect(() => {
     const request = ++generation.current;
+    const required = dependencyContext?.requiredVersion;
     setLoading(true);
     setListError("");
     setVersions([]);
     setFilter(ALL_FILTER);
     userFilter.current = false;
-    // 全量历史一次拉取（CurseForge 分页在内部循环到尽），页内不再提供
-    // 「加载往期版本」按钮；筛选与加载器分组只在本地显示，不截断历史。
+    // Fetch full history once; filtering and loader groups stay local.
     void (async () => {
       try {
         const merged = new Map<string, ModrinthVersion>();
@@ -178,10 +201,18 @@ export function ProjectDetailPage<K extends ModrinthHit>({
           offset = result.nextOffset;
         }
         if (request !== generation.current) return;
+        if (required) merged.set(required.id, required);
         setVersions([...merged.values()]);
         setReadyToken(request);
       } catch (error: unknown) {
-        if (request === generation.current) setListError(errorText(error));
+        if (request === generation.current) {
+          setListError(errorText(error));
+          // An unavailable history must not hide the already resolved exact file.
+          if (required) {
+            setVersions([required]);
+            setReadyToken(request);
+          }
+        }
       } finally {
         if (request === generation.current) setLoading(false);
       }
@@ -189,7 +220,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
     return () => {
       generation.current++;
     };
-  }, [hit, adapter, nonce]);
+  }, [hit, adapter.fetchVersions, nonce, dependencyContext]);
   useLayoutEffect(() => {
     if (pendingVersion) {
       nameInput.current?.focus();
@@ -207,16 +238,19 @@ export function ProjectDetailPage<K extends ModrinthHit>({
   );
   const groups = useMemo(
     () =>
-      buildVersionGroups({
-        versions,
-        kind,
-        projectLoaders: hit.loaders,
-        filter,
-        groupedByDrop: filterState.groupedByDrop,
-        foldOld: filterState.foldOld,
-        instanceVersion: instance.mcVersion,
-        instanceLoader: instance.loader,
-      }),
+      prioritizeDependencyVersion(
+        buildVersionGroups({
+          versions,
+          kind,
+          projectLoaders: hit.loaders,
+          filter,
+          groupedByDrop: filterState.groupedByDrop,
+          foldOld: filterState.foldOld,
+          instanceVersion: instance.mcVersion,
+          instanceLoader: instance.loader,
+        }),
+        dependencyContext?.requiredVersion?.id
+      ),
     [
       versions,
       kind,
@@ -225,6 +259,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
       filterState,
       instance.mcVersion,
       instance.loader,
+      dependencyContext,
     ]
   );
 
@@ -243,23 +278,25 @@ export function ProjectDetailPage<K extends ModrinthHit>({
     const supported =
       trimmedVersion !== "" &&
       versions.some((version) => version.gameVersions.includes(trimmedVersion));
-    const nextFilter = defaultFilterFor(
-      filterState,
-      instance.mcVersion,
-      supported
-    );
+    const requiredId = dependencyContext?.requiredVersion?.id;
+    const nextFilter = requiredId
+      ? ALL_FILTER
+      : defaultFilterFor(filterState, instance.mcVersion, supported);
     const applyFilter = firstInit || !userFilter.current;
     if (applyFilter) setFilter(nextFilter);
-    const initialGroups = buildVersionGroups({
-      versions,
-      kind,
-      projectLoaders: hit.loaders,
-      filter: applyFilter ? nextFilter : filter,
-      groupedByDrop: filterState.groupedByDrop,
-      foldOld: filterState.foldOld,
-      instanceVersion: instance.mcVersion,
-      instanceLoader: instance.loader,
-    });
+    const initialGroups = prioritizeDependencyVersion(
+      buildVersionGroups({
+        versions,
+        kind,
+        projectLoaders: hit.loaders,
+        filter: applyFilter ? nextFilter : filter,
+        groupedByDrop: filterState.groupedByDrop,
+        foldOld: filterState.foldOld,
+        instanceVersion: instance.mcVersion,
+        instanceLoader: instance.loader,
+      }),
+      requiredId
+    );
     if (firstInit) {
       const remembered = groupMemory?.read(projectId);
       const open = remembered
@@ -274,18 +311,30 @@ export function ProjectDetailPage<K extends ModrinthHit>({
               .map((group) => group.key)
           );
       if (initialGroups.length === 1) open.add(initialGroups[0].key);
+      for (const group of initialGroups) {
+        if (group.items.some((item) => item.id === requiredId))
+          open.add(group.key);
+      }
       setOpenGroups(open);
       groupMemory?.write(projectId, open);
     } else {
       const next = new Set(openGroups);
       for (const group of initialGroups) {
-        if (group.selected) next.add(group.key);
+        if (
+          group.selected ||
+          group.items.some((item) => item.id === requiredId)
+        )
+          next.add(group.key);
       }
       setOpenGroups(next);
       groupMemory?.write(projectId, next);
     }
     // 依赖刻意只含就绪令牌与实例身份：实例信息晚到时补默认筛选，不覆盖用户手动选择。
   }, [loading, readyToken, instanceKey]);
+
+  useLayoutEffect(() => {
+    if (!loading && readyToken !== 0) onReady?.();
+  }, [loading, readyToken, onReady]);
 
   // 同组只要出现重名，就整组回退，避免同一列表混用两种命名规则。
   const displayNames = useMemo(() => {
@@ -390,7 +439,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
           iconLeft={<IconChevronDown className="pd-back__icon" />}
           onClick={onBack}
         >
-          返回检索
+          {backLabel}
         </Button>
       </div>
       <section className="pd-card" aria-label="项目信息">
@@ -432,6 +481,21 @@ export function ProjectDetailPage<K extends ModrinthHit>({
           </p>
         ) : null}
       </section>
+      {dependencyContext ? (
+        <aside className="pd-dependency-context" aria-label="前置版本要求">
+          <p>
+            {dependencyContext.parentTitle} ·{" "}
+            {dependencyContext.parentVersion.versionNumber}
+            {dependencyContext.requiredVersion
+              ? ` 要求此项目的 ${
+                  dependencyContext.requiredVersion.versionNumber ||
+                  dependencyContext.requiredVersion.name
+                } 版本。`
+              : " 需要此项目，但未指定前置版本，请核对游戏版本与加载器后选择文件。"}
+          </p>
+          <p>不会自动安装前置；下载仍使用正常的另存为入口。</p>
+        </aside>
+      ) : null}
       <section className="pd-downloads" aria-label="版本下载">
         {filterState.pills.length >= 2 ? (
           <div className="pd-pills" role="group" aria-label="版本筛选">
@@ -542,6 +606,12 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                           <button
                             type="button"
                             className="pd-row"
+                            data-required={
+                              version.id ===
+                                dependencyContext?.requiredVersion?.id ||
+                              undefined
+                            }
+                            data-version-id={version.id}
                             disabled={
                               (!pack && !instance.dir) || Boolean(installingId)
                             }
@@ -582,6 +652,10 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                                 </span>
                               ) : null}
                             </span>
+                            {version.id ===
+                            dependencyContext?.requiredVersion?.id ? (
+                              <span className="pd-row__required">上级指定</span>
+                            ) : null}
                             <span className="pd-row__status">
                               {installingId === version.id ? (
                                 "正在创建任务"
@@ -593,6 +667,12 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                             </span>
                           </button>
                         </Tooltip>
+                        <RequiredDependencies
+                          project={hit}
+                          version={version}
+                          resolve={adapter.resolveDependency}
+                          onOpen={onOpenDependency}
+                        />
                       </LazyRow>
                     );
                   })}

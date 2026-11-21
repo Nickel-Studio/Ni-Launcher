@@ -11,8 +11,11 @@ import {
   describeInstancesError,
   ensureDefaultInstance,
   fetchDefaultInstanceDir,
+  instanceRootIdentity,
   loadRegistry,
+  orderInstanceRoots,
   renameInstanceRoot,
+  resolveInstanceRoot,
   saveRegistry,
   scanInstances,
   type InstanceEntry,
@@ -49,7 +52,7 @@ function normalizeDir(dir: string): string {
 /**
  * 实例根目录注册表。
  *
- * 关键不变量（与需求冻结语义一致）：**激活目录 = `game.json` 的 `gameDir`**，
+ * 关键不变量：**激活目录 = `game.json` 的 `gameDir`**，
  * 注册表里的 `active` 只是它的镜像；两边任何不一致都在这里被纠正。
  */
 export function useInstanceRegistry(): UseInstanceRegistry {
@@ -71,30 +74,26 @@ export function useInstanceRegistry(): UseInstanceRegistry {
 
     async function bootstrap(): Promise<void> {
       if (!isTauri()) throw new Error("未连接到启动器后端");
-
       const game = await loadGameSettings();
       const defaultInstanceDir = await fetchDefaultInstanceDir().catch(
         () => ""
       );
       let registry = await loadRegistry();
-
-      // 需求：启动器在自己自身所在的位置新建 .minecraft 并设为实例目录。
-      // 首屏注册表为空时，由后端创建并注册它。
       if (registry.roots.length === 0) {
         const created = await ensureDefaultInstance();
         registry = await loadRegistry();
         if (!registry.active && created) registry.active = created;
       }
-
-      const nextRoots = [...registry.roots];
-      // game.json 的 gameDir 是单一真相；它为空时才采信注册表的镜像值。
-      let nextActive =
-        normalizeDir(game.gameDir) || registry.active || nextRoots[0] || "";
-      // 激活目录必须出现在列表里，否则侧栏无法高亮 / 移除它。
+      let nextRoots = [...registry.roots];
+      let nextActive = resolveInstanceRoot(
+        nextRoots,
+        normalizeDir(game.gameDir) || registry.active || nextRoots[0] || ""
+      );
       if (nextActive && !nextRoots.includes(nextActive))
-        nextRoots.unshift(nextActive);
-      if (!nextActive && nextRoots.length > 0) nextActive = nextRoots[0];
-
+        nextRoots.push(nextActive);
+      nextRoots = orderInstanceRoots(nextRoots, defaultInstanceDir);
+      nextActive =
+        resolveInstanceRoot(nextRoots, nextActive) || nextRoots[0] || "";
       if (nextActive && normalizeDir(game.gameDir) !== nextActive) {
         const saved = await saveGameSettings({ ...game, gameDir: nextActive });
         if (!saved.persisted) {
@@ -113,11 +112,10 @@ export function useInstanceRegistry(): UseInstanceRegistry {
           active: nextActive,
         });
       }
-
       if (cancelled) return;
       setRoots(nextRoots);
       setLabels(registry.labels);
-      setDefaultDir(defaultInstanceDir);
+      setDefaultDir(resolveInstanceRoot(nextRoots, defaultInstanceDir));
       setActive(nextActive);
     }
 
@@ -135,32 +133,50 @@ export function useInstanceRegistry(): UseInstanceRegistry {
   }, [nonce]);
 
   /** 改写「激活目录」：先写 game.json（单一真相），再同步注册表镜像。 */
-  const writeActive = useCallback(async (dir: string): Promise<string[]> => {
-    const target = normalizeDir(dir);
-    if (!target) throw new Error("实例目录不能为空");
-
-    const game = await loadGameSettings();
-    const saved = await saveGameSettings({ ...game, gameDir: target });
-    if (!saved.persisted)
-      throw new Error("无法写入游戏设置（game.json），激活未生效");
-
-    const registry = await loadRegistry();
-    const nextRoots = registry.roots.includes(target)
-      ? registry.roots
-      : [target, ...registry.roots];
-    await saveRegistry({ ...registry, roots: nextRoots, active: target });
-    return nextRoots;
-  }, []);
+  const writeActive = useCallback(
+    async (dir: string): Promise<{ roots: string[]; active: string }> => {
+      const requested = normalizeDir(dir);
+      if (!requested) throw new Error("实例目录不能为空");
+      let target = resolveInstanceRoot(roots, requested);
+      const game = await loadGameSettings();
+      const saved = await saveGameSettings({ ...game, gameDir: target });
+      if (!saved.persisted)
+        throw new Error("无法写入游戏设置（game.json），激活未生效");
+      // Re-read after every settings write so concurrent additions are retained.
+      let registry = await loadRegistry();
+      let nextActive = resolveInstanceRoot(registry.roots, target);
+      while (nextActive !== target) {
+        const currentGame = await loadGameSettings();
+        const aligned = await saveGameSettings({
+          ...currentGame,
+          gameDir: nextActive,
+        });
+        if (!aligned.persisted)
+          throw new Error("无法写入游戏设置（game.json），激活未生效");
+        target = nextActive;
+        registry = await loadRegistry();
+        nextActive = resolveInstanceRoot(registry.roots, target);
+      }
+      const nextRoots = orderInstanceRoots(
+        registry.roots.includes(nextActive)
+          ? registry.roots
+          : [...registry.roots, nextActive],
+        defaultDir
+      );
+      await saveRegistry({ ...registry, roots: nextRoots, active: nextActive });
+      return { roots: nextRoots, active: nextActive };
+    },
+    [roots, defaultDir]
+  );
 
   const activate = useCallback(
     async (dir: string) => {
       setBusy(true);
       setError("");
       try {
-        const target = normalizeDir(dir);
-        const nextRoots = await writeActive(target);
-        setRoots(nextRoots);
-        setActive(target);
+        const next = await writeActive(dir);
+        setRoots(next.roots);
+        setActive(next.active);
       } catch (err) {
         setError(describeInstancesError(err));
         throw err;
@@ -177,10 +193,9 @@ export function useInstanceRegistry(): UseInstanceRegistry {
       setError("");
       try {
         // 已在列表中的目录不重复添加，直接切为激活目录。
-        const target = normalizeDir(dir);
-        const nextRoots = await writeActive(target);
-        setRoots(nextRoots);
-        setActive(target);
+        const next = await writeActive(dir);
+        setRoots(next.roots);
+        setActive(next.active);
       } catch (err) {
         setError(describeInstancesError(err));
         throw err;
@@ -214,11 +229,23 @@ export function useInstanceRegistry(): UseInstanceRegistry {
       try {
         const target = normalizeDir(dir);
         const registry = await loadRegistry();
-        const nextRoots = registry.roots.filter((item) => item !== target);
+        const nextRoots = orderInstanceRoots(
+          registry.roots.filter(
+            (item) =>
+              instanceRootIdentity(item) !== instanceRootIdentity(target)
+          ),
+          defaultDir
+        );
+        const currentActive = resolveInstanceRoot(
+          registry.roots,
+          active || registry.active
+        );
         const nextActive =
-          registry.active === target
+          instanceRootIdentity(currentActive) === instanceRootIdentity(target)
             ? nextRoots[0] ?? ""
-            : registry.active || nextRoots[0] || "";
+            : resolveInstanceRoot(nextRoots, currentActive) ||
+              nextRoots[0] ||
+              "";
         await saveRegistry({
           ...registry,
           roots: nextRoots,
@@ -237,11 +264,18 @@ export function useInstanceRegistry(): UseInstanceRegistry {
 
         // 启动实例不能指向已被移除的目录，否则会出现「目标目录已不在列表中却仍是启动实例」。
         const launch = getLaunchInstance();
-        if (launch && normalizeDir(launch.root) === target)
+        if (
+          launch &&
+          instanceRootIdentity(launch.root) === instanceRootIdentity(target)
+        )
           setLaunchInstance(null);
         // 版本焦点同理：目录已移除时焦点失效，一并清空避免版本设置页读到悬空值。
         const focus = getVersionFocus();
-        if (focus && normalizeDir(focus.root) === target) setVersionFocus(null);
+        if (
+          focus &&
+          instanceRootIdentity(focus.root) === instanceRootIdentity(target)
+        )
+          setVersionFocus(null);
 
         setRoots(nextRoots);
         setActive(nextActive);
@@ -252,13 +286,13 @@ export function useInstanceRegistry(): UseInstanceRegistry {
         setBusy(false);
       }
     },
-    [active]
+    [active, defaultDir]
   );
 
   return {
     roots,
     labels,
-    defaultDir,
+    defaultDir: resolveInstanceRoot(roots, defaultDir),
     active,
     loading,
     busy,
@@ -291,9 +325,9 @@ export function useInstanceScan(dir: string): UseInstanceScan {
   const reload = useCallback(() => setNonce((value) => value + 1), []);
 
   useEffect(() => {
-    window.addEventListener("nowhere:instances-changed", reload);
+    window.addEventListener("nickel:instances-changed", reload);
     return () =>
-      window.removeEventListener("nowhere:instances-changed", reload);
+      window.removeEventListener("nickel:instances-changed", reload);
   }, [reload]);
 
   useEffect(() => {

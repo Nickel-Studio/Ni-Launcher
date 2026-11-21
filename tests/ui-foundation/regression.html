@@ -202,7 +202,6 @@
           backgroundBlur: 0,
           backgroundOpacity: 0.5,
           privacyMode: false,
-          downloadSource: "official",
           versionListSource: "official_auto",
           fileDownloadSource: "official_auto",
           communityApiSource: "official_auto",
@@ -224,17 +223,17 @@
           email: "fixture@example.com",
         };
         const instance = {
-          root: "C:/NoWheRE-fixture/.minecraft",
+          root: "C:/Nickel-fixture/.minecraft",
           versionId: "1.21.4",
           displayName: "1.21.4",
           loader: "vanilla",
           icon: "grass",
         };
-        localStorage.setItem("nowhere.settings", JSON.stringify(settings));
-        localStorage.setItem("nowhere.accounts", JSON.stringify([account]));
-        localStorage.setItem("nowhere.accounts.active", account.id);
-        localStorage.setItem("nowhere.instance.launch", JSON.stringify(instance));
-        localStorage.setItem("nowhere.home.autoAccountType", "1");
+        localStorage.setItem("nickel.settings", JSON.stringify(settings));
+        localStorage.setItem("nickel.accounts", JSON.stringify([account]));
+        localStorage.setItem("nickel.accounts.active", account.id);
+        localStorage.setItem("nickel.instance.launch", JSON.stringify(instance));
+        localStorage.setItem("nickel.home.autoAccountType", "1");
         document.documentElement.dataset.theme = "dark";
         document.documentElement.dataset.accent = "mono";
         document.documentElement.dataset.regression = "running";

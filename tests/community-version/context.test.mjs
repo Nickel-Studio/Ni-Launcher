@@ -20,7 +20,8 @@ const server = await createServer({
   root: process.cwd(),
   appType: "custom",
   logLevel: "silent",
-  server: { middlewareMode: true, hmr: false },
+  // Static SSR tests do not need to watch build caches or report directories.
+  server: { middlewareMode: true, hmr: false, watch: null },
 });
 after(async () => {
   await server.close();

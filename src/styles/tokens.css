@@ -173,7 +173,6 @@
   --glass-card: rgba(26, 29, 30, 0.66);
   --glass-chrome: rgba(12, 13, 14, 0.55);
 
-  --sparkle: rgba(255, 255, 255, 0.85);
   --target-close: #e81123;
 }
 
@@ -223,14 +222,11 @@
   --glass-card: rgba(255, 255, 255, 0.7);
   --glass-chrome: rgba(255, 255, 255, 0.62);
 
-  --sparkle: rgba(20, 23, 26, 0.65);
   --target-close: #e81123;
 }
 
 /* ============================================================================
-   颜色主题（color theme / accent）— 本项目说的「主题」就是它，不是明暗模式。
-   一组克制的信号色，只用于选中 / 主操作 / 焦点环 / 小圆点。
-   已冻结契约：类型名仍是 Accent，取值集合只是新增 mono（黑与白）并置顶默认。
+   Color themes preserve neutral reading surfaces; artwork uses separate ink.
    ========================================================================== */
 /* mono（黑与白）：高对比无彩色 —— 用最亮 / 最暗的中性色充当信号色，
    让选中态、主操作与焦点环彻底去饱和。允许极淡的 0/1 二进制纹样做装饰层
@@ -288,6 +284,60 @@
   --accent-ring: rgba(234, 111, 139, 0.38);
 }
 
+:root[data-accent="nickel"] {
+  --accent: #8dbcae;
+  --accent-strong: #98c3b6;
+  --accent-fg: #000000;
+  --accent-soft: rgba(141, 188, 174, 0.14);
+  --accent-ring: rgba(141, 188, 174, 0.4);
+}
+:root[data-accent="copper"] {
+  --accent: #e4a27c;
+  --accent-strong: #e7ab89;
+  --accent-fg: #000000;
+  --accent-soft: rgba(228, 162, 124, 0.14);
+  --accent-ring: rgba(228, 162, 124, 0.4);
+}
+:root[data-accent="abyss"] {
+  --accent: #75acd1;
+  --accent-strong: #83b4d6;
+  --accent-fg: #000000;
+  --accent-soft: rgba(117, 172, 209, 0.14);
+  --accent-ring: rgba(117, 172, 209, 0.4);
+}
+:root[data-accent="paper"] {
+  --accent: #e3c48d;
+  --accent-strong: #e6ca98;
+  --accent-fg: #000000;
+  --accent-soft: rgba(227, 196, 141, 0.14);
+  --accent-ring: rgba(227, 196, 141, 0.4);
+}
+:root[data-accent="fortyTwo"] {
+  --accent: #459c93;
+  --accent-strong: #58a69e;
+  --accent-fg: #000000;
+  --accent-soft: rgba(69, 156, 147, 0.14);
+  --accent-ring: rgba(69, 156, 147, 0.4);
+}
+:root[data-accent="custom"] {
+  --accent: #449c93;
+  --accent-strong: #57a69e;
+  --accent-fg: #000000;
+  --accent-soft: rgba(68, 156, 147, 0.14);
+  --accent-ring: rgba(68, 156, 147, 0.4);
+}
+:root[data-accent="fortyTwo"],
+:root[data-accent="custom"] {
+  --t-accent: 0ms;
+}
+:root {
+  --accent-text: var(--accent);
+  --theme-ink: var(--accent);
+  --theme-chrome-bg: var(--chrome-bg);
+  --theme-chrome-text: var(--text);
+  --theme-decoration-opacity: 0.35;
+}
+
 /* 注册为颜色值，使渐变、SVG 与阴影中的颜色主题也能逐帧插值。 */
 @property --accent {
   syntax: "<color>";
@@ -315,7 +365,7 @@
   initial-value: transparent;
 }
 
-/* ---- Semantic aliases + teammate-facing aliases -------------------------- */
+/* ---- Shared semantic aliases for component text, shape and motion -------- */
 :root {
   /* text / accent aliases */
   --text-muted: var(--text-dim);

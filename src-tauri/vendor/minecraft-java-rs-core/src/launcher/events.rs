@@ -1,3 +1,10 @@
+/// Origin of a process pipe; boundaries and EOF are independent per stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessStream {
+    Stdout,
+    Stderr,
+}
+
 /// All observable events emitted during a launch session.
 ///
 /// Replaces the Node.js EventEmitter pattern. Callers receive a
@@ -37,8 +44,18 @@ pub enum LaunchEvent {
     /// All game files have been downloaded and verified.
     GameDownloadFinished,
 
-    /// A line of stdout/stderr from the running Minecraft process.
+    /// A complete launcher-generated status line, not a fragment of process output.
     Data(String),
+
+    /// Raw process output. Consumers must retain per-stream redaction state.
+    ProcessOutput {
+        stream: ProcessStream,
+        line: String,
+        discarded: bool,
+    },
+
+    /// Ordered after the last output from this pipe, including its final partial line.
+    OutputClosed { stream: ProcessStream, failed: bool },
 
     /// The Minecraft process has exited. Carries the exit code.
     Close(i32),

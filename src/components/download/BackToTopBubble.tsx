@@ -14,7 +14,7 @@ function isScrollable(node: HTMLElement): boolean {
 /**
  * 找到最近的「可纵向滚动祖先」。
  *
- * 为什么向上找而不是写死 `.nw-content`：本项目所有页面都渲染在滚动容器内，
+ * 为什么向上找而不是写死 `.ni-content`：本项目所有页面都渲染在滚动容器内，
  * 但容器类名属于外壳模块；按祖先链探测可以让本组件在任何容器里都直接可用，
  * 找不到时回退到窗口滚动。
  */
@@ -49,7 +49,7 @@ export interface BackToTopBubbleProps {
 /**
  * 「回到顶部」气泡浮窗（可复用）。
  *
- * 冻结红线：只有图标、没有文字；页面滚动超过阈值后出现在右下角，
+ * 图标型按钮不占正文空间；页面滚动超过阈值后出现在右下角，
  * 点击平滑滚回顶部（`prefers-reduced-motion` 下改为瞬时跳转）。
  */
 export function BackToTopBubble({

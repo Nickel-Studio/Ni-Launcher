@@ -637,7 +637,7 @@ mod tests {
     #[test]
     fn missing_download_target_uses_nearest_existing_ancestor_without_reserving() {
         let root =
-            std::env::temp_dir().join(format!("nowhere-task-target-{}", store::random_token()));
+            std::env::temp_dir().join(format!("nickel-task-target-{}", store::random_token()));
         std::fs::create_dir_all(&root).unwrap();
         let suffix = Path::new("pending").join("mods").join("resource.jar");
         let target = root.join(&suffix);
@@ -662,13 +662,13 @@ mod tests {
         let mut context = tauri::generate_context!();
         context.config_mut().app.windows.clear();
         context.config_mut().identifier =
-            format!("com.youtu.nowhere.tasklocktest.{}", store::random_token());
+            format!("studio.nickel.launcher.tasklocktest.{}", store::random_token());
         let app = tauri::Builder::default()
             .any_thread()
             .build(context)
             .unwrap();
         let root =
-            std::env::temp_dir().join(format!("nowhere-task-running-{}", store::random_token()));
+            std::env::temp_dir().join(format!("nickel-task-running-{}", store::random_token()));
         let game = root.join("game");
         let other = root.join("other");
         std::fs::create_dir_all(&game).unwrap();
@@ -857,7 +857,7 @@ mod tests {
         use std::os::windows::fs::OpenOptionsExt;
         for cancelled in [false, true] {
             let root = std::env::temp_dir().join(format!(
-                "nowhere-cleanup-terminal-{}",
+                "nickel-cleanup-terminal-{}",
                 store::random_token()
             ));
             let reserved =

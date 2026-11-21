@@ -1,6 +1,6 @@
 /* 左下角消息条：紧凑小条贴左边，按消息类型给左侧信号色。
    左缘与窗口边缘齐平，只保留底部间距，因此这里 left 固定为 0。 */
-.nw-toast-host {
+.ni-toast-host {
   position: fixed;
   left: 0;
   bottom: var(--gutter);
@@ -12,7 +12,7 @@
   pointer-events: none;
 }
 
-.nw-toast {
+.ni-toast {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -25,26 +25,26 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-snug);
   box-shadow: inset 3px 0 0 var(--accent), var(--shadow-2);
-  animation: nw-toast-in var(--t-slow) var(--ease-out) both;
+  animation: ni-toast-in var(--t-slow) var(--ease-out) both;
   transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
 }
 
-.nw-toast[data-tone="success"] {
+.ni-toast[data-tone="success"] {
   background: var(--success-soft);
   box-shadow: inset 3px 0 0 var(--success), var(--shadow-2);
 }
 
-.nw-toast[data-tone="error"] {
+.ni-toast[data-tone="error"] {
   background: var(--danger-soft);
   box-shadow: inset 3px 0 0 var(--danger), var(--shadow-2);
 }
 
-.nw-toast[data-leaving="true"] {
+.ni-toast[data-leaving="true"] {
   opacity: 0;
   transform: translateX(calc(var(--space-6) * -1));
 }
 
-.nw-toast__icon {
+.ni-toast__icon {
   display: inline-grid;
   flex: 0 0 auto;
   place-items: center;
@@ -55,26 +55,26 @@
   top: var(--icon-optical-shift);
 }
 
-.nw-toast[data-tone="success"] .nw-toast__icon {
+.ni-toast[data-tone="success"] .ni-toast__icon {
   color: var(--success);
 }
 
-.nw-toast[data-tone="error"] .nw-toast__icon {
+.ni-toast[data-tone="error"] .ni-toast__icon {
   color: var(--danger);
 }
 
-.nw-toast__icon svg {
+.ni-toast__icon svg {
   display: block;
   width: 14px;
   height: 14px;
 }
 
-.nw-toast__text {
+.ni-toast__text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-@keyframes nw-toast-in {
+@keyframes ni-toast-in {
   from {
     opacity: 0;
     transform: translateX(calc(var(--space-8) * -1 - var(--space-6)));
@@ -86,7 +86,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nw-toast {
+  .ni-toast {
     animation: none;
     transition: none;
   }

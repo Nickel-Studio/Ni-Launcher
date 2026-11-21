@@ -53,8 +53,7 @@ type RootDialog =
  * 空状态 / 错误状态块。
  *
  * 与资源中心的 `.rs-notice` 是同一视觉语言、各自实现：版本页不应反向依赖资源中心
- * 模块。若要真正共用，应先把这个状态块提升到 `src/components/ui` —— 那是对 ui
- * 基元包的跨所有权改动，已记录在交付报告中。
+ * 模块；跨页共用时应将状态块放入 `src/components/ui`。
  */
 function StateNotice({
   icon,
@@ -75,7 +74,7 @@ function StateNotice({
       <div className="vs-notice__title">{title}</div>
       <p className="vs-notice__hint">{hint}</p>
       {detail ? (
-        <div className="vs-notice__detail nw-mono">{detail}</div>
+        <div className="vs-notice__detail ni-mono">{detail}</div>
       ) : null}
       {actions ? <div className="vs-notice__actions">{actions}</div> : null}
     </div>
@@ -88,7 +87,7 @@ function StateNotice({
  * 布局：左侧管理多个 `.minecraft` 根目录（新增 / 移除 / 激活），右侧展示该目录
  * 下的版本实例卡片。
  *
- * 激活语义（冻结）：选中某个根目录 = 把它写进 `game.json` 的 `gameDir`，并让
+ * 激活语义：选中某个根目录 = 把它写进 `game.json` 的 `gameDir`，并让
  * 实例注册表的 `active` 指向它；`gameDir` 是唯一真相。
  * 整张卡片是唯一选择入口：点选后写入启动实例并返回首页。收藏、删除与设置
  * 是卡片右下角的独立图标按钮，删除仍走二次确认。
@@ -394,7 +393,7 @@ export default function Versions() {
             >
               返回
             </Button>
-            <div className="nw-eyebrow">Instances</div>
+            <div className="ni-eyebrow">Instances</div>
             <h1 className="vs-head__title">实例与版本</h1>
             <div className="vs-head__meta">
               <IconFolder aria-hidden />

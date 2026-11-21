@@ -47,18 +47,6 @@ const LOADER_ARTIFACT_METADATA_KEYS = new Set([
   "optifabricMatches",
   "fabricApiMatches",
 ]);
-const DIRECT_OPTIFINE_METADATA_KEYS = [
-  "minecraftId",
-  "fileName",
-  "fileType",
-  "patch",
-  "isPreview",
-  "forgeRequirement",
-  "route",
-  "optifineVersion",
-  "optifabricMatches",
-  "fabricApiMatches",
-] as const;
 const ARTIFACT_METADATA_MAX_STRING = 256;
 
 type RawPayload = Record<string, unknown>;
@@ -143,8 +131,7 @@ function safeMetadataValue(value: unknown): LoaderRawMetadataValue | undefined {
 }
 
 function normalizeLoaderArtifact(
-  raw: unknown,
-  allowDirectMetadata = false
+  raw: unknown
 ): LoaderArtifactMetadata | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const entry = raw as RawPayload;
@@ -160,19 +147,11 @@ function normalizeLoaderArtifact(
     !Array.isArray(artifact.rawMetadata)
       ? (artifact.rawMetadata as RawPayload)
       : null;
-  const hasDirectMetadata =
-    allowDirectMetadata &&
-    DIRECT_OPTIFINE_METADATA_KEYS.some((key) => key in entry);
-  if (!metadata && !hasDirectMetadata) return undefined;
-  // 兼容旧后端把 OptiFine 字段放在行顶层的形状；artifact 内的新字段优先。
-  const source: RawPayload = {
-    ...(hasDirectMetadata ? entry : {}),
-    ...(metadata ?? {}),
-  };
+  if (!metadata) return undefined;
   const safe: Record<string, LoaderRawMetadataValue> = {};
   for (const key of LOADER_ARTIFACT_METADATA_KEYS) {
-    if (!(key in source)) continue;
-    const value = safeMetadataValue(source[key]);
+    if (!(key in metadata)) continue;
+    const value = safeMetadataValue(metadata[key]);
     if (value !== undefined) safe[key] = value;
   }
   return Object.keys(safe).length > 0 ? { rawMetadata: safe } : undefined;
@@ -180,8 +159,7 @@ function normalizeLoaderArtifact(
 
 function normalizeLoaderOptions(
   raw: unknown,
-  supportsInstall = true,
-  allowDirectMetadata = false
+  supportsInstall = true
 ): LoaderOption[] {
   if (!Array.isArray(raw)) return [];
   const options: LoaderOption[] = [];
@@ -194,7 +172,7 @@ function normalizeLoaderOptions(
     if (!version || seen.has(version)) continue;
     seen.add(version);
     const downloadUrl = safeWebUrl(entry.downloadUrl);
-    const artifact = normalizeLoaderArtifact(entry, allowDirectMetadata);
+    const artifact = normalizeLoaderArtifact(entry);
     options.push({
       version,
       label: pickString(entry, ["label"]) || version,
@@ -280,7 +258,7 @@ export function normalizeLoaders(raw: unknown): LoaderCatalog {
     neoforge: normalizeLoaderOptions(record.neoforge),
     fabric: normalizeLoaderOptions(record.fabric),
     liteloader: normalizeLoaderOptions(record.liteloader, false),
-    optifine: normalizeLoaderOptions(record.optifine, false, true),
+    optifine: normalizeLoaderOptions(record.optifine, false),
     notes: {},
     providers: {
       forge: emptyProvider(),
@@ -343,16 +321,16 @@ export function normalizeLoaders(raw: unknown): LoaderCatalog {
 export function parseInstallEvent(raw: unknown): InstallEvent | null {
   if (!raw || typeof raw !== "object") return null;
   const payload = raw as RawPayload;
-  const kind = pickString(payload, ["type", "kind", "event"]).toLowerCase();
-  const taskId = pickString(payload, ["taskId", "task_id", "task"]);
+  const kind = pickString(payload, ["type"]);
+  const taskId = pickString(payload, ["taskId"]);
   if (!taskId) return null;
   switch (kind) {
     case "stage":
       return {
         kind: "stage",
         taskId,
-        stage: pickString(payload, ["stage", "label", "message"]),
-        detail: pickString(payload, ["detail", "text", "name"]),
+        stage: pickString(payload, ["stage"]),
+        detail: pickString(payload, ["detail"]),
       };
     case "progress": {
       const percent = pickNumber(payload, ["percent"]);
@@ -367,7 +345,7 @@ export function parseInstallEvent(raw: unknown): InstallEvent | null {
       };
     }
     case "file": {
-      const name = pickString(payload, ["name", "file"]);
+      const name = pickString(payload, ["name"]);
       if (!name) return null;
       return {
         kind: "file",
@@ -408,7 +386,7 @@ export function parseInstallEvent(raw: unknown): InstallEvent | null {
         kind: "error",
         taskId,
         message:
-          pickString(payload, ["message", "error", "reason"]) || "下载失败",
+          pickString(payload, ["message"]) || "下载失败",
       };
     default:
       return null;

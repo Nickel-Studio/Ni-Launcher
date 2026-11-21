@@ -5,7 +5,7 @@
 
 .home {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-6);
   width: 100%;
   box-sizing: border-box;
@@ -27,11 +27,17 @@
 .home .home__card {
   flex: 0 0 400px;
   width: 400px;
+  min-width: 0;
   max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  min-height: 420px;
+  min-height: max(
+    420px,
+    calc(
+      100dvh - var(--titlebar-h) - var(--gutter, 0px) * 2 - var(--space-2) * 2
+    )
+  );
   border-color: transparent; /* 去线框化：以柔和投影替代描边 */
   box-shadow: var(--shadow-3);
   animation: home-card-in var(--dur-slow) var(--ease-out) both;
@@ -91,12 +97,12 @@
   flex: 1 1 0;
 }
 
-.home__manage.nw-iconbtn {
+.home__manage.ni-iconbtn {
   background: color-mix(in srgb, var(--text) 6%, transparent);
   color: var(--text-dim);
 }
 
-.home__manage.nw-iconbtn:hover:not(:disabled) {
+.home__manage.ni-iconbtn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--text) 11%, transparent);
   color: var(--text);
 }
@@ -170,7 +176,7 @@
   min-width: 0;
 }
 
-.home__avatar-action.nw-iconbtn {
+.home__avatar-action.ni-iconbtn {
   width: 28px;
   height: 28px;
   font-size: 16px;
@@ -190,7 +196,7 @@
   transform: none;
 }
 
-.home__avatar-action.nw-iconbtn:hover:not(:disabled) {
+.home__avatar-action.ni-iconbtn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--text) 10%, transparent);
   color: var(--text);
 }
@@ -233,7 +239,7 @@
   gap: var(--space-3);
 }
 
-.home__ghost.nw-btn {
+.home__ghost.ni-btn {
   height: 40px;
   justify-content: center;
   border-radius: var(--radius-pill);
@@ -242,7 +248,7 @@
   border-color: transparent;
 }
 
-.home .home__ghost.nw-btn:hover:not(:disabled) {
+.home .home__ghost.ni-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--text) 11%, transparent);
   color: var(--text);
 }
@@ -250,7 +256,7 @@
 /* ---------- 响应式 ---------- */
 @media (max-width: 760px) {
   .home {
-    align-items: flex-start;
+    align-items: stretch;
   }
   .home .home__card {
     flex: 1 1 auto;
@@ -269,7 +275,65 @@
     animation: none;
   }
   .home__swap,
-  .home__avatar-action.nw-iconbtn {
+  .home__avatar-action.ni-iconbtn {
     transition: none;
+  }
+}
+
+/* Both presentations share one measured box; only opacity and translation change. */
+.home__presentation {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 248px;
+}
+.home__account {
+  width: 100%;
+  opacity: 1;
+  transform: none;
+  transition: opacity 170ms var(--ease-out), transform 220ms var(--ease-out);
+}
+.home__presentation[data-starting="true"] .home__account {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+.home__launch-progress {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out),
+    visibility 260ms;
+}
+.home__presentation[data-starting="true"] .home__launch-progress {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition-delay: 90ms, 90ms, 0ms;
+}
+.home__launch-progress .launch-panel {
+  padding: 0;
+  width: 100%;
+  animation: none;
+}
+.home__launch-progress .ni-loading {
+  padding: 0;
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home__account,
+  .home__launch-progress {
+    transition: none;
+    transform: none !important;
   }
 }

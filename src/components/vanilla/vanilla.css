@@ -19,12 +19,12 @@
   padding-bottom: 0;
 }
 
-/* 与 nw-pager--fill 一致：跨过 AnimatedSwap 的 auto 高度，恢复页头以下居中。 */
-.nw-pager--fill .van-page--loading {
+/* 与 ni-pager--fill 一致：跨过 AnimatedSwap 的 auto 高度，恢复页头以下居中。 */
+.ni-pager--fill .van-page--loading {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
 }
 
-.van-page--loading > .nw-loading {
+.van-page--loading > .ni-loading {
   flex: 1 1 auto;
 }
 

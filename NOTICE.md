@@ -30,7 +30,7 @@ React、React DOM、scheduler、Tauri 与其他锁定依赖保留各自的版权
 
 ### PCL 与 PCL-CE
 
-- [PCL](https://github.com/Meloong-Git/PCL) 由龙腾猫跃开发，采用《PCL 分发有限许可》及《PCL 存储库合理使用指南》。随附 [上游原文](LICENSES/PCL-LICENCE.txt)，正式分发条款见其原文中的链接。
+- [PCL](https://github.com/Meloong-Git/PCL) 的标识用于项目识别；其《PCL 分发有限许可》及《PCL 存储库合理使用指南》见[上游条款](https://github.com/Meloong-Git/PCL/blob/main/LICENCE)。
 - [PCL-CE](https://github.com/PCL-Community/PCL-CE) 保留 `Copyright 2025 PCL Community`。[上游根许可](https://github.com/PCL-Community/PCL-CE/blob/dev/LICENSE)规定 `Plain Craft Launcher 2/` 使用该目录的[自定义条款](https://github.com/PCL-Community/PCL-CE/blob/dev/Plain%20Craft%20Launcher%202/LICENCE)，其余目录使用 Apache-2.0；不能按贡献作者或来源替换这一目录边界。
 - 两个项目的标识用于「特别鸣谢」中的项目识别。相关权利属于对应作者，不纳入 Nickel 原创代码或原创美术授权。
 
@@ -46,12 +46,12 @@ React、React DOM、scheduler、Tauri 与其他锁定依赖保留各自的版权
 
 ## 字体
 
-`src/assets/fonts/nowhere-line.woff2` 是 Noto Sans SC 的字符子集，保留 Adobe 的版权声明与 SIL Open Font License 1.1。详见 [字体说明](src/assets/fonts/NOTICE.md) 与 [完整 OFL](LICENSES/OFL-1.1.txt)。品牌横幅中的文字已栅格化，字体文件不随横幅分发。
+`src/assets/fonts/nickel-line.woff2` 是 Noto Sans SC 的字符子集，保留 Adobe 的版权声明与 SIL Open Font License 1.1。详见 [字体说明](src/assets/fonts/NOTICE.md) 与 [完整 OFL](LICENSES/OFL-1.1.txt)。品牌横幅中的文字已栅格化，字体文件不随横幅分发。
 
 ## 游戏纹理与外部标识
 
 - `src/assets/blocks/` 的实例、加载器与发布状态图标，以及 `src/assets/mod-placeholder.png`，保留既有功能资源和分配映射。游戏纹理与对应项目标识的权利属于各自权利人；品牌更名不替换这些功能图标，也不将其重新授予 Nickel 原创美术许可。
 - `src/assets/skins/` 的 Steve / Alex 头像裁自 Minecraft 默认皮肤，相关纹理归 Mojang / Microsoft；见 [Minecraft Usage Guidelines](https://www.minecraft.net/en-us/usage-guidelines)。
-- `src/assets/credits/` 的 GitHub 头像属于对应用户或组织；LinuxDO 标识取自其官方公布的图形。来源列表见 [鸣谢图标](src/assets/credits/README.md)。
+- `src/assets/credits/` 的 GitHub 头像属于对应用户或组织。来源列表见 [鸣谢图标](src/assets/credits/README.md)。
 
 以上第三方资源不列入 Nickel 原创美术授权范围。

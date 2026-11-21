@@ -26,7 +26,7 @@ impl TestDir {
             .unwrap_or(0);
         let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "nowhere-diagnostics-{tag}-{}-{stamp}-{id}",
+            "nickel-diagnostics-{tag}-{}-{stamp}-{id}",
             std::process::id()
         ));
         fs::create_dir_all(&path).unwrap_or_else(|error| {
@@ -327,6 +327,64 @@ fn redaction_is_idempotent() {
 }
 
 #[test]
+fn quoted_redaction_respects_delimiters_escapes_and_line_boundaries() {
+    for (raw, expected) in [
+        (
+            r#"{"password":"probe'secret-tail"}"#,
+            r#"{"password":"***"}"#,
+        ),
+        (
+            r#"password='probe"secret-tail' next=visible"#,
+            "password='***' next=visible",
+        ),
+        (
+            r#"{"clientSecret":"probe\"secret-tail"}"#,
+            r#"{"clientSecret":"***"}"#,
+        ),
+        (
+            r#"{"apiKey":"probe\\secret-tail","next":"visible"}"#,
+            r#"{"apiKey":"***","next":"visible"}"#,
+        ),
+        (r#"password='probe\'secret-tail'"#, "password='***'"),
+        (
+            r#"password=`probe'"secret-tail` next=visible"#,
+            "password=`***` next=visible",
+        ),
+        (
+            "password=\"probe'secret-tail\nnext=visible",
+            "[日志含无法安全脱敏的敏感字段]",
+        ),
+        (
+            r#"{"password":"probe\\","next":"visible"}"#,
+            r#"{"password":"***","next":"visible"}"#,
+        ),
+    ] {
+        let redacted = redact_sensitive_text(raw);
+        assert_eq!(redacted, expected, "{raw}");
+        assert_eq!(redact_sensitive_text(&redacted), redacted);
+    }
+}
+
+#[test]
+fn windows_user_paths_keep_plain_and_json_separator_widths() {
+    for user in ["PrivateReviewName", "测试用户", "User Name"] {
+        for prefix in [r"C:\Users\", r"C:\Documents and Settings\", r"c:\uSeRs\"] {
+            let raw = format!(r"{prefix}{user}\game");
+            let expected = format!(r"{prefix}***\game");
+            assert_eq!(redact_sensitive_text(&raw), expected);
+            let json = serde_json::json!({ "path": raw, "other": "visible" }).to_string();
+            let expected_json = serde_json::json!({ "path": expected, "other": "visible" });
+            let redacted = redact_sensitive_text(&json);
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&redacted).unwrap(),
+                expected_json
+            );
+            assert_eq!(redact_sensitive_text(&redacted), redacted);
+        }
+    }
+}
+
+#[test]
 fn log_store_append_and_read_tail_redacts() {
     let dir = TestDir::new("log-tail");
     let store = LaunchLogStore::new(dir.path());
@@ -401,7 +459,7 @@ fn log_store_reads_latest_crash_report_and_paths() {
     let paths = resolve_log_paths(dir.path());
     assert_eq!(
         paths.log_file,
-        dir.path().join("logs").join("nowhere-launcher.log")
+        dir.path().join("logs").join("nickel-launcher.log")
     );
     assert_eq!(
         paths.latest_game_log,

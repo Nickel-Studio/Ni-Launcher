@@ -24,22 +24,22 @@ export function InlineNotice({
   return (
     <div
       {...rest}
-      className={["nw-inline-notice", className].filter(Boolean).join(" ")}
+      className={["ni-inline-notice", className].filter(Boolean).join(" ")}
       data-tone={tone}
     >
       {icon != null ? (
-        <span className="nw-inline-notice__icon" aria-hidden="true">
+        <span className="ni-inline-notice__icon" aria-hidden="true">
           {icon}
         </span>
       ) : null}
-      <div className="nw-inline-notice__content">
+      <div className="ni-inline-notice__content">
         {title != null ? (
-          <strong className="nw-inline-notice__title">{title}</strong>
+          <strong className="ni-inline-notice__title">{title}</strong>
         ) : null}
-        <div className="nw-inline-notice__message">{children}</div>
+        <div className="ni-inline-notice__message">{children}</div>
       </div>
       {action != null ? (
-        <div className="nw-inline-notice__action">{action}</div>
+        <div className="ni-inline-notice__action">{action}</div>
       ) : null}
     </div>
   );

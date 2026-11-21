@@ -174,35 +174,6 @@ async fn choose_installer(
     }))
 }
 
-/// 旧入口仍等待文件保存完成并返回路径，不能将其返回值改为 taskId。
-#[tauri::command]
-pub async fn save_loader_installer(
-    app: AppHandle,
-    mc_version: String,
-    loader: String,
-    loader_version: String,
-    source: Option<String>,
-) -> Result<Option<String>, String> {
-    let network = network_settings::snapshot();
-    let context = network.transfer(source.as_deref())?;
-    let Some(choice) =
-        choose_installer(&app, &mc_version, &loader, &loader_version, &network).await?
-    else {
-        return Ok(None);
-    };
-    download_installer_to(
-        choice.target,
-        choice.candidates,
-        choice.loader,
-        choice.hashes,
-        choice.expected_size,
-        &context,
-        None,
-    )
-    .await
-    .map(Some)
-}
-
 fn schedule_installer(
     app: &AppHandle,
     choice: Option<InstallerChoice>,
@@ -467,7 +438,7 @@ mod tests {
         let mut context = tauri::generate_context!();
         context.config_mut().app.windows.clear();
         context.config_mut().identifier = format!(
-            "com.youtu.nowhere.installertest.{}",
+            "studio.nickel.launcher.installertest.{}",
             crate::store::random_token()
         );
         let app = tauri::Builder::default()
@@ -497,7 +468,7 @@ mod tests {
         assert!(events.lock().unwrap().is_empty());
         assert!(crate::app_tasks::app_tasks_snapshot().is_empty());
         let root = std::env::temp_dir().join(format!(
-            "nowhere-managed-installer-{}",
+            "nickel-managed-installer-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -673,7 +644,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_candidates_preserve_existing_target() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-invalid-installer-{}",
+            "nickel-invalid-installer-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -698,7 +669,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_mirror_falls_back_to_valid_official_candidate() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-valid-installer-{}",
+            "nickel-valid-installer-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -721,7 +692,7 @@ mod tests {
     #[tokio::test]
     async fn cancelled_installer_never_replaces_existing_target() {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-cancelled-installer-{}",
+            "nickel-cancelled-installer-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -753,13 +724,12 @@ mod tests {
         use minecraft_java_rs_core::loader::forge::ForgeMC;
         use minecraft_java_rs_core::net::client::build_client;
         let root = std::env::temp_dir().join(format!(
-            "nowhere-forge-cache-{}",
+            "nickel-forge-cache-{}",
             crate::store::random_token()
         ));
         let params = crate::ResolvedLaunch {
             version: "1.20.1".into(),
             username: "Player".into(),
-            memory_min: "1G".into(),
             memory_max: "2G".into(),
             game_dir: None,
         };
@@ -789,18 +759,17 @@ mod tests {
         use minecraft_java_rs_core::utils::archive::{ArchiveQueryResult, get_file_from_archive};
         use std::{path::PathBuf, time::Duration};
         let root = std::env::temp_dir().join(format!(
-            "nowhere-installers-{}",
+            "nickel-installers-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::channel(128);
         let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
         let result = tokio::time::timeout(Duration::from_secs(INSTALLER_TIMEOUT_SECS), async {
-            let catalog = loader_catalog::build_catalog("1.20.1", Some("official")).await;
+            let catalog = loader_catalog::build_catalog("1.20.1", Some("official_first")).await;
             let params = crate::ResolvedLaunch {
                 version: "1.20.1".into(),
                 username: "Player".into(),
-                memory_min: "1G".into(),
                 memory_max: "2G".into(),
                 game_dir: None,
             };

@@ -22,19 +22,28 @@ import {
   LoadingCard,
   Switch,
 } from "../../ui";
+import { InlineNotice } from "../../ui/InlineNotice";
 import { describeError } from "./api";
 import {
+  BUNDLE_RESOURCES_NOTICE,
   DEFAULT_PACK_VERSION,
   EXPORT_FORMATS,
   EXPORT_GROUPS,
+  defaultExportSelection,
+  exportCheckState,
+  exportDisplayGroup,
   inspectPackExport,
   loadExportConfig,
+  matchExportSelection,
   saveExportConfig,
+  serializeExportSelection,
   startPackExport,
+  toggleExportSelection,
   type ExportConfig,
   type ExportFile,
   type ExportFormat,
   type ExportPreview,
+  type ExportSelection,
 } from "./export";
 import "./ExportPanel.css";
 
@@ -46,10 +55,12 @@ interface ExportPanelProps {
 interface FileGroupProps {
   label: string;
   files: ExportFile[];
-  selected: ReadonlySet<string>;
+  selected: ExportSelection;
   disabled: boolean;
   onToggle: (paths: string[], checked: boolean) => void;
 }
+
+const GROUP_PAGE_SIZE = 48;
 
 function FileGroup({
   label,
@@ -59,9 +70,23 @@ function FileGroup({
   onToggle,
 }: FileGroupProps) {
   const [open, setOpen] = useState(false);
-  const checkedCount = files.filter((file) => selected.has(file.path)).length;
-  const checked = checkedCount === files.length;
+  const [page, setPage] = useState(0);
+  const listId = useId();
+  const states = files.map((file) => exportCheckState(file, selected));
+  const checkedCount = states.filter((state) => state !== "unchecked").length;
+  const checked = states.every((state) => state === "checked");
   const mixed = checkedCount > 0 && !checked;
+  const expandable = files.length > 1;
+  const lastPage = Math.max(0, Math.ceil(files.length / GROUP_PAGE_SIZE) - 1);
+  const currentPage = Math.min(page, lastPage);
+  // Collapsed groups never create their item elements; expanded groups are bounded.
+  const visible =
+    open && expandable
+      ? files.slice(
+          currentPage * GROUP_PAGE_SIZE,
+          (currentPage + 1) * GROUP_PAGE_SIZE
+        )
+      : [];
   return (
     <div className="vst-export__group">
       <div className="vst-export__group-head">
@@ -81,47 +106,95 @@ function FileGroup({
         >
           {checked ? <IconCheck /> : mixed ? <IconMinus /> : null}
         </button>
-        <button
-          type="button"
-          className="vst-export__group-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <span>
-            {label}
-            <span className="vst-export__count">
-              {checkedCount} / {files.length}
+        {expandable ? (
+          <button
+            type="button"
+            className="vst-export__group-toggle"
+            aria-expanded={open}
+            aria-controls={listId}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <span>
+              {label}
+              <span className="vst-export__count">
+                {checkedCount} / {files.length} 项
+              </span>
             </span>
-          </span>
-          <IconChevronDown
-            className={
-              open ? "vst-export__chevron is-open" : "vst-export__chevron"
-            }
-          />
-        </button>
+            <IconChevronDown
+              className={
+                open ? "vst-export__chevron is-open" : "vst-export__chevron"
+              }
+            />
+          </button>
+        ) : (
+          <div className="vst-export__group-summary">
+            <span>
+              {label}
+              <span className="vst-export__inline-name">
+                {files[0].displayName}
+              </span>
+            </span>
+            <span className="vst-export__size">
+              {files[0].kind === "directory"
+                ? "整体选择"
+                : formatBytes(files[0].sizeBytes ?? 0)}
+            </span>
+          </div>
+        )}
       </div>
-      <Collapse open={open}>
-        <ul className="vst-export__files">
-          {files.map((file) => (
-            <li key={file.path}>
-              <label className="vst-export__file">
-                <input
-                  type="checkbox"
-                  checked={selected.has(file.path)}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    onToggle([file.path], event.target.checked)
-                  }
-                />
-                <span className="vst-export__path">{file.path}</span>
-                <span className="vst-export__size">
-                  {formatBytes(file.sizeBytes)}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </Collapse>
+      {open && expandable ? (
+        <div id={listId}>
+          <ul className="vst-export__files">
+            {visible.map((file) => {
+              const state = exportCheckState(file, selected);
+              return (
+                <li key={file.path}>
+                  <button
+                    type="button"
+                    className="vst-export__file"
+                    role="checkbox"
+                    aria-label={`导出${file.displayName}`}
+                    aria-checked={state === "checked"}
+                    disabled={disabled}
+                    onClick={() => onToggle([file.path], state !== "checked")}
+                  >
+                    <span className="vst-export__item-check" aria-hidden="true">
+                      {state === "checked" ? <IconCheck /> : null}
+                    </span>
+                    <span className="vst-export__path">{file.displayName}</span>
+                    <span className="vst-export__size">
+                      {file.kind === "directory"
+                        ? "整个包 / 目录"
+                        : formatBytes(file.sizeBytes ?? 0)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {lastPage > 0 ? (
+            <div className="vst-export__pagination">
+              <Button
+                size="sm"
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                上一页
+              </Button>
+              <span>
+                {currentPage + 1} / {lastPage + 1}
+              </span>
+              <Button
+                size="sm"
+                disabled={currentPage === lastPage}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                下一页
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -136,7 +209,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
   const [format, setFormat] = useState<ExportFormat>("mrpack");
   const [includeLauncher, setIncludeLauncher] = useState(false);
   const [includePersonalization, setIncludePersonalization] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<ExportSelection>(() => new Set());
   const [bundleResources, setBundleResources] = useState(false);
   const [modrinthOnly, setModrinthOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -156,11 +229,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
       if (!mounted.current || current !== request.current) return;
       setPreview(result);
       setName(result.name || versionId);
-      setSelected(
-        new Set(
-          result.files.filter((file) => file.selected).map((file) => file.path)
-        )
-      );
+      setSelected(defaultExportSelection(result));
     } catch (err) {
       if (mounted.current && current === request.current)
         setError(describeError(err));
@@ -178,16 +247,23 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
     };
   }, [load]);
 
-  const grouped = useMemo(
-    () =>
-      EXPORT_GROUPS.map((group) => ({
-        ...group,
-        files: preview?.files.filter((file) => file.group === group.id) ?? [],
-      })).filter((group) => group.files.length > 0),
-    [preview]
+  const grouped = useMemo(() => {
+    const groups = EXPORT_GROUPS.map((group) => ({
+      ...group,
+      files: [] as ExportFile[],
+    }));
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    for (const file of preview?.files ?? [])
+      byId.get(exportDisplayGroup(file.group))?.files.push(file);
+    return groups.filter((group) => group.files.length > 0);
+  }, [preview]);
+  const selectedFiles = useMemo(
+    () => preview?.files.filter((file) => selected.has(file.path)) ?? [],
+    [preview, selected]
   );
-  const selectedFiles =
-    preview?.files.filter((file) => selected.has(file.path)) ?? [];
+  const unknownSize = selectedFiles.some(
+    (file) => file.sizeBytes === null
+  );
   const exportTask = center.tasks.find(
     (task) => task.task?.taskId === exportTaskId
   );
@@ -200,7 +276,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
   const config = (): ExportConfig => ({
     name,
     version,
-    files: selectedFiles.map((file) => file.path),
+    files: serializeExportSelection(selected),
     bundleResources,
     modrinthOnly,
     format,
@@ -209,14 +285,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
   });
 
   const toggle = (paths: string[], checked: boolean) =>
-    setSelected((previous) => {
-      const next = new Set(previous);
-      for (const path of paths) {
-        if (checked) next.add(path);
-        else next.delete(path);
-      }
-      return next;
-    });
+    setSelected((previous) => toggleExportSelection(previous, paths, checked));
 
   const run = async (action: "load" | "save" | "export" | "guide") => {
     if (disabled) return;
@@ -227,8 +296,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
       if (action === "load") {
         const loaded = await loadExportConfig();
         if (!loaded || !mounted.current || !preview) return;
-        const available = new Set(preview.files.map((file) => file.path));
-        const matched = loaded.files.filter((path) => available.has(path));
+        const matched = matchExportSelection(preview, loaded.files);
         setName(loaded.name);
         setVersion(loaded.version);
         setFormat(loaded.format);
@@ -236,12 +304,16 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
         setIncludePersonalization(loaded.includePersonalization);
         setBundleResources(loaded.bundleResources);
         setModrinthOnly(loaded.modrinthOnly);
-        setSelected(new Set(matched));
-        const missing = loaded.files.length - matched.length;
+        setSelected(matched.selection);
         setNotice(
-          missing
-            ? `已读取配置；当前实例缺少 ${missing} 个文件，请重新检查导出内容。`
-            : "已读取导出配置"
+          [
+            "已读取导出配置",
+            matched.missing
+              ? `当前实例缺少 ${matched.missing} 个选择项目，请重新检查。`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("；")
         );
       } else if (action === "save") {
         const path = await saveExportConfig(config());
@@ -375,8 +447,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
             </p>
             {preview.instanceSettingsOmitted.length > 0 ? (
               <p className="vst-export__hint">
-                未迁移：
-                {preview.instanceSettingsOmitted.join("、")}
+                未迁移：{preview.instanceSettingsOmitted.join("、")}
                 （包含本机路径或凭据）。
               </p>
             ) : null}
@@ -387,7 +458,8 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
             ) : null}
             {!includeLauncher ? (
               <p className="vst-export__hint">
-                将本平台 {PRODUCT_NAME} 发行版放到解压目录再运行；macOS 放置完整 .app。
+                将本平台 {PRODUCT_NAME} 发行版放到解压目录再运行；macOS 放置完整
+                .app。
               </p>
             ) : null}
           </div>
@@ -405,6 +477,9 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
               : ""}
           </span>
         </p>
+        <p className="vst-export__hint vst-export__selection-hint">
+          包与存档按整体选择，配置、地图和截图按目录选择；目录大小及完整文件校验在导出时计算。个人数据默认不选。
+        </p>
         {grouped.map((group) => (
           <FileGroup
             key={group.id}
@@ -415,11 +490,11 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
             onToggle={toggle}
           />
         ))}
-        <Collapse open={preview.files.length === 0} staggered>
+        {preview.files.length === 0 ? (
           <p className="vst-export__notice">
             当前实例没有可附加的内容，将导出游戏与加载器依赖信息。
           </p>
-        </Collapse>
+        ) : null}
       </section>
       <section
         className="vst-export__card vst-export__advanced"
@@ -427,12 +502,22 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
       >
         <h3>高级选项</h3>
         <Switch
-          label="打包资源文件"
+          label="导出资源文件"
           description="将所选 Mod、资源包和光影文件写入整合包；游戏本体与 Java 在导入时补全"
           checked={bundleResources}
           disabled={disabled}
           onChange={setBundleResources}
         />
+        {bundleResources ? (
+          <InlineNotice
+            tone="warning"
+            title="注意"
+            role="status"
+            className="vst-export__resource-warning"
+          >
+            {BUNDLE_RESOURCES_NOTICE}
+          </InlineNotice>
+        ) : null}
         <Switch
           label="仅从 Modrinth 下载资源文件"
           checked={modrinthOnly}
@@ -465,7 +550,7 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
           </Button>
         </div>
       </section>
-      <Collapse open={exportTask !== null} staggered>
+      <Collapse open={exportTask !== undefined} staggered>
         {exportTask ? (
           <div className="vst-export__notice" role="status">
             {exportTask.status === "done"
@@ -483,10 +568,15 @@ export function ExportPanel({ root, versionId }: ExportPanelProps) {
       </Collapse>
       <div className="vst-export__footer">
         <span>
-          {selectedFiles.length} 个游戏内容文件 ·{" "}
-          {formatBytes(
-            selectedFiles.reduce((total, file) => total + file.sizeBytes, 0)
-          )}{" "}
+          已选 {selectedFiles.length} 项 ·{" "}
+          {unknownSize
+            ? "完整大小在导出时计算"
+            : formatBytes(
+                selectedFiles.reduce(
+                  (total, file) => total + (file.sizeBytes ?? 0),
+                  0
+                )
+              )}{" "}
           · {portable ? ".zip" : ".mrpack"}
         </span>
         <Button

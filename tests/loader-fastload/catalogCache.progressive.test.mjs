@@ -43,7 +43,8 @@ const server = await createServer({
   root: process.cwd(),
   appType: "custom",
   logLevel: "silent",
-  server: { middlewareMode: true, hmr: false },
+  // Static SSR tests do not need to watch build caches or report directories.
+  server: { middlewareMode: true, hmr: false, watch: null },
   plugins: [
     {
       name: "catalog-test-mocks",
@@ -261,31 +262,6 @@ test("OptiFine artifact metadata keeps forge requirement forms without URLs", ()
     assert.equal(artifact.rawMetadata.nested, undefined);
   }
 
-  const direct = normalizeLoaders({
-    optifine: [
-      {
-        version: "1.20.1_HD_U_I6",
-        label: "OptiFine 1.20.1 HD U I6",
-        minecraftId: "1.20.1",
-        forgeRequirement: "47.2.0",
-        optifabricMatches: false,
-        fabricApiMatches: true,
-        installerUrl: "https://example.invalid/installer.jar",
-      },
-    ],
-  });
-  assert.deepEqual(direct.optifine[0].artifact?.rawMetadata, {
-    version: "1.20.1_HD_U_I6",
-    minecraftId: "1.20.1",
-    forgeRequirement: "47.2.0",
-    optifabricMatches: false,
-    fabricApiMatches: true,
-  });
-
-  const legacy = normalizeLoaders({
-    optifine: [{ version: "legacy", label: "legacy" }],
-  });
-  assert.equal(legacy.optifine[0].artifact, undefined);
 });
 
 test("local coarse screening avoids inapplicable provider requests", async () => {

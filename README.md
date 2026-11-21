@@ -25,8 +25,6 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 
 ## 一枚简标，任意世界
 
->ps：Nickel Studio正在早期开发阶段，目前仍然正在等待微软批准Ni的Minecraft API访问权限，在此之前正版登录不可用，Curseforge搜索将在微软批准AppID后一并随其上线。
-
 **Nickel**，也叫 **Ni** 或 **镍**。从第一次启动原版，到整理一个装满 Mod 的实例，Ni 把账号、游戏、资源和下载收进同一个安静的界面。
 
 黑与白是它的底色，重点留给正在做的事。
@@ -72,7 +70,7 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 - **Mod 管理**：搜索、启用、禁用、检查更新和整理重复条目。
 - **整合包分享**：导出标准 `.mrpack`，或带启动器、外观及实例设置的便携 ZIP。
 - **启动排障**：查看退出原因，打开游戏日志；按版本选择 Java 和内存管理方式。
-- **细节工具**：「更多」里的使用指南、前沿计划、今日人品、内存优化和游戏日志清理。
+- **细节工具**：「更多」里的使用指南、前沿计划和游戏日志清理。
 
 ## 1.0.1 修复
 
@@ -129,15 +127,12 @@ pnpm tauri dev
 
 ## 特别鸣谢
 
-**龙腾猫跃**
-
 感谢以下项目与社区带来的灵感、交流和支持：
 
 |                                                                                             | 项目与社区                                               |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | <img src="src/assets/credits/pcl.png" width="36" height="36" alt="PCL">                     | [PCL 启动器](https://github.com/Meloong-Git/PCL)         |
 | <img src="src/assets/credits/pcl-ce.png" width="36" height="36" alt="PCL-CE">               | [PCL-CE 启动器](https://github.com/PCL-Community/PCL-CE) |
-| <img src="src/assets/credits/linuxdo.png" width="36" height="36" alt="LinuxDO">             | [LinuxDO 社区](https://linux.do)                         |
 | <img src="src/assets/credits/shittimchests.png" width="36" height="36" alt="ShittimChests"> | [ShittimChests](https://github.com/ShittimChests)        |
 
 ## 许可与资源

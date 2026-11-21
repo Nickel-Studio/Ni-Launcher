@@ -1,4 +1,4 @@
-.nw-collapse {
+.ni-collapse {
   height: 0;
   overflow: hidden;
   opacity: 0;
@@ -6,12 +6,12 @@
   transition: height var(--t-disclosure) var(--ease),
     opacity var(--t) var(--ease), visibility 0s var(--t-disclosure);
 }
-.nw-collapse[data-open="true"] {
+.ni-collapse[data-open="true"] {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
 }
-.nw-collapse__content {
+.ni-collapse__content {
   display: flow-root;
   min-height: 0;
 }
@@ -19,18 +19,18 @@
 /* 错峰伸缩：信息与卡片高度分两拍。
    展开：高度立即开始，内容延迟 110ms 淡入（先撑高再出现）；
    收起：内容立即淡出，高度延迟 140ms 收拢（信息先退场、卡片后收缩）。 */
-.nw-collapse--staggered {
+.ni-collapse--staggered {
   transition: height var(--t-disclosure) var(--ease) 140ms,
     opacity var(--t) var(--ease), visibility 0s var(--t-disclosure);
 }
-.nw-collapse--staggered[data-open="true"] {
+.ni-collapse--staggered[data-open="true"] {
   transition: height var(--t-disclosure) var(--ease) 0s,
     opacity var(--t) var(--ease) 110ms, visibility 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nw-collapse,
-  .nw-collapse--staggered {
+  .ni-collapse,
+  .ni-collapse--staggered {
     transition: none;
   }
 }

@@ -29,7 +29,7 @@ import {
 /** 版本详情（`version_detail` 的返回结构）。 */
 export interface VersionDetail {
   id: string;
-  /** 实际 Minecraft 版本；命名实例从 nowhereProfile/inheritsFrom 归纳。 */
+  /** 实际 Minecraft 版本；命名实例从 nickelProfile/inheritsFrom 归纳。 */
   minecraftVersion: string | null;
   dir: string;
   type: string;
@@ -64,7 +64,6 @@ export interface VersionSettings extends Record<string, unknown> {
   memoryMode: MemoryMode;
   memoryMb: number | null;
   memoryManagement: GameSettings["memoryManagement"] | null;
-  memoryOptimize: boolean | null;
   highPerformanceGpu: boolean | null;
   offlineSkin: GameSettings["offlineSkin"] | null;
   offlineSkinName: string | null;
@@ -78,7 +77,6 @@ export interface VersionSettings extends Record<string, unknown> {
   jvmArgs: string | null;
   gameArgs: string | null;
   preLaunchCommand: string | null;
-  noModUpdates: boolean | null;
   disableModUpdates: boolean | null;
   disableFileCheck: boolean | null;
   disableWrapper: boolean | null;
@@ -184,7 +182,6 @@ export const DEFAULT_SETTINGS: VersionSettings = {
   memoryMode: "global",
   memoryMb: null,
   memoryManagement: null,
-  memoryOptimize: null,
   highPerformanceGpu: null,
   offlineSkin: null,
   offlineSkinName: null,
@@ -198,7 +195,6 @@ export const DEFAULT_SETTINGS: VersionSettings = {
   jvmArgs: null,
   gameArgs: null,
   preLaunchCommand: null,
-  noModUpdates: null,
   disableModUpdates: null,
   disableFileCheck: null,
   disableWrapper: null,
@@ -289,8 +285,6 @@ const MEMORY_MANAGEMENT_VALUES = [
   "g1",
   "g1-tuned",
   "custom",
-  "serial",
-  "parallel",
 ] as const;
 const OFFLINE_SKIN_VALUES = [
   "random",
@@ -351,11 +345,7 @@ export function normalizeSettings(raw: unknown): VersionSettings {
     windowHeight: settingNumber(record.windowHeight),
     memoryMode,
     memoryMb,
-    memoryManagement:
-      record.memoryManagement === "default"
-        ? "custom"
-        : oneOf(record.memoryManagement, MEMORY_MANAGEMENT_VALUES),
-    memoryOptimize: settingBoolean(record.memoryOptimize),
+    memoryManagement: oneOf(record.memoryManagement, MEMORY_MANAGEMENT_VALUES),
     highPerformanceGpu: settingBoolean(record.highPerformanceGpu),
     offlineSkin: oneOf(record.offlineSkin, OFFLINE_SKIN_VALUES),
     offlineSkinName: settingString(record.offlineSkinName),
@@ -371,15 +361,10 @@ export function normalizeSettings(raw: unknown): VersionSettings {
     authServer: settingString(record.authServer),
     serverRegistration: settingString(record.serverRegistration),
     serverName: settingString(record.serverName),
-    serverAddress: settingString(
-      record.serverAddress === undefined
-        ? record.autoJoinServer
-        : record.serverAddress
-    ),
+    serverAddress: settingString(record.serverAddress),
     jvmArgs: settingString(record.jvmArgs),
     gameArgs: settingString(record.gameArgs),
     preLaunchCommand: settingString(record.preLaunchCommand),
-    noModUpdates: settingBoolean(record.noModUpdates),
     disableModUpdates: settingBoolean(record.disableModUpdates),
     disableFileCheck: settingBoolean(record.disableFileCheck),
     disableWrapper: settingBoolean(record.disableWrapper),
@@ -451,7 +436,7 @@ export async function renameVersion(
 ): Promise<void> {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   await invoke("version_rename", { dir, versionId, ...patch });
-  window.dispatchEvent(new Event("nowhere:instances-changed"));
+  window.dispatchEvent(new Event("nickel:instances-changed"));
   const selected = getLaunchInstance();
   if (selected?.root === dir && selected.versionId === versionId) {
     setLaunchInstance({ ...selected, displayName: patch.name || versionId });
@@ -471,7 +456,7 @@ export async function deleteVersion(
   const focus = getVersionFocus();
   if (focus?.root === dir && focus.versionId === versionId)
     setVersionFocus(null);
-  window.dispatchEvent(new Event("nowhere:instances-changed"));
+  window.dispatchEvent(new Event("nickel:instances-changed"));
 }
 
 /** 补全文件使用统一队列；取消等待项返回 null，不产生失败提示。 */

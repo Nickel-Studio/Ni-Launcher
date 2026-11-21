@@ -310,7 +310,7 @@
 /* ============================================================
    账号形态分段：与顶栏导航完全相同的滑动胶囊
    几何（左移 / 宽度）由 src/lib/useSlidePill.ts 计算，
-   这里只负责外观，务必与 shell.css 的 .nw-navtab__pill / .nw-navtab
+   这里只负责外观，务必与 shell.css 的 .ni-navtab__pill / .ni-navtab
    保持同一套动效参数（--t + --ease-out）。
    ============================================================ */
 .acc-tabs {
@@ -453,7 +453,7 @@
   outline: none;
 }
 /* 两阶段切换：AnimatedSwap 的层内仍保持表单的纵向间距。 */
-.skin-login__stage .nw-swap__layer--in {
+.skin-login__stage .ni-swap__layer--in {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -640,12 +640,12 @@
    登录 Minecraft 弹窗（设备码）
    标题用颜色主题色 + 同色细线；局部类只作用于 .account-dialog。
    ============================================================ */
-.account-dialog .nw-modal__title {
+.account-dialog .ni-modal__title {
   color: var(--accent);
 }
 
 /* 标题下方的同色细线 */
-.account-dialog .nw-modal__title::after {
+.account-dialog .ni-modal__title::after {
   content: "";
   display: block;
   width: 100%;

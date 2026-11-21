@@ -12,6 +12,8 @@ import type {
   ModrinthSearchResult,
   ModrinthVersion,
   ModrinthVersionFile,
+  ProjectDependency,
+  ResolvedDependency,
 } from "./types";
 
 type RawPayload = Record<string, unknown>;
@@ -65,8 +67,6 @@ export function normalizeSearch(
       versions: pickStringArray(entry, "versions"),
       loaders: pickStringArray(entry, "loaders"),
       dateModified: pickString(entry, "dateModified"),
-      // CurseForge 后端在 hit 里附带数字项目 id（文件 / 安装链路必需）；
-      // Modrinth 没有该字段，落空串且不会被消费。
       projectId: pickString(entry, "projectId"),
       source,
     });
@@ -76,22 +76,20 @@ export function normalizeSearch(
   return { total: total > 0 ? total : hits.length, hits };
 }
 
-/**
- * 合并两源命中：slug 去重（跨源同名项目保留下载量高者），按 downloads 降序。
- * 分页模式（两源各取前 N）下 total 不可靠，由调用点自行决定是否展示。
- */
+/** 合并两源命中：按来源与稳定项目标识去重，跨源同名项目保留。 */
 export function mergeHits(
   primary: ModrinthHit[],
   secondary: ModrinthHit[]
 ): ModrinthHit[] {
-  const bySlug = new Map<string, ModrinthHit>();
+  const byProject = new Map<string, ModrinthHit>();
   for (const hit of [...primary, ...secondary]) {
-    const existing = bySlug.get(hit.slug);
+    const identity = `${hit.source}:${hit.projectId || hit.slug}`;
+    const existing = byProject.get(identity);
     if (!existing || hit.downloads > existing.downloads) {
-      bySlug.set(hit.slug, hit);
+      byProject.set(identity, hit);
     }
   }
-  return [...bySlug.values()].sort((a, b) => b.downloads - a.downloads);
+  return [...byProject.values()].sort((a, b) => b.downloads - a.downloads);
 }
 
 /** CF 命中守卫：安装链路要求数字项目 id（后端已保证存在，此处兜底脏数据）。 */
@@ -114,7 +112,42 @@ function normalizeFile(raw: unknown): ModrinthVersionFile | null {
   };
 }
 
-/** 归一化项目版本；结构无效时抛错，由界面提供重试入口。 */
+function dependencyId(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? String(value)
+    : "";
+}
+
+/** 两源只接受明确的必要关系；可选、不兼容和嵌入关系不参与检测。 */
+export function normalizeDependencies(raw: unknown): ProjectDependency[] {
+  const data = toData(raw);
+  if (!Array.isArray(data)) throw new Error("前置元数据格式无效，请重试。");
+  return data.flatMap((item): ProjectDependency[] => {
+    if (!item || typeof item !== "object") return [];
+    const entry = item as RawPayload;
+    const type = entry.dependencyType ?? entry.dependency_type;
+    const required =
+      entry.relationType === undefined
+        ? type === "required"
+        : entry.relationType === 3 &&
+          (type === undefined || type === "required");
+    if (!required) return [];
+    return [
+      {
+        dependencyType: "required",
+        projectId: dependencyId(
+          entry.projectId ?? entry.project_id ?? entry.modId
+        ),
+        versionId: dependencyId(entry.versionId ?? entry.version_id),
+        fileName:
+          pickString(entry, "fileName") || pickString(entry, "file_name"),
+      },
+    ];
+  });
+}
+
+/** 归一化项目版本；前置结构损坏只影响前置区，不能阻塞主版本列表。 */
 export function normalizeVersions(raw: unknown): ModrinthVersion[] {
   const data = toData(raw);
   if (!Array.isArray(data)) throw new Error("版本列表格式无效，请重试。");
@@ -127,6 +160,7 @@ export function normalizeVersions(raw: unknown): ModrinthVersion[] {
     const release = pickString(entry, "releaseType");
     versions.push({
       id,
+      projectId: pickString(entry, "projectId"),
       name: pickString(entry, "name") || pickString(entry, "versionNumber"),
       versionNumber: pickString(entry, "versionNumber"),
       loaders: pickStringArray(entry, "loaders"),
@@ -139,9 +173,31 @@ export function normalizeVersions(raw: unknown): ModrinthVersion[] {
       files: (Array.isArray(entry.files) ? entry.files : [])
         .map(normalizeFile)
         .filter((file): file is ModrinthVersionFile => file !== null),
+      dependencies: Array.isArray(entry.dependencies)
+        ? normalizeDependencies(entry.dependencies)
+        : undefined,
     });
   }
   return versions;
+}
+
+export function normalizeDependencyResolution(
+  raw: unknown,
+  source: HitSource
+): ResolvedDependency {
+  const data = toData(raw);
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw new Error("前置项目信息格式无效，请重试。");
+  const record = data as RawPayload;
+  const project = normalizeSearch({ hits: [record.project] }, source).hits[0];
+  if (!project?.projectId) throw new Error("前置项目缺少标识，请重试。");
+  const version =
+    record.version == null ? null : normalizeVersions([record.version])[0];
+  if (record.version != null && !version)
+    throw new Error("指定前置版本不可用，请重试。");
+  if (version?.projectId && version.projectId !== project.projectId)
+    throw new Error("指定前置版本不属于返回的项目，请重试。");
+  return { project, version: version ?? null };
 }
 
 export function normalizeVersionPage(

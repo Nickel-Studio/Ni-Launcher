@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
  *
  * 实现方式与 `src/lib/nav.ts` 一致（模块级 store + useSyncExternalStore）：
  * 任意组件调用 `useLaunchInstance()` 都能自动同步同一个值。
- * 持久化到 localStorage 的 `nowhere.instance.launch`；内容缺失 / JSON 损坏 /
+ * 持久化到 localStorage 的 `nickel.instance.launch`；内容缺失 / JSON 损坏 /
  * 存储不可用一律视为「未选择」（`null`），绝不抛错 —— 它只是一个启动偏好，
  * 任何情况下都不该让界面崩掉或白屏。
  */
@@ -22,7 +22,7 @@ export interface LaunchInstance {
   icon: string;
 }
 
-const STORAGE_KEY = "nowhere.instance.launch";
+const STORAGE_KEY = "nickel.instance.launch";
 
 const listeners = new Set<() => void>();
 
@@ -122,7 +122,7 @@ export function useLaunchInstance(): {
  * 从实例页点「版本设置」时写入（`setVersionFocus({ root, versionId })`），
  * 进入 `versionSettings` 独立页后由该页读取消费。实现方式与 `useLaunchInstance`
  * 完全一致（模块级 store + useSyncExternalStore + localStorage 持久化），
- * 键为 `nowhere.version.focus`；内容缺失 / JSON 损坏 / 存储不可用一律视为
+ * 键为 `nickel.version.focus`；内容缺失 / JSON 损坏 / 存储不可用一律视为
  * 「无焦点」（`null`），它只是一个查看偏好，任何情况下都不抛错、不白屏。
  */
 export interface VersionFocus {
@@ -132,7 +132,7 @@ export interface VersionFocus {
   versionId: string;
 }
 
-const FOCUS_STORAGE_KEY = "nowhere.version.focus";
+const FOCUS_STORAGE_KEY = "nickel.version.focus";
 
 const focusListeners = new Set<() => void>();
 

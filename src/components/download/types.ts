@@ -9,8 +9,7 @@
  */
 
 import type { SourcePolicy } from "../../lib/settings";
-/** source 的旧值仍作为兼容入口接受。 */
-export type DownloadSource = SourcePolicy | "official" | "bmclapi";
+export type DownloadSource = SourcePolicy;
 
 /** `list_remote_versions` 归一化后的单条版本。 */
 export interface RemoteVersion {
@@ -94,7 +93,7 @@ export interface LoaderOption {
   downloadUrl: string;
   changelogUrl: string;
   capability: LoaderCapability;
-  /** 兼容旧后端；仅保留白名单 rawMetadata，供共装兼容筛选读取。 */
+  /** 仅保留白名单 rawMetadata，供共装兼容筛选读取。 */
   artifact?: LoaderArtifactMetadata;
 }
 

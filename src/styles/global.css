@@ -41,7 +41,7 @@ body {
   text-rendering: optimizeLegibility;
   overflow: hidden;
   /* 页面根节点也参与圆角裁剪：窗口为 transparent + 无边框，这样即使有任何一层
-     铺满整窗，也不可能在 .nw-shell 的圆角外侧画出方块“补丁”。 */
+     铺满整窗，也不可能在 .ni-shell 的圆角外侧画出方块“补丁”。 */
   border-radius: var(--shell-radius);
   user-select: none;
   -webkit-user-select: none;
@@ -121,7 +121,7 @@ p {
 /* ============================================================================
    Window shell
    ========================================================================== */
-.nw-shell {
+.ni-shell {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -145,7 +145,7 @@ p {
 /* ============================================================================
    Background engine  (global, live — settings changes update it instantly)
    ========================================================================== */
-.nw-bg {
+.ni-bg {
   position: absolute;
   inset: 0;
   z-index: var(--z-bg);
@@ -155,7 +155,7 @@ p {
 }
 
 /* Neutral top sheen — no accent tint, no coloured mesh. */
-.nw-bg__mesh {
+.ni-bg__mesh {
   position: absolute;
   inset: 0;
   background: radial-gradient(
@@ -165,7 +165,7 @@ p {
   );
 }
 
-.nw-bg__image {
+.ni-bg__image {
   position: absolute;
   inset: -8%;
   background-position: center;
@@ -180,7 +180,7 @@ p {
 }
 
 /* Neutral (hue-free) scrim so foreground text stays legible over artwork. */
-.nw-bg__scrim {
+.ni-bg__scrim {
   position: absolute;
   inset: 0;
   opacity: var(--_bg-scrim, 0);
@@ -198,7 +198,7 @@ p {
   transition: opacity var(--t-slow) var(--ease);
 }
 
-.nw-bg__grain {
+.ni-bg__grain {
   position: absolute;
   inset: 0;
   opacity: 0.04;
@@ -211,7 +211,7 @@ p {
 /* 仅作为氛围层：不参与语义、不拦截指针。透明度压到几乎不可察觉，
    并只向右上角柔和衰减，避免出现「泛色背景 / 大面积光晕」的观感。
    亮色背景下它只是一点极轻微的提亮，不会抢主体。 */
-:root[data-accent="mono"] .nw-bg__mesh::after {
+:root[data-accent="mono"] .ni-bg__mesh::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -232,7 +232,7 @@ p {
    Body layout (titlebar / content) — content is inset by a safe gutter while
    the background layer stays full-bleed behind it.
    ========================================================================== */
-.nw-body {
+.ni-body {
   position: relative;
   z-index: var(--z-content);
   flex: 1 1 auto;
@@ -241,7 +241,7 @@ p {
   overflow: hidden;
 }
 
-.nw-content {
+.ni-content {
   flex: 1 1 auto;
   min-width: 0;
   overflow: auto;
@@ -250,7 +250,7 @@ p {
 }
 
 /* ---- Page entrance ------------------------------------------------------- */
-@keyframes nw-fade-up {
+@keyframes ni-fade-up {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -260,22 +260,22 @@ p {
     transform: none;
   }
 }
-.nw-page-enter {
-  animation: nw-fade-up var(--t-slow) var(--ease-out) both;
+.ni-page-enter {
+  animation: ni-fade-up var(--t-slow) var(--ease-out) both;
 }
 
-@keyframes nw-spin {
+@keyframes ni-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
 /* ---- Small utilities ----------------------------------------------------- */
-.nw-mono {
+.ni-mono {
   font-family: var(--font-mono);
   font-feature-settings: "tnum" 1;
 }
-.nw-eyebrow {
+.ni-eyebrow {
   font-family: var(--font-sans);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -283,7 +283,7 @@ p {
   text-transform: uppercase;
   color: var(--text-dim);
 }
-.nw-sr-only {
+.ni-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;

@@ -1,12 +1,10 @@
-//! 首次便携目录与旧配置选择；仅选择路径，不迁移、覆盖或删除旧数据。
+//! 选择 Nickel 配置根与便携目录；账号和密钥始终从同一完整配置根读取。
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 pub const GAME_DIRECTORY: &str = ".minecraft";
 pub const DATA_DIRECTORY: &str = "Nickel";
-pub const LEGACY_DATA_DIRECTORY: &str = "NoWheRE";
 const APP_IDENTIFIER: &str = "studio.nickel.launcher";
-const LEGACY_APP_IDENTIFIER: &str = "com.youtu.nowhere";
 const CONFIG_ENTRIES: &[&str] = &[
     "settings.json",
     "accounts.json",
@@ -60,7 +58,7 @@ pub fn executable_directory_for(app: &AppHandle) -> Result<PathBuf, String> {
 
 #[cfg(test)]
 fn is_product_identifier(identifier: &str) -> bool {
-    matches!(identifier, APP_IDENTIFIER | LEGACY_APP_IDENTIFIER)
+    identifier == APP_IDENTIFIER
 }
 
 pub fn portable_root(
@@ -88,24 +86,16 @@ fn has_configuration(directory: &Path) -> bool {
 
 fn select_configuration(
     app_config: &Path,
-    legacy_system: Option<&Path>,
     executable: &Path,
     configured: impl Fn(&Path) -> bool,
 ) -> PathBuf {
     let adjacent = executable.join(DATA_DIRECTORY);
-    let legacy_adjacent = executable.join(LEGACY_DATA_DIRECTORY);
-    // 只选一个完整根，accounts.json 与 credentials.key 始终来自同一目录。
-    [
-        Some(app_config),
-        Some(adjacent.as_path()),
-        legacy_system,
-        Some(legacy_adjacent.as_path()),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|directory| configured(directory))
-    .unwrap_or(&adjacent)
-    .to_path_buf()
+    // 不拼接多个根的内容，避免账号与加密密钥分离。
+    [app_config, adjacent.as_path()]
+        .into_iter()
+        .find(|directory| configured(directory))
+        .unwrap_or(&adjacent)
+        .to_path_buf()
 }
 
 fn ordinary_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -118,7 +108,6 @@ fn ordinary_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
         return if app.try_state::<TestExecutableRoot>().is_some() {
             Ok(select_configuration(
                 &fixture,
-                None,
                 &executable_directory_for(app)?,
                 has_configuration,
             ))
@@ -132,7 +121,6 @@ fn ordinary_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("无法获取配置目录：{e}"))?;
     Ok(select_configuration(
         &base.join(APP_IDENTIFIER),
-        Some(&base.join(LEGACY_APP_IDENTIFIER)),
         &executable_directory_for(app)?,
         has_configuration,
     ))
@@ -191,20 +179,6 @@ pub fn default_game_dir(app: &AppHandle) -> Result<PathBuf, String> {
     if has_game_data(&current_game) {
         return Ok(current_game);
     }
-    #[cfg(test)]
-    if !is_product_identifier(&app.config().identifier) {
-        return Ok(executable_directory_for(app)?.join(GAME_DIRECTORY));
-    }
-    // 旧实例与含绝对路径的缓存原位沿用；旧应用数据根从系统 data_dir 推导。
-    let legacy_game = app
-        .path()
-        .data_dir()
-        .map_err(|e| format!("无法获取旧游戏目录：{e}"))?
-        .join(LEGACY_APP_IDENTIFIER)
-        .join("minecraft");
-    if has_game_data(&legacy_game) {
-        return Ok(legacy_game);
-    }
     Ok(executable_directory_for(app)?.join(GAME_DIRECTORY))
 }
 
@@ -235,138 +209,60 @@ mod tests {
     fn configuration_priority_selects_one_complete_root() {
         let root = std::env::temp_dir().join("nickel-path-priority");
         let app_config = root.join(APP_IDENTIFIER);
-        let legacy = root.join(LEGACY_APP_IDENTIFIER);
         let adjacent = root.join(DATA_DIRECTORY);
-        let legacy_adjacent = root.join(LEGACY_DATA_DIRECTORY);
-        let candidates = [&app_config, &adjacent, &legacy, &legacy_adjacent];
-        for mask in 0..(1 << candidates.len()) {
-            let configured = |directory: &Path| {
-                candidates
-                    .iter()
-                    .enumerate()
-                    .any(|(index, path)| mask & (1 << index) != 0 && directory == path.as_path())
-            };
-            let expected = candidates
-                .iter()
-                .find(|path| configured(path))
-                .copied()
-                .unwrap_or(&adjacent);
-            assert_eq!(
-                select_configuration(&app_config, Some(&legacy), &root, configured),
-                *expected
-            );
+        let candidates = [&app_config, &adjacent];
+        for mask in 0..4 {
+            let configured = |directory: &Path| candidates.iter().enumerate()
+                .any(|(index, path)| mask & (1 << index) != 0 && directory == path.as_path());
+            let expected = candidates.iter().find(|path| configured(path)).copied().unwrap_or(&adjacent);
+            assert_eq!(select_configuration(&app_config, &root, configured), *expected);
         }
     }
 
     #[test]
-    fn existing_broken_configuration_key_and_caches_are_not_first_run() {
-        let root =
-            std::env::temp_dir().join(format!("nickel-paths-{}", crate::store::random_token()));
-        let legacy = root.join("legacy");
-        let app_config = root.join("new-system");
+    fn configuration_entries_preserve_the_selected_root() {
+        let root = std::env::temp_dir().join(format!("nickel-paths-{}", crate::store::random_token()));
+        let app_config = root.join(APP_IDENTIFIER);
         let executable = root.join("executable");
-        std::fs::create_dir_all(&legacy).unwrap();
-        assert_eq!(
-            select_configuration(&app_config, Some(&legacy), &executable, has_configuration),
-            executable.join(DATA_DIRECTORY)
-        );
+        std::fs::create_dir_all(&app_config).unwrap();
+        assert_eq!(select_configuration(&app_config, &executable, has_configuration), executable.join(DATA_DIRECTORY));
         for entry in CONFIG_ENTRIES {
-            let path = legacy.join(entry);
+            let path = app_config.join(entry);
             std::fs::write(&path, "broken-or-cached").unwrap();
-            assert_eq!(
-                select_configuration(&app_config, Some(&legacy), &executable, has_configuration),
-                legacy
-            );
+            assert_eq!(select_configuration(&app_config, &executable, has_configuration), app_config);
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken-or-cached");
-            assert!(!app_config.exists());
             assert!(!executable.exists());
             std::fs::remove_file(path).unwrap();
         }
-        std::fs::create_dir(legacy.join("agents")).unwrap();
-        assert!(has_configuration(&legacy));
+        std::fs::create_dir(app_config.join("agents")).unwrap();
+        assert!(has_configuration(&app_config));
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn legacy_download_cache_is_existing_configuration() {
-        let root = std::env::temp_dir().join(format!(
-            "nickel-legacy-download-cache-{}",
-            crate::store::random_token()
-        ));
+    fn system_cache_root_wins_over_adjacent_settings() {
+        let root = std::env::temp_dir().join(format!("nickel-path-cache-{}", crate::store::random_token()));
         let app_config = root.join(APP_IDENTIFIER);
-        let executable = root.join("executable");
-        let legacy_system = root.join(LEGACY_APP_IDENTIFIER);
-        let legacy_adjacent = executable.join(LEGACY_DATA_DIRECTORY);
-        for legacy in [&legacy_system, &legacy_adjacent] {
-            let downloads = legacy.join("cache/downloads");
-            std::fs::create_dir_all(&downloads).unwrap();
-            assert!(has_configuration(legacy));
-            assert_eq!(
-                select_configuration(
-                    &app_config,
-                    Some(&legacy_system),
-                    &executable,
-                    has_configuration
-                ),
-                *legacy
-            );
-            assert!(downloads.is_dir());
-            assert!(!app_config.exists());
-            assert!(!executable.join(DATA_DIRECTORY).exists());
-            std::fs::remove_dir_all(legacy).unwrap();
-        }
+        let adjacent = root.join(DATA_DIRECTORY);
+        std::fs::create_dir_all(app_config.join("cache/downloads")).unwrap();
+        std::fs::create_dir_all(&adjacent).unwrap();
+        std::fs::write(adjacent.join("settings.json"), "{}").unwrap();
+        assert_eq!(select_configuration(&app_config, &root, has_configuration), app_config);
+        assert!(!app_config.join("settings.json").exists());
+        assert_eq!(std::fs::read_to_string(adjacent.join("settings.json")).unwrap(), "{}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn higher_priority_cache_root_wins_over_lower_priority_json() {
-        let root = std::env::temp_dir().join(format!(
-            "nickel-cache-root-priority-{}",
-            crate::store::random_token()
-        ));
-        let app_config = root.join(APP_IDENTIFIER);
-        let executable = root.join("executable");
-        let adjacent = executable.join(DATA_DIRECTORY);
-        let legacy_system = root.join(LEGACY_APP_IDENTIFIER);
-        let legacy_adjacent = executable.join(LEGACY_DATA_DIRECTORY);
-        let candidates = [&app_config, &adjacent, &legacy_system, &legacy_adjacent];
-        for (index, higher) in candidates.iter().enumerate() {
-            for lower in &candidates[index + 1..] {
-                let downloads = higher.join("cache/downloads");
-                std::fs::create_dir_all(&downloads).unwrap();
-                std::fs::create_dir_all(lower).unwrap();
-                let json_path = lower.join("settings.json");
-                let json = br#"{"accent":"rose"}"#;
-                std::fs::write(&json_path, json).unwrap();
-                let selected = select_configuration(
-                    &app_config,
-                    Some(&legacy_system),
-                    &executable,
-                    has_configuration,
-                );
-                assert_eq!(selected, **higher);
-                assert!(!selected.join("settings.json").exists());
-                assert!(downloads.is_dir());
-                assert_eq!(std::fs::read(json_path).unwrap(), json);
-                std::fs::remove_dir_all(higher).unwrap();
-                std::fs::remove_dir_all(lower).unwrap();
-            }
-        }
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn test_guard_accepts_both_product_identifiers_but_not_fixture_ids() {
+    fn test_guard_excludes_fixture_identifiers() {
         assert!(is_product_identifier(APP_IDENTIFIER));
-        assert!(is_product_identifier(LEGACY_APP_IDENTIFIER));
         assert!(!is_product_identifier("studio.nickel.launcher.fixture"));
-        assert!(!is_product_identifier("com.youtu.nowhere.fixture"));
     }
 
     #[test]
     fn executable_directory_only_normalizes_exact_macos_bundle_structure() {
         let root = std::env::temp_dir().join("nickel-path-shapes");
-        for (bundle, binary) in [("Nickel", "ni-launcher"), ("NoWheRE", "nowhere")] {
+        for (bundle, binary) in [("Nickel", "ni-launcher")] {
             let bundled = root.join(format!("{bundle}.app/Contents/MacOS/{binary}"));
             assert_eq!(directory_for_executable(&bundled, true), Some(root.clone()));
             for executable in [
@@ -454,18 +350,8 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        let legacy = root.join("legacy");
-        let app_config = root.join("new-system");
-        assert_eq!(
-            select_configuration(&app_config, Some(&legacy), &selected, has_configuration),
-            root.join(DATA_DIRECTORY)
-        );
-        std::fs::create_dir(&legacy).unwrap();
-        std::fs::write(legacy.join("settings.json"), "broken").unwrap();
-        assert_eq!(
-            select_configuration(&app_config, Some(&legacy), &selected, has_configuration),
-            legacy
-        );
+        let app_config = root.join(APP_IDENTIFIER);
+        assert_eq!(select_configuration(&app_config, &selected, has_configuration), root.join(DATA_DIRECTORY));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

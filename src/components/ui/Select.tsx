@@ -47,7 +47,7 @@ export function Select({
   }, [open]);
 
   const selected = options.find((o) => o.value === value);
-  const cls = ["nw-select", size === "sm" && "nw-select--sm", className]
+  const cls = ["ni-select", size === "sm" && "ni-select--sm", className]
     .filter(Boolean)
     .join(" ");
 
@@ -77,7 +77,7 @@ export function Select({
         ref={triggerRef}
         id={id}
         type="button"
-        className="nw-select__trigger"
+        className="ni-select__trigger"
         data-open={open}
         disabled={disabled}
         aria-haspopup="listbox"
@@ -85,21 +85,21 @@ export function Select({
         aria-label={ariaLabel}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="nw-select__value" data-placeholder={!selected}>
+        <span className="ni-select__value" data-placeholder={!selected}>
           {selected ? selected.label : placeholder}
         </span>
-        <IconChevronDown className="nw-select__chevron" />
+        <IconChevronDown className="ni-select__chevron" />
       </button>
 
       {open ? (
-        <div className="nw-select__menu" role="listbox">
+        <div className="ni-select__menu" role="listbox">
           {options.map((opt, index) => {
             const prevGroup = index > 0 ? options[index - 1].group : undefined;
             const showGroup = opt.group != null && opt.group !== prevGroup;
             return (
               <Fragment key={opt.value}>
                 {showGroup ? (
-                  <div className="nw-select__group">{opt.group}</div>
+                  <div className="ni-select__group">{opt.group}</div>
                 ) : null}
                 <button
                   type="button"
@@ -107,7 +107,7 @@ export function Select({
                   aria-selected={opt.value === value}
                   data-selected={opt.value === value}
                   disabled={opt.disabled}
-                  className="nw-select__option"
+                  className="ni-select__option"
                   onClick={() => {
                     if (opt.disabled) return;
                     onChange(opt.value);

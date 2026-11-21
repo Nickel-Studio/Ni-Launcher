@@ -286,7 +286,7 @@ mod tests {
             port
         }
         let directory =
-            std::env::temp_dir().join(format!("nowhere-tls-{}", crate::store::random_token()));
+            std::env::temp_dir().join(format!("nickel-tls-{}", crate::store::random_token()));
         std::fs::create_dir(&directory).unwrap();
         let mut fixture = Fixture {
             directory,
@@ -307,7 +307,7 @@ mod tests {
                 "-days",
                 "2",
                 "-subj",
-                "/CN=NoWheRE-test-CA",
+                "/CN=Nickel-test-CA",
                 "-addext",
                 "basicConstraints=critical,CA:TRUE",
             ],

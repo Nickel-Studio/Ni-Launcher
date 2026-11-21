@@ -48,10 +48,7 @@ export interface ModrinthHit {
   versions: string[];
   loaders: string[];
   dateModified: string;
-  /**
-   * CurseForge 的数字项目 id（`curseforge_project_files` / `curseforge_install`
-   * 必需）；Modrinth 命中没有该字段，落空串且不被消费。
-   */
+  /** 平台项目 id；与 slug 分开保存，前置去重与身份校验不能靠显示名。 */
   projectId?: string;
   /** 该条命中的检索来源（来源徽标 / 合并排序消费）。 */
   source: HitSource;
@@ -75,11 +72,31 @@ export interface ModrinthVersionFile {
   hashSha1: string;
 }
 
+/** 仅声明必要关系；文件名不是项目或版本标识，不能据此猜测下载来源。 */
+export interface ProjectDependency {
+  dependencyType: "required";
+  projectId: string;
+  versionId: string;
+  fileName: string;
+}
+
+export interface DependencyLookup {
+  projectId?: string;
+  versionId?: string;
+}
+
+export interface ResolvedDependency {
+  project: ModrinthHit;
+  /** null 表示上游只声明项目，绝不能用最新版本冒充要求版本。 */
+  version: ModrinthVersion | null;
+}
+
 /** 单个项目版本。 */
 export type ReleaseType = "release" | "beta" | "alpha" | "unknown";
 
 export interface ModrinthVersion {
   id: string;
+  projectId?: string;
   name: string;
   versionNumber: string;
   loaders: string[];
@@ -87,6 +104,8 @@ export interface ModrinthVersion {
   datePublished: string;
   releaseType: ReleaseType;
   files: ModrinthVersionFile[];
+  /** undefined = 旧响应未提供元数据；空数组 = 已确认没有必要前置。 */
+  dependencies?: ProjectDependency[];
 }
 
 export interface ProjectVersionPage {

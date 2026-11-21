@@ -5,12 +5,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../lib/settings";
 import { loadInstanceSearchFilter } from "../resources/ipc";
-import { normalizeSearch, normalizeVersions } from "./parse";
+import {
+  normalizeDependencyResolution,
+  normalizeSearch,
+  normalizeVersions,
+} from "./parse";
 import type {
+  DependencyLookup,
   ModrinthFilter,
   ModrinthKind,
   ModrinthSearchResult,
   ModrinthVersion,
+  ResolvedDependency,
 } from "./types";
 
 /** 检索一页结果。 */
@@ -99,6 +105,18 @@ export async function saveAsModrinth(params: {
 export async function openModrinthProject(slug: string): Promise<void> {
   if (!isTauri()) throw new Error("未连接到启动器后端");
   await invoke("modrinth_open_project", { slug });
+}
+/** 查询前置项目及其明确指定的版本，不读取或代选最新版本。 */
+export async function resolveModrinthDependency(
+  dependency: DependencyLookup
+): Promise<ResolvedDependency> {
+  if (!isTauri()) throw new Error("未连接到启动器后端");
+  const raw = await invoke<string>("community_dependency_resolve", {
+    platform: "modrinth",
+    projectId: dependency.projectId || null,
+    versionId: dependency.versionId || null,
+  });
+  return normalizeDependencyResolution(raw, "modrinth");
 }
 
 /** 只匹配首页选定的 root + versionId；未选择或不存在时不猜测安装目标。 */

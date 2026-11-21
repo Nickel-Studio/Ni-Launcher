@@ -4,10 +4,10 @@
    ========================================================================== */
 
 /* ------------------------------------------------------ Shell enter / exit - */
-.nw-shell {
+.ni-shell {
   transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
 }
-html:not(.nw-app-ready) .nw-shell {
+html:not(.ni-app-ready) .ni-shell {
   /* 只淡入，不做缩放/位移：外壳必须始终精确铺满窗口，否则会在圆角/边缘处露出一圈「没填满」的缝隙。 */
   opacity: 0;
   /* 启动画面覆盖期间不接收点击，避免隐藏的外壳抢走闪屏上的交互。 */
@@ -16,23 +16,24 @@ html:not(.nw-app-ready) .nw-shell {
 /* 3 秒兜底只解锁外壳时，外壳仍覆盖在闪屏下方：保持不接收点击，直到真正淡出。
    pointer-events 只拦截指针命中，不阻止键盘焦点；启动遮挡期间由 SplashScreen
    对 document.body 设置 inert，冻结整个应用 UI（含 body 级弹窗），交接后恢复。 */
-html.nw-splash-hold .nw-shell {
+html.ni-splash-hold .ni-shell {
   pointer-events: none;
 }
-.nw-app-ready .nw-shell {
+.ni-app-ready .ni-shell {
   opacity: 1;
   transform: none;
   pointer-events: auto;
 }
-.nw-shell--leaving {
+.ni-shell--leaving {
   opacity: 0 !important;
   transform: scale(0.96) !important;
   transition: opacity 0.3s var(--ease-out), transform 0.3s var(--ease-out) !important;
 }
 
 /* ---------------------------------------------------------------- Titlebar - */
-.nw-titlebar {
+.ni-titlebar {
   position: relative;
+  isolation: isolate;
   z-index: var(--z-chrome);
   flex: 0 0 auto;
   height: var(--titlebar-h);
@@ -44,21 +45,33 @@ html.nw-splash-hold .nw-shell {
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
   user-select: none;
 }
+.ni-titlebar[data-tinted="true"] {
+  background: var(--theme-chrome-bg, var(--chrome-bg));
+  color: var(--theme-chrome-text, var(--text));
+}
+.ni-titlebar__left,
+.ni-titlebar__center,
+.ni-titlebar__right {
+  z-index: 1;
+}
+.ni-titlebar__right {
+  position: relative;
+}
 
 /* ---- Left: brand wordmark (text only, no icon / no box) ------------------ */
-.nw-titlebar__left {
+.ni-titlebar__left {
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
 }
-.nw-brand {
+.ni-brand {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
-.nw-brand__text {
+.ni-brand__text {
   font-family: var(--font-display);
   font-size: 19px;
   font-weight: 700;
@@ -66,54 +79,8 @@ html.nw-splash-hold .nw-shell {
   line-height: 1;
   color: var(--text);
 }
-/* sparse, low-opacity star specks — brand motif, not an icon */
-.nw-sparkles {
-  position: absolute;
-  inset: -6px;
-  pointer-events: none;
-}
-.nw-sparkles__dot {
-  position: absolute;
-  border-radius: 50%;
-  background: var(--sparkle);
-  opacity: 0.5;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: nw-twinkle 4.2s var(--ease) infinite;
-}
-.nw-sparkles__dot--a {
-  top: 4px;
-  left: -12px;
-  width: 3px;
-  height: 3px;
-}
-.nw-sparkles__dot--b {
-  bottom: 2px;
-  right: -10px;
-  width: 2px;
-  height: 2px;
-  animation-delay: 1.4s;
-}
-.nw-sparkles__dot--c {
-  top: -3px;
-  right: 32%;
-  width: 2px;
-  height: 2px;
-  animation-delay: 2.6s;
-}
-@keyframes nw-twinkle {
-  0%,
-  100% {
-    opacity: 0.18;
-    transform: scale(0.85);
-  }
-  50% {
-    opacity: 0.62;
-    transform: scale(1);
-  }
-}
-
 /* ---- Centre: route tabs (absolutely centred) ----------------------------- */
-.nw-titlebar__center {
+.ni-titlebar__center {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -127,7 +94,7 @@ html.nw-splash-hold .nw-shell {
 
 /* Sliding capsule indicator: one shared pill slides + resizes to the active tab
    instead of the highlight jumping instantly between tabs. */
-.nw-navtab__pill {
+.ni-navtab__pill {
   position: absolute;
   top: 3px;
   bottom: 3px;
@@ -142,13 +109,13 @@ html.nw-splash-hold .nw-shell {
   transition: transform var(--t) var(--ease-out), width var(--t) var(--ease-out),
     opacity var(--t-fast) var(--ease);
 }
-.nw-navtab__pill:not([data-ready="true"]) {
+.ni-navtab__pill:not([data-ready="true"]) {
   transition: opacity var(--t-fast) var(--ease);
 }
-.nw-navtab__pill[data-ready="true"] {
+.ni-navtab__pill[data-ready="true"] {
   opacity: 1;
 }
-.nw-navtab {
+.ni-navtab {
   position: relative;
   z-index: 1;
   display: inline-flex;
@@ -168,7 +135,7 @@ html.nw-splash-hold .nw-shell {
   transition: color var(--t) var(--ease), background var(--t) var(--ease),
     box-shadow var(--t) var(--ease), transform var(--t-fast) var(--ease);
 }
-.nw-navtab svg {
+.ni-navtab svg {
   width: 15px;
   height: 15px;
   opacity: 0.9;
@@ -176,35 +143,35 @@ html.nw-splash-hold .nw-shell {
   top: var(--icon-optical-shift);
   transition: transform var(--t) var(--ease-spring);
 }
-.nw-navtab:hover {
+.ni-navtab:hover {
   color: var(--text);
   background: var(--fill-3);
 }
-.nw-navtab:active {
+.ni-navtab:active {
   transform: translateY(1px);
 }
-.nw-navtab[data-active="true"] {
+.ni-navtab[data-active="true"] {
   color: var(--accent-fg);
   background: transparent;
   box-shadow: none;
 }
-.nw-navtab[data-active="true"]:hover {
+.ni-navtab[data-active="true"]:hover {
   background: transparent;
   color: var(--accent-fg);
 }
-.nw-navtab[data-active="true"] svg {
+.ni-navtab[data-active="true"] svg {
   transform: scale(1.06);
 }
 
 /* ---- Right: window controls ---------------------------------------------- */
-.nw-titlebar__right {
+.ni-titlebar__right {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
 }
-.nw-winbtn {
+.ni-winbtn {
   width: 40px;
   height: 32px;
   display: grid;
@@ -217,23 +184,23 @@ html.nw-splash-hold .nw-shell {
   transition: background var(--t-fast) var(--ease),
     color var(--t-fast) var(--ease);
 }
-.nw-winbtn svg {
+.ni-winbtn svg {
   width: 15px;
   height: 15px;
 }
-.nw-winbtn:hover {
+.ni-winbtn:hover {
   background: var(--fill-3);
   color: var(--text);
 }
-.nw-winbtn:active {
+.ni-winbtn:active {
   transform: translateY(1px);
 }
-.nw-winbtn--close:hover {
+.ni-winbtn--close:hover {
   background: var(--target-close);
   color: #fff;
 }
 
-.nw-accountcard {
+.ni-accountcard {
   position: relative;
   display: flex;
   align-items: center;
@@ -248,7 +215,7 @@ html.nw-splash-hold .nw-shell {
   transition: background var(--t) var(--ease),
     transform var(--t-fast) var(--ease), box-shadow var(--t) var(--ease);
 }
-.nw-accountcard::before {
+.ni-accountcard::before {
   content: "";
   position: absolute;
   left: 0;
@@ -260,19 +227,19 @@ html.nw-splash-hold .nw-shell {
   transform: translateY(-50%);
   transition: height var(--t) var(--ease-out);
 }
-.nw-accountcard:hover {
+.ni-accountcard:hover {
   background: var(--fill-3);
   transform: translateY(-1px);
   box-shadow: var(--shadow-2);
 }
-.nw-accountcard[data-active="true"] {
+.ni-accountcard[data-active="true"] {
   background: var(--accent-soft);
   box-shadow: var(--shadow-1);
 }
-.nw-accountcard[data-active="true"]::before {
+.ni-accountcard[data-active="true"]::before {
   height: 26px;
 }
-.nw-accountcard__icon {
+.ni-accountcard__icon {
   width: 36px;
   height: 36px;
   flex: 0 0 auto;
@@ -283,21 +250,21 @@ html.nw-splash-hold .nw-shell {
   color: var(--text-dim);
   transition: background var(--t) var(--ease), color var(--t) var(--ease);
 }
-.nw-accountcard__icon svg {
+.ni-accountcard__icon svg {
   width: 18px;
   height: 18px;
 }
-.nw-accountcard[data-active="true"] .nw-accountcard__icon {
+.ni-accountcard[data-active="true"] .ni-accountcard__icon {
   background: var(--accent);
   color: var(--accent-fg);
 }
-.nw-accountcard__body {
+.ni-accountcard__body {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
-.nw-accountcard__title {
+.ni-accountcard__title {
   font-family: var(--font-display);
   font-size: var(--fs-lg);
   font-weight: 650;
@@ -305,7 +272,7 @@ html.nw-splash-hold .nw-shell {
   color: var(--text);
   line-height: 1.2;
 }
-.nw-accountcard__desc {
+.ni-accountcard__desc {
   font-size: var(--fs-sm);
   color: var(--text-faint);
   line-height: 1.3;
@@ -313,7 +280,7 @@ html.nw-splash-hold .nw-shell {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.nw-accountcard__check {
+.ni-accountcard__check {
   margin-left: auto;
   width: 18px;
   height: 18px;
@@ -323,13 +290,13 @@ html.nw-splash-hold .nw-shell {
   transition: opacity var(--t) var(--ease),
     transform var(--t) var(--ease-spring);
 }
-.nw-accountcard[data-active="true"] .nw-accountcard__check {
+.ni-accountcard[data-active="true"] .ni-accountcard__check {
   opacity: 1;
   transform: scale(1);
 }
 
 /* ------------------------------------------------------------- Placeholder - */
-.nw-construction {
+.ni-construction {
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -339,7 +306,7 @@ html.nw-splash-hold .nw-shell {
   text-align: center;
   padding: var(--space-8);
 }
-.nw-construction__badge {
+.ni-construction__badge {
   position: relative;
   width: 84px;
   height: 84px;
@@ -348,42 +315,42 @@ html.nw-splash-hold .nw-shell {
   border: 0;
   /* logo 自带面板：容器不再绘制底色/阴影，避免「双重边框」 */
 }
-.nw-construction__badge img {
+.ni-construction__badge img {
   width: 52px;
   height: 52px;
   object-fit: contain;
   filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
 }
-.nw-construction__badge svg {
+.ni-construction__badge svg {
   width: 30px;
   height: 30px;
 }
-.nw-construction__eyebrow {
+.ni-construction__eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.nw-construction__eyebrow svg {
+.ni-construction__eyebrow svg {
   width: 14px;
   height: 14px;
   color: var(--accent);
   position: relative;
   top: var(--icon-optical-shift);
 }
-.nw-construction__title {
+.ni-construction__title {
   font-family: var(--font-display);
   font-size: var(--fs-2xl);
   font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--text);
 }
-.nw-construction__text {
+.ni-construction__text {
   max-width: 400px;
   font-size: var(--fs-md);
   color: var(--text-dim);
   line-height: var(--lh-normal);
 }
-.nw-construction__tags {
+.ni-construction__tags {
   display: flex;
   gap: 8px;
   margin-top: var(--space-2);
@@ -391,63 +358,106 @@ html.nw-splash-hold .nw-shell {
   justify-content: center;
 }
 
-/* ------------------------------------------------------------ Brand mark --- */
-.nw-brandmark {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: var(--mark-size, 72px);
-  height: var(--mark-size, 72px);
-}
-.nw-brandmark__glow {
-  position: absolute;
-  inset: -16%;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-soft), transparent 64%);
-  opacity: 0.85;
-  pointer-events: none;
-}
-/* 「黑与白」讲究干净的黑白对比，不留大面积光晕（光晕属于彩色主题的氛围）。 */
-:root[data-accent="mono"] .nw-brandmark__glow {
-  opacity: 0.3;
-}
-.nw-brandmark__img {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  border-radius: 26%;
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.5));
-}
-.nw-brandmark .nw-sparkles {
-  inset: -18%;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  #nw-splash,
-  .nw-shell,
-  .nw-app-ready .nw-shell,
-  .nw-shell--leaving {
+  #ni-splash,
+  .ni-shell,
+  .ni-app-ready .ni-shell,
+  .ni-shell--leaving {
     transition: none !important;
   }
-  .nw-shell--leaving {
+  .ni-shell--leaving {
     transform: none !important;
   }
   /* 顶栏胶囊的位移 / 缩放同样属于动效，减弱动效时退化为瞬时切换。 */
-  .nw-navtab__pill,
-  .nw-navtab,
-  .nw-navtab svg {
+  .ni-navtab__pill,
+  .ni-navtab,
+  .ni-navtab svg {
     transition: none;
-  }
-  .nw-sparkles__dot {
-    animation: none;
   }
 }
 
 /* ------------------------------------------------------------------ Gutter - */
 /* Home fills the gutter-inset content area without introducing a scrollbar. */
-.nw-content .home {
+.ni-content .home {
   min-height: calc(100vh - var(--titlebar-h) - var(--gutter) * 2);
+}
+
+/* Pale theme ink is not a text color on light reading surfaces. */
+:root[data-rich-theme="true"]
+  :is(
+    .ni-pager__item[data-active="true"] .ni-pager__icon,
+    .ni-select__option svg,
+    .ni-iconbtn[data-active="true"],
+    .ni-tab__badge,
+    .ni-inline-notice[data-tone="info"] .ni-inline-notice__icon,
+    .ni-accountcard__check,
+    .ni-construction__eyebrow svg,
+    .st-nav__item.is-active,
+    .st-nav__item.is-active .st-nav__icon,
+    .mo-frontier__notice-icon
+  ) {
+  color: var(--accent-text, var(--accent));
+}
+.ni-titlebar[data-tinted="true"]
+  :is(
+    .ni-brand__text,
+    .ni-navtab:not([data-active="true"]),
+    .ni-winbtn:not(:hover)
+  ) {
+  color: var(--theme-chrome-text, var(--text));
+}
+:root[data-rich-theme="true"] .ni-btn--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+/* Indicators must remain visible even when custom ink matches a neutral surface. */
+:root[data-rich-theme="true"] .ni-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--accent-text, var(--accent)) 0%,
+    var(--accent-text, var(--accent)) var(--_p, 0%),
+    var(--fill-3) var(--_p, 0%),
+    var(--fill-3) 100%
+  );
+}
+:root[data-rich-theme="true"] .ni-slider::-webkit-slider-thumb {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .ni-slider::-moz-range-progress {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .ni-slider::-moz-range-thumb {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .st-preview__progress-fill {
+  background: var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .ni-switch[data-on="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--accent-text, var(--accent));
+}
+:root[data-rich-theme="true"] .ni-switch[data-on="true"]:focus-visible {
+  box-shadow: inset 0 0 0 1.5px var(--accent-text, var(--accent)),
+    0 0 0 3px var(--accent-ring);
+}
+:root[data-rich-theme="true"] .ni-switch[data-on="true"] .ni-switch__knob {
+  background: var(--accent-fg);
+}
+:root[data-accent="custom"]
+  :is(
+    .ni-btn--primary,
+    .ni-navtab,
+    .ni-navtab__pill,
+    .ni-seg__item,
+    .ni-seg__pill,
+    .ni-check__box,
+    .st-preview__btn--accent,
+    .st-preview__chip--accent
+  ) {
+  transition-property: transform, width, opacity, box-shadow;
+}
+:root[data-theme-motion="paused"] {
+  --t-accent: 0ms;
+}
+:root[data-theme-motion="paused"] .ni-bg__image {
+  transition: none;
+  will-change: auto;
 }

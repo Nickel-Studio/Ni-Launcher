@@ -245,7 +245,7 @@ function runTerminalEffects(
   if (terminalEffects.has(event.taskId)) return;
   terminalEffects.add(event.taskId);
   if (event.ok && item.task?.kind !== "installer") {
-    window.dispatchEvent(new CustomEvent("nowhere:instances-changed"));
+    window.dispatchEvent(new CustomEvent("nickel:instances-changed"));
   }
   if (event.ok && event.result) {
     setLaunchInstance({
@@ -511,11 +511,10 @@ async function startManagedDownloadInternal(
 
 /** version/modpack 串行，普通资源与安装器并行；取消对话框/等待项均返回 null。 */
 export async function startManagedDownload(
-  task: Omit<DownloadTask, "taskId">,
+  task: Omit<DownloadTask, "taskId"> & Required<Pick<DownloadTask, "kind">>,
   start: () => Promise<string | null>
 ): Promise<string | null> {
-  // 旧本地安装调用仍默认串行；恢复的未知快照不能被推断成版本安装。
-  const requestTask = { ...task, kind: task.kind ?? "version" };
+  const requestTask = { ...task };
   try {
     if (!isSerial(requestTask))
       return await startManagedDownloadInternal(requestTask, start);
@@ -574,7 +573,7 @@ export async function startDownload(args: InstallArgs): Promise<void> {
       installVersion(args)
     );
   } catch {
-    /* 错误由任务中心显示，保留旧入口的 Promise<void> 契约。 */
+    // The task center already exposes the error; do not duplicate it in the picker.
   }
 }
 

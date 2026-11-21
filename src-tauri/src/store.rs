@@ -469,8 +469,7 @@ pub fn validate_server(server: Option<String>) -> Result<String, String> {
 pub fn validate_stored_server(server: Option<String>) -> Result<String, String> {
     match server {
         None => Ok(DEFAULT_SERVER.to_string()),
-        // 旧配置可能把「未填写」落成空串，等价于 None，仍按默认站点处理。
-        Some(raw) if raw.trim().is_empty() => Ok(DEFAULT_SERVER.to_string()),
+        Some(raw) if raw.trim().is_empty() => Err(INVALID_STORED_SERVER_MESSAGE.to_string()),
         Some(raw) => {
             validate_server(Some(raw)).map_err(|_| INVALID_STORED_SERVER_MESSAGE.to_string())
         }
@@ -627,16 +626,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_accounts_without_password_still_parse() {
-        let legacy = r#"[{"id":"acc_1","type":"littleskin","name":"Keyi",
-            "uuid":"uuid-1","email":"a@b.c","accessToken":"A","clientToken":"C"}]"#;
-        let accounts = parse_accounts(legacy);
-        assert_eq!(accounts.len(), 1);
-        assert!(accounts[0].password.is_none());
-        assert_eq!(accounts[0].access_token.as_deref(), Some("A"));
-    }
-
-    #[test]
     fn parse_accounts_handles_corruption() {
         assert!(parse_accounts("").is_empty());
         assert!(parse_accounts("   ").is_empty());
@@ -750,9 +739,8 @@ mod tests {
     fn validate_stored_server_uses_account_specific_error() {
         assert_eq!(validate_stored_server(None).unwrap(), DEFAULT_SERVER);
         assert_eq!(
-            validate_stored_server(Some("  ".into())).unwrap(),
-            DEFAULT_SERVER,
-            "旧配置的空串等价于未填写"
+            validate_stored_server(Some("  ".into())).unwrap_err(),
+            INVALID_STORED_SERVER_MESSAGE
         );
         assert_eq!(
             validate_stored_server(Some("littleskin.cn".into())).unwrap(),
@@ -819,7 +807,7 @@ mod tests {
     fn temp_dir(tag: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!(
-            "nowhere_store_{}_{}_{}",
+            "nickel_store_{}_{}_{}",
             std::process::id(),
             random_token(),
             tag

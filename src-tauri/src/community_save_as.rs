@@ -111,7 +111,7 @@ fn commit_save_as(staged: &Path, target: &Path) -> Result<(), String> {
         return Ok(());
     }
     let temporary = parent.join(format!(
-        ".nowhere-save-as-{}.part",
+        ".nickel-save-as-{}.part",
         crate::store::random_token()
     ));
     let result = (|| {
@@ -315,7 +315,7 @@ mod tests {
 
     fn fixture_root() -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "nowhere-save-as-{}",
+            "nickel-save-as-{}",
             crate::store::random_token()
         ));
         std::fs::create_dir_all(&root).unwrap();
@@ -327,7 +327,7 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let loader_version = if loader.is_some() { "1.12.2-SNAPSHOT-r0" } else { "" };
         std::fs::write(
-            directory.join("nowhere.profile.json"),
+            directory.join("nickel.profile.json"),
             serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": 1,
                 "name": name,
@@ -344,7 +344,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "id": name,
                 "inheritsFrom": minecraft,
-                "nowhereProfile": {
+                "nickelProfile": {
                     "minecraftVersion": minecraft,
                     "loader": loader,
                     "loaderVersion": loader_version
@@ -419,7 +419,7 @@ mod tests {
         let leftovers: Vec<_> = std::fs::read_dir(target.parent().unwrap())
             .unwrap()
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".nowhere-"))
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".nickel-"))
             .collect();
         assert!(leftovers.is_empty(), "不得残留临时文件");
         std::fs::remove_dir_all(&root).unwrap();
@@ -438,7 +438,7 @@ mod tests {
         let leftovers: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".nowhere-"))
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".nickel-"))
             .collect();
         assert!(leftovers.is_empty());
         // 暂存文件缺失 → 可读错误而不是 panic。
