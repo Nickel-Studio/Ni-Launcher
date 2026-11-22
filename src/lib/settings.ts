@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -176,30 +177,54 @@ export function resolveBackgroundUrl(path: string | null): string | null {
    Validated background protocols (image dataURL fallback only)
    -------------------------------------------------------------------------- */
 
-/** Local images and videos use separate validated protocols; videos never become base64 IPC. */
-export function useBackgroundSrc(path: string | null): string | null {
+export interface BackgroundSource {
+  src: string | null;
+  /**
+   * Called from the rendered `<img onError>`. Returns true while a one-time data URL
+   * fallback is in flight; `onFailed` runs if that fallback is unavailable too.
+   */
+  recover: (onFailed?: () => void) => boolean;
+}
+
+/**
+ * Local images and videos use separate validated protocols; videos never become base64 IPC.
+ * The image protocol is the regular path, so there is no pre-flight probe that would read every
+ * file twice; `image_data_url` is requested only after the real element fails to load.
+ */
+export function useBackgroundSrc(path: string | null): BackgroundSource {
   const direct = resolveBackgroundUrl(path);
-  const [fallback, setFallback] = useState<{ path: string; src: string } | null>(null);
+  const [fallback, setFallback] = useState<{ path: string; src: string | null } | null>(null);
+  const alive = useRef(true);
 
   useEffect(() => {
-    if (!path || !direct || !isTauri() || backgroundKind(path) === "video") return;
-    let alive = true;
-    const probe = new Image();
-    probe.onerror = () => {
-      invoke<string>("image_data_url", { path })
-        .then((dataUrl) => {
-          if (alive && dataUrl) setFallback({ path, src: dataUrl });
-        })
-        .catch(() => undefined);
-    };
-    probe.src = direct;
+    alive.current = true;
     return () => {
-      alive = false;
-      probe.onerror = null;
+      alive.current = false;
     };
-  }, [path, direct]);
+  }, []);
 
-  return fallback?.path === path ? fallback.src : direct;
+  const recover = useCallback(
+    (onFailed?: () => void) => {
+      if (!path || !direct || !isTauri() || backgroundKind(path) === "video") return false;
+      // One attempt per path: a failing data URL must not loop back into another request.
+      if (fallback?.path === path) return false;
+      setFallback({ path, src: null });
+      invoke<string>("image_data_url", { path })
+        .then((src) => {
+          if (!alive.current) return;
+          if (!src) throw new Error("empty-image");
+          setFallback((current) => (current?.path === path ? { path, src } : current));
+        })
+        .catch(() => {
+          if (alive.current) onFailed?.();
+        });
+      return true;
+    },
+    [path, direct, fallback]
+  );
+
+  const src = fallback?.path === path && fallback.src ? fallback.src : direct;
+  return { src, recover };
 }
 
 /* ============================================================================

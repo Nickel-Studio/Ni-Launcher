@@ -52,4 +52,6 @@
 
 首页保留左侧启动卡与右侧背景留白。全局状态入口单一，页面复用 `PagerLayout`、`Collapse`、`Modal` 等组件。明暗模式与颜色主题分离；动效降级和键盘焦点均由共享组件管理。
 
+颜色主题由 `startThemeRuntime`（`src/lib/theme.ts`）写入根节点的注册颜色属性，`--t-accent` 控制它们的过渡时长。`data-theme-motion` 取 `entering` / `running` / `static` / `paused` / `reduced`：切换到四十二时先处于 `entering` 保留淡入淡出，首个 500ms tick（晚于 420ms 过渡）改为 `running`，之后的取色不再触发整棵树的过渡；自定义编辑页打开期间同样关闭颜色过渡，保证滑块即时反馈。调整 `THEME_TICK_MS` 或 `THEME_TRANSITION_MS` 时必须保持 tick 间隔大于过渡时长（有单测约束）。
+
 关于页只展示 Nickel 简介、版本、徽标、许可、开发者和鸣谢。品牌与外链常量集中在 `src/lib/brand.ts`，鸣谢头像随应用打包。

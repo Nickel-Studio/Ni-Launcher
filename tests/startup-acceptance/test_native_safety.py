@@ -556,7 +556,7 @@ class NativeSafetyTests(unittest.TestCase):
         sandbox = self.prepare()
         session = native.NativeSession(None, sandbox, self.root / "protected-cleanup", [])
         session.output.mkdir()
-        session.process = MagicMock(pid=17584)
+        session.process = MagicMock(pid=os.getppid())
         session.process.poll.return_value = None
         session.job = MagicMock()
         with self.assertRaises(native.SafetyError):
@@ -568,11 +568,11 @@ class NativeSafetyTests(unittest.TestCase):
     def test_windows_job_rejects_foreign_or_protected_processes(self):
         job = native.WindowsJob.__new__(native.WindowsJob)
         job.handle, job.kernel = 321, MagicMock()
-        for process in [SimpleNamespace(created=False, pid=999999, handle=123), SimpleNamespace(created=True, pid=17584, handle=123)]:
+        for process in [SimpleNamespace(created=False, pid=999999, handle=123), SimpleNamespace(created=True, pid=os.getppid(), handle=123)]:
             with self.assertRaises(native.SafetyError):
                 job.assign(process)
         job.kernel.AssignProcessToJobObject.assert_not_called()
-        self.assertFalse(job.contains_pid(17584))
+        self.assertFalse(job.contains_pid(os.getppid()))
         job.kernel.OpenProcess.assert_not_called()
 
     def test_native_exit_cannot_be_satisfied_by_forced_cleanup(self):
@@ -643,7 +643,7 @@ class NativeSafetyTests(unittest.TestCase):
         self.win_dll_patch.stop()
         job = native.WindowsJob()
         self.assertEqual(job.member_pids(), [])
-        self.assertFalse(job.contains_pid(17584))
+        self.assertFalse(job.contains_pid(os.getppid()))
         job.close()
         job.close()
         self.assertIsNone(job.handle)

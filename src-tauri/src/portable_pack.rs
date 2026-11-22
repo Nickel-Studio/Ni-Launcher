@@ -1603,6 +1603,8 @@ mod tests {
         }
         assert_eq!(background_limit("mp4"), crate::media::MAX_VIDEO_BYTES);
         assert_eq!(background_limit("png"), BACKGROUND_MAX_BYTES);
+        // Export and import limits must move together, or a video could export but fail to import.
+        assert!(crate::media::MAX_VIDEO_BYTES <= ArchiveLimits::default().max_entry_bytes);
     }
 
 }

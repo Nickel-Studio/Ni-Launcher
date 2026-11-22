@@ -36,7 +36,7 @@ class MediaWaitTests(unittest.TestCase):
         self.assertEqual(media.flags({"passed": False}, 1), {"passed": False})
 
     def test_cli_process_is_protected(self):
-        self.assertIn(49092, media.native.PROTECTED_PIDS)
+        self.assertIn(media.os.getppid(), media.native.PROTECTED_PIDS)
 
 
 if __name__ == "__main__":

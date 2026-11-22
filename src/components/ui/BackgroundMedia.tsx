@@ -20,7 +20,7 @@ export function BackgroundMedia({
   onLoad,
   onError,
 }: Props) {
-  const src = useBackgroundSrc(path);
+  const { src, recover } = useBackgroundSrc(path);
   const videoRef = useRef<HTMLVideoElement>(null);
   const paused = useVisualMotionPaused() || !animate;
   const kind = backgroundKind(path);
@@ -39,6 +39,10 @@ export function BackgroundMedia({
     if (paused && videoRef.current) videoRef.current.pause();
     onLoad?.();
   };
+  // Report an image error only once the one-time data URL fallback is exhausted.
+  const failImage = () => {
+    if (!recover(onError)) onError?.();
+  };
   return kind === "video" ? (
     <video
       {...common}
@@ -55,6 +59,6 @@ export function BackgroundMedia({
       onError={onError}
     />
   ) : (
-    <img {...common} src={src} alt="" decoding="async" onLoad={onLoad} onError={onError} />
+    <img {...common} src={src} alt="" decoding="async" onLoad={onLoad} onError={failImage} />
   );
 }

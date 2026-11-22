@@ -352,6 +352,9 @@ export function startThemeRuntime(
   };
   const tick = () => {
     if (disposed) return;
+    // The first tick lands after THEME_TRANSITION_MS, so the switch-in fade has finished;
+    // later ticks change colors imperceptibly and must not restart a root-wide transition.
+    if (root.dataset.themeMotion === "entering") root.dataset.themeMotion = "running";
     paint();
     timer = win.setTimeout(tick, THEME_TICK_MS);
   };
@@ -365,7 +368,7 @@ export function startThemeRuntime(
       : motion.matches
       ? "reduced"
       : running
-      ? "running"
+      ? "entering"
       : "static";
     if (running) activeSince = win.performance.now();
     paint();

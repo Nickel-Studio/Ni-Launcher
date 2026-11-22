@@ -6,7 +6,8 @@ export const VIDEO_EXTENSIONS = ["mp4", "m4v", "webm", "ogv"];
 export const BACKGROUND_ACCEPT = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
   .map((extension) => `.${extension}`)
   .join(",");
-const BROWSER_MAX_BYTES = 32 * 1024 * 1024;
+// The data URL is persisted in localStorage (a few MiB per origin), so browser previews stay small.
+const BROWSER_MAX_BYTES = 3 * 1024 * 1024;
 
 /** Native media stays on disk; only validated paths are persisted. */
 export async function pickBackgroundPath(): Promise<string | null> {
@@ -34,7 +35,7 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   if (![...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS].includes(extension))
     return Promise.reject(new Error("请选择支持的图片或视频文件。"));
   if (!file.size || file.size > BROWSER_MAX_BYTES)
-    return Promise.reject(new Error("浏览器预览请选择不超过 32 MiB 的文件。"));
+    return Promise.reject(new Error("浏览器预览请选择不超过 3 MiB 的文件。"));
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {

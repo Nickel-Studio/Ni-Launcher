@@ -23,25 +23,29 @@ pub(crate) fn raster_mime(path: &Path, bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn check_local_path(path: &Path) -> Result<(), String> {
+/// `invalid` is the media-specific message, so a rejected video never reports an image-format error.
+fn check_local_path(path: &Path, invalid: &str) -> Result<(), String> {
     if !path.is_absolute() || path.to_string_lossy().len() > 32768 {
-        return Err(INVALID_IMAGE.into());
+        return Err(invalid.into());
     }
     for component in path.components() {
         match component {
-            Component::ParentDir => return Err(INVALID_IMAGE.into()),
+            Component::ParentDir => return Err(invalid.into()),
             Component::Normal(name) => {
                 let name = name.to_string_lossy();
                 if name.chars().any(char::is_control) || name.contains(':')
                     || ["secrets.local.json", "credentials.key", "accounts.json", "active_account.json"]
                         .iter().any(|blocked| name.eq_ignore_ascii_case(blocked)) {
-                    return Err(INVALID_IMAGE.into());
+                    return Err(invalid.into());
                 }
             }
+            // Network shares stay supported (the old asset scope allowed them): mapped drives
+            // canonicalize to `\\?\UNC\...`. Device namespaces such as `\\.\` remain rejected.
             #[cfg(windows)]
             Component::Prefix(prefix) => {
-                if !matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)) {
-                    return Err(INVALID_IMAGE.into());
+                use std::path::Prefix;
+                if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_) | Prefix::UNC(..) | Prefix::VerbatimUNC(..)) {
+                    return Err(invalid.into());
                 }
             }
             _ => {}
@@ -51,22 +55,23 @@ fn check_local_path(path: &Path) -> Result<(), String> {
 }
 
 fn read_image(path: &Path) -> Result<(&'static str, Vec<u8>), String> {
-    check_local_path(path)?;
+    check_local_path(path, INVALID_IMAGE)?;
     // Resolve ancestor redirects (e.g. macOS /var, OneDrive); reject a linked file itself.
     crate::instances::reject_links_local(path).map_err(|_| INVALID_IMAGE.to_string())?;
     let canonical = std::fs::canonicalize(path).map_err(|_| "文件不存在或不是文件".to_string())?;
-    check_local_path(&canonical)?;
+    check_local_path(&canonical, INVALID_IMAGE)?;
     let mut file = std::fs::File::open(&canonical).map_err(|_| INVALID_IMAGE.to_string())?;
     let metadata = file.metadata().map_err(|_| INVALID_IMAGE.to_string())?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_BYTES {
         return Err("图片无效或超过 32 MiB 限制".into());
     }
-    let mut header = [0; 32];
-    let count = file.read(&mut header).map_err(|_| INVALID_IMAGE.to_string())?;
-    let mime = raster_mime(&canonical, &header[..count]).ok_or(INVALID_IMAGE)?;
+    // A single read() may return short on network shares or filter drivers; fill the header.
+    let mut header = Vec::with_capacity(32);
+    (&mut file).take(32).read_to_end(&mut header).map_err(|_| INVALID_IMAGE.to_string())?;
+    let mime = raster_mime(&canonical, &header).ok_or(INVALID_IMAGE)?;
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    bytes.extend_from_slice(&header[..count]);
-    file.take(MAX_BYTES + 1 - count as u64).read_to_end(&mut bytes)
+    bytes.extend_from_slice(&header);
+    file.take(MAX_BYTES + 1 - header.len() as u64).read_to_end(&mut bytes)
         .map_err(|_| INVALID_IMAGE.to_string())?;
     if bytes.len() as u64 != metadata.len() || bytes.len() as u64 > MAX_BYTES {
         return Err("图片文件已变化，请重新选择".into());
@@ -129,10 +134,10 @@ pub(crate) fn video_mime(path: &Path, bytes: &[u8]) -> Option<&'static str> {
 }
 
 fn open_video(path: &Path) -> Result<(std::fs::File, &'static str, u64), String> {
-    check_local_path(path)?;
+    check_local_path(path, INVALID_VIDEO)?;
     crate::instances::reject_links_local(path).map_err(|_| INVALID_VIDEO.to_string())?;
     let canonical = std::fs::canonicalize(path).map_err(|_| INVALID_VIDEO.to_string())?;
-    check_local_path(&canonical)?;
+    check_local_path(&canonical, INVALID_VIDEO)?;
     if !std::fs::metadata(&canonical).map_err(|_| INVALID_VIDEO.to_string())?.is_file() {
         return Err(INVALID_VIDEO.into());
     }
@@ -141,9 +146,10 @@ fn open_video(path: &Path) -> Result<(std::fs::File, &'static str, u64), String>
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_VIDEO_BYTES {
         return Err("视频无效或超过 512 MiB 限制".into());
     }
-    let mut header = [0; 4096];
-    let count = file.read(&mut header).map_err(|_| INVALID_VIDEO.to_string())?;
-    let mime = video_mime(&canonical, &header[..count]).ok_or(INVALID_VIDEO)?;
+    // Fill the header despite short reads; every later read seeks to its own start.
+    let mut header = Vec::with_capacity(4096);
+    (&mut file).take(4096).read_to_end(&mut header).map_err(|_| INVALID_VIDEO.to_string())?;
+    let mime = video_mime(&canonical, &header).ok_or(INVALID_VIDEO)?;
     Ok((file, mime, metadata.len()))
 }
 
@@ -220,6 +226,8 @@ fn video_protocol_response(request: tauri::http::Request<Vec<u8>>) -> tauri::htt
             .header("content-range", format!("bytes */{length}"))
             .body(Vec::new()).expect("static invalid range headers");
     };
+    // Deliberate RFC 9110 deviation: a request without Range still receives at most
+    // MAX_VIDEO_CHUNK bytes as 206, so a plain GET can never pull a whole video into IPC memory.
     let partial = range.is_some() || end + 1 < length;
     let mut builder = response(if partial { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK }, mime)
         .header("accept-ranges", "bytes")
@@ -325,10 +333,29 @@ mod tests {
         let path = fixture.file("large.png", b"\x89PNG\r\n\x1a\n");
         std::fs::OpenOptions::new().write(true).open(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
         assert!(image_data_url(path.to_string_lossy().into_owned()).is_err());
-        assert!(check_local_path(&fixture.0.join("other/../image.png")).is_err());
+        assert!(check_local_path(&fixture.0.join("other/../image.png"), INVALID_IMAGE).is_err());
         let response = protocol_response(tauri::http::Request::builder().method("POST")
             .uri("nickel-image://localhost/image.png").body(Vec::new()).unwrap());
         assert_eq!(response.status(), 404);
+    }
+
+    #[test]
+    fn rejected_videos_report_the_video_message_instead_of_the_image_one() {
+        let fixture = Fixture::new();
+        assert_eq!(open_video(Path::new("relative.mp4")).unwrap_err(), INVALID_VIDEO);
+        assert_eq!(open_video(&fixture.0.join("other/../wall.mp4")).unwrap_err(), INVALID_VIDEO);
+        assert_eq!(read_image(Path::new("relative.png")).unwrap_err(), INVALID_IMAGE);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn network_share_prefixes_are_allowed_and_device_namespaces_are_rejected() {
+        for path in [r"\\server\share\wall.png", r"\\?\UNC\server\share\wall.mp4", r"C:\wall.png", r"\\?\C:\wall.webm"] {
+            assert!(check_local_path(Path::new(path), INVALID_IMAGE).is_ok(), "{path}");
+        }
+        for path in [r"\\.\pipe\wall.png", r"\\.\C:\wall.png", r"\\server\share\secrets.local.json"] {
+            assert!(check_local_path(Path::new(path), INVALID_IMAGE).is_err(), "{path}");
+        }
     }
 
     #[cfg(unix)]
@@ -420,6 +447,11 @@ mod tests {
             assert_eq!(response.status(), 206);
             assert_eq!(response.body().len() as u64, MAX_VIDEO_CHUNK);
         }
+        // Intentional RFC deviation: a plain GET larger than one chunk is still a bounded 206.
+        let plain = video_protocol_response(video_request(&path, "GET", None));
+        assert_eq!(plain.status(), 206);
+        assert_eq!(plain.headers()["content-range"], format!("bytes 0-{}/{}", MAX_VIDEO_CHUNK - 1, MAX_VIDEO_CHUNK * 3));
+        assert_eq!(plain.headers()["content-length"], MAX_VIDEO_CHUNK.to_string());
         let response = video_protocol_response(video_request(&path, "GET", Some("bytes=99999999-")));
         assert_eq!(response.status(), 416);
         assert_eq!(response.headers()["content-range"], format!("bytes */{}", MAX_VIDEO_CHUNK * 3));

@@ -44,7 +44,8 @@ SETTINGS = "\u8bbe\u7f6e"
 CONSENT_FIELDS = {"eulaVersion", "eulaAcceptedAt", "changelogSeenVersion"}
 MICROSOFT_FIELDS = {"clientId", "authority", "redirectUri"}
 SYNTHETIC_SETTINGS = {"accountType": "offline", "offlineUsername": "Acceptance", "themeMode": "dark", "accent": "nickel", "titlebarTint": True}
-PROTECTED_PIDS = {17584, 49808, 49092, os.getpid()}
+# Only the harness itself and its parent CLI are protected; never hardcode PIDs from a past session.
+PROTECTED_PIDS = {os.getpid(), os.getppid()}
 
 
 class SafetyError(ValueError):

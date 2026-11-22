@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/startup-acceptance"))
 import native_release as native
 
-native.PROTECTED_PIDS.add(49092)
 SETTINGS = "\u8bbe\u7f6e"
 VIDEO_STATE = """() => {
   const videos = [...document.querySelectorAll('.ni-bg video,.st-preview video,.st-bg__thumb video')];

@@ -250,6 +250,24 @@ test("hidden documents pause elapsed active time and resume without duplicate jo
   stop();
 });
 
+test("fortyTwo keeps the switch-in fade, then disables accent transitions for runtime ticks", () => {
+  // The first tick is what flips the state, so it must land after the fade has finished.
+  assert.ok(theme.THEME_TICK_MS > theme.THEME_TRANSITION_MS);
+  const env = environment();
+  const stop = env.start();
+  assert.equal(env.root.dataset.themeMotion, "entering");
+  env.advance(theme.THEME_TICK_MS);
+  assert.equal(env.root.dataset.themeMotion, "running");
+  env.doc.hidden = true;
+  env.doc.dispatch("visibilitychange");
+  assert.equal(env.root.dataset.themeMotion, "paused");
+  env.doc.hidden = false;
+  env.doc.dispatch("visibilitychange");
+  assert.equal(env.root.dataset.themeMotion, "entering");
+  stop();
+  assert.equal(env.root.dataset.themeMotion, undefined);
+});
+
 test("reduced motion freezes the start endpoint and system scheme changes paint immediately", () => {
   const env = environment();
   env.motion.matches = true;

@@ -182,7 +182,7 @@ def run(archive, expected, evidence):
             observer.close()
             if process is not None:
                 report["observedExitCodeBeforeCleanup"] = process.poll()
-                require(process.pid != os.getpid() and process.pid != 49092)
+                require(process.pid not in (os.getpid(), os.getppid()))
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError:

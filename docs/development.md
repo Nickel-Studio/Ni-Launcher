@@ -80,11 +80,17 @@ $env:NICKEL_DIAG = "1"
 pnpm tauri dev
 ```
 
-## CSP 与本地图片
+## CSP 与本地背景媒体
 
 生产 CSP 保留必要的 Tauri IPC；脚本不允许 `unsafe-inline` / `unsafe-eval`，浏览器连接仅允许 IPC，禁用 frame/object/form 等入口。它用于减少脚本注入和前端外传风险，不用于隐藏已经随客户端分发的 Key。内联样式仍是现有界面必需；HTTP/HTTPS 远程图片仍可用，不代表允许浏览器 `fetch` 这些地址。开发 CSP 单独允许 HMR 和 WebSocket。
 
-通用 `asset:` 文件协议及全盘 `**` scope 已关闭。本地图片使用 `nickel-image` 协议或 `image_data_url` IPC，共用绝对路径、敏感文件名、文件类型和 32 MiB 限制检查，只接受 PNG/JPEG/GIF/BMP/WebP/AVIF 等栅格头部，不支持 SVG、最终文件符号链接或 Windows UNC/device 路径；这不是完整图片解码验证。响应设置 `nosniff` 和 `no-store`，不得为了让测试通过恢复任意文件读取或放宽脚本 CSP。
+通用 `asset:` 文件协议及全盘 `**` scope 已关闭。本地图片使用 `nickel-image` 协议，共用绝对路径、敏感文件名、文件类型和 32 MiB 限制检查，只接受 PNG/JPEG/GIF/BMP/WebP/AVIF 等栅格头部，不支持 SVG 或最终文件符号链接；这不是完整图片解码验证。`image_data_url` IPC 走同一套校验，只在 `<img>` 实际加载失败后作为一次性回退，不做预先探测，避免每张背景被完整读取两次。
+
+本地视频（MP4/M4V/WebM/OGV）使用 `nickel-video` 协议：扩展名与容器头一致、512 MiB 文件上限、每次最多返回 4 MiB，支持 HEAD、206 和 416。不带 `Range` 的普通 GET 在文件超过 4 MiB 时同样返回 206 和 `Content-Range`，这是有意偏离 RFC 9110，保证任何请求都不会把整个视频读进 IPC 内存，不要“修正”成返回完整文件。`MAX_VIDEO_BYTES` 不得超过便携包导入的 `ArchiveLimits::default().max_entry_bytes`，单测锁定了这一约束。
+
+图片和视频的文件头都会读满（读到所需长度或 EOF），避免网络盘或过滤驱动的短读造成误拒。Windows 上接受盘符路径、`\\?\` 盘符路径、UNC 共享（`\\server\share\...`）和映射网络盘规范化后的 `\\?\UNC\...`；`\\.\` 等设备命名空间仍被拒绝。被拒时按媒体类型返回图片或视频各自的提示文案。响应设置 `nosniff` 和 `no-store`，不得为了让测试通过恢复任意文件读取或放宽脚本 CSP。
+
+浏览器预览模式（非 Tauri）把背景读成 data URL 并写入 `localStorage`，因此上限为 3 MiB，避免超出配额后被静默丢弃。
 
 ## 测试
 

@@ -23,7 +23,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import native_release as native
 from package_portable import MARKER, MODPACK_MARKER, marker_for, validate_archive
 
-native.PROTECTED_PIDS.add(49092)
 PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFuoAAAAASUVORK5CYII=")
 
 
