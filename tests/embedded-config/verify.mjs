@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,6 +87,35 @@ function buildOutput(messages) {
 
 function embeddedOutput(messages) {
   return readFileSync(path.join(buildOutput(messages).out_dir, "nickel-embedded-config.bin"));
+}
+
+// Cargo's build-dir layout changed (rustc 1.100 nests `<pkg>/<hash>/...`), so the build script's
+// captured `output` is no longer guaranteed to sit beside `out_dir`. Locate it by content instead:
+// only this probe's build script emits the NICKEL_* rerun instructions.
+function buildScriptInstructions(messages) {
+  const outDir = buildOutput(messages).out_dir;
+  const marker = `cargo:rerun-if-env-changed=${BUILD_ENVIRONMENT[0]}`;
+  const found = [];
+  const visit = (directory, depth) => {
+    let entries;
+    try { entries = readdirSync(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (depth > 0 && full !== outDir) visit(full, depth - 1);
+      } else if (entry.isFile() && entry.name === "output") {
+        const text = readFileSync(full, "utf8");
+        if (text.includes(marker)) found.push({ text, modified: statSync(full).mtimeMs });
+      }
+    }
+  };
+  // Old layout: build/<pkg>-<hash>/{out,output}. New layout: build/<pkg>/<hash>/... under one package directory.
+  for (const [directory, depth] of [[path.dirname(outDir), 2], [path.dirname(path.dirname(outDir)), 3]]) {
+    visit(directory, depth);
+    if (found.length) break;
+  }
+  requireCheck(found.length, "buildScriptOutputLocated");
+  return found.sort((a, b) => b.modified - a.modified)[0].text;
 }
 
 function booleanOnly(value) {
@@ -240,7 +269,7 @@ try {
     "privateSourceFieldsAbsentFromExecutable", "envelopeMatchesWhitelist", "legacyPlaintextBuildOutputAbsent"]) {
     requireCheck(report.checks[key], key);
   }
-  const cargoInstructions = readFileSync(path.join(path.dirname(buildOutput(messages).out_dir), "output"), "utf8");
+  const cargoInstructions = buildScriptInstructions(messages);
   report.checks.placeholderBuildWarningIsExplicit = !placeholderScenario ||
     cargoInstructions.includes("CurseForge test placeholder is embedded but will not be used for authentication");
   requireCheck(report.checks.placeholderBuildWarningIsExplicit, "explicitPlaceholderWarning");
