@@ -86,6 +86,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      # dependency_notices runs `cargo metadata --offline` over every target's crates,
+      # but `cargo test` only downloads the host's. Fetch all targets explicitly so the
+      # test does not depend on whatever an older rust-cache entry happens to contain.
+      - name: 拉取全部平台依赖
+        run: cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 

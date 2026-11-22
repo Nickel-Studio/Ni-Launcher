@@ -94,7 +94,7 @@ pnpm tauri dev
 
 ## 测试
 
-`cargo test --locked` 运行单元测试。依赖网络、现有 Java、系统 UI 或外部实例的用例使用 `#[ignore]`，按测试要求单独运行。
+`cargo test --locked` 运行单元测试。依赖网络、现有 Java、系统 UI 或外部实例的用例使用 `#[ignore]`，按测试要求单独运行。`dependency_notices` 会离线读取全部平台的依赖源码，修改 `Cargo.lock` 后先运行 `cargo fetch --locked --manifest-path src-tauri/Cargo.toml`，并同步 `LICENSES/dependencies-NOTICES.txt`：删除不再可达的包，为新包补上原始许可原文和 SHA-256。
 
 ```powershell
 pnpm build
