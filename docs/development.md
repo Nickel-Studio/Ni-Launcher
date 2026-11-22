@@ -137,6 +137,8 @@ GitHub Secrets 必须配置 `NICKEL_MSA_CLIENT_ID` 和 `NICKEL_CURSEFORGE_API_KE
 
 发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。
 
+MSI 只接受 `主.次.修订[.构建]` 的纯数字版本，带 `-beta` 等预发布标识时必须在 `tauri.conf.json` 的 `bundle.windows.wix.version` 单独指定（1.0.3-beta 用 `1.0.3.1`）；回到纯数字版本时删除该字段，MSI 版本随 `version` 推导。
+
 ### 每目标必须包含 portable
 
 | 目标        | 安装包                 | Portable                                                   |
