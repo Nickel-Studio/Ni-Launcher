@@ -29,7 +29,7 @@ tar = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 walkdir = "2"
-zip = "2"
+zip = "9.8"
 
 # 与原 crate 一致的测试依赖（仅单元/集成测试使用，应用构建不会编译它们）。
 [dev-dependencies]

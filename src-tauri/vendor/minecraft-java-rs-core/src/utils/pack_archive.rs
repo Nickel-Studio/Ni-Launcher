@@ -49,7 +49,7 @@ fn inspect(archive: &mut zip::ZipArchive<File>, source: &Path, limits: &ArchiveL
     for index in 0..archive.len() {
         cancel.check()?;
         let entry = archive.by_index(index).map_err(|e| e.to_string())?;
-        // zip 2 会隐藏同名早期条目；直接核对中央目录确保未漏检。
+        // zip 按名称索引条目，会隐藏同名的早期条目；直接核对中央目录确保未漏检。
         if entry.central_header_start() != position { return Err("归档包含重复条目".into()); }
         central.seek(SeekFrom::Start(position)).map_err(|e| e.to_string())?;
         let mut header = [0u8; 46];
@@ -59,7 +59,8 @@ fn inspect(archive: &mut zip::ZipArchive<File>, source: &Path, limits: &ArchiveL
             .ok_or_else(|| "归档目录长度溢出".to_string())?;
         let mode = entry.unix_mode().unwrap_or(0) & 0o170000;
         if mode != 0 && mode != 0o100000 && mode != 0o040000 { return Err("归档不能包含符号链接或特殊文件".into()); }
-        let name = validate_relative_path(entry.name())?;
+        // 名称既不是 UTF-8 也无法按 CP437 解码时整包拒绝，不跳过单个条目。
+        let name = validate_relative_path(&entry.name().map_err(|e| format!("归档条目名称无效：{e}"))?)?;
         if !names.insert(name.to_lowercase()) { return Err("归档存在重复或大小写冲突条目".into()); }
         register_components(&mut components, &name, entry.is_dir())?;
         total = total.checked_add(entry.size()).ok_or_else(|| "归档大小溢出".to_string())?;
