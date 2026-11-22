@@ -348,6 +348,57 @@ class NativeSafetyTests(unittest.TestCase):
             with self.assertRaises(native.SafetyError):
                 native.assert_copy(sandbox)
 
+
+    def test_private_tree_retries_a_complete_scan_for_disappearing_cache_files(self):
+        sandbox = self.prepare()
+        cache = sandbox.root / "cache.tmp"
+        cache.write_bytes(b"inert-cache-fixture")
+        original = Path.lstat
+        removed = False
+
+        def disappear(path, *args, **kwargs):
+            nonlocal removed
+            if path == cache and not removed:
+                removed = True
+                cache.unlink()
+                raise FileNotFoundError("inert-disappearing-cache-fixture")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "lstat", disappear), patch.object(native.time, "sleep") as sleep:
+            native.assert_private_tree(sandbox.root)
+        self.assertTrue(removed)
+        sleep.assert_called_once_with(0.05)
+        self.assertFalse(cache.exists())
+
+    def test_private_tree_persistent_missing_entry_never_passes(self):
+        sandbox = self.prepare()
+        cached = sandbox.root / "cache.tmp"
+        cached.write_bytes(b"inert-cache-fixture")
+        original = Path.lstat
+
+        def missing(path, *args, **kwargs):
+            if path == cached:
+                raise FileNotFoundError("inert-persistent-cache-fixture")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "lstat", missing), patch.object(native.time, "sleep") as sleep:
+            with self.assertRaises(FileNotFoundError):
+                native.assert_private_tree(sandbox.root)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_private_tree_missing_root_or_failed_traversal_never_passes(self):
+        with self.assertRaises(native.SafetyError):
+            native.assert_private_tree(self.root / "missing-output")
+        sandbox = self.prepare()
+
+        def denied(_root, **options):
+            options["onerror"](PermissionError("inert-walk-permission-fixture"))
+            yield
+
+        with patch.object(native.os, "walk", denied):
+            with self.assertRaises(PermissionError):
+                native.assert_private_tree(sandbox.root)
+
     def test_external_json_in_copy_is_rejected_without_reading_it(self):
         sandbox = self.prepare()
         configuration = sandbox.root / "secrets.local.json"
@@ -505,7 +556,7 @@ class NativeSafetyTests(unittest.TestCase):
         sandbox = self.prepare()
         session = native.NativeSession(None, sandbox, self.root / "protected-cleanup", [])
         session.output.mkdir()
-        session.process = MagicMock(pid=17584)
+        session.process = MagicMock(pid=os.getppid())
         session.process.poll.return_value = None
         session.job = MagicMock()
         with self.assertRaises(native.SafetyError):
@@ -517,11 +568,11 @@ class NativeSafetyTests(unittest.TestCase):
     def test_windows_job_rejects_foreign_or_protected_processes(self):
         job = native.WindowsJob.__new__(native.WindowsJob)
         job.handle, job.kernel = 321, MagicMock()
-        for process in [SimpleNamespace(created=False, pid=999999, handle=123), SimpleNamespace(created=True, pid=17584, handle=123)]:
+        for process in [SimpleNamespace(created=False, pid=999999, handle=123), SimpleNamespace(created=True, pid=os.getppid(), handle=123)]:
             with self.assertRaises(native.SafetyError):
                 job.assign(process)
         job.kernel.AssignProcessToJobObject.assert_not_called()
-        self.assertFalse(job.contains_pid(17584))
+        self.assertFalse(job.contains_pid(os.getppid()))
         job.kernel.OpenProcess.assert_not_called()
 
     def test_native_exit_cannot_be_satisfied_by_forced_cleanup(self):
@@ -592,7 +643,7 @@ class NativeSafetyTests(unittest.TestCase):
         self.win_dll_patch.stop()
         job = native.WindowsJob()
         self.assertEqual(job.member_pids(), [])
-        self.assertFalse(job.contains_pid(17584))
+        self.assertFalse(job.contains_pid(os.getppid()))
         job.close()
         job.close()
         self.assertIsNone(job.handle)

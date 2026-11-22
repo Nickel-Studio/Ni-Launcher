@@ -4,6 +4,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -139,59 +141,90 @@ export function isTauri(): boolean {
   );
 }
 
+export type BackgroundKind = "image" | "video";
+
+export function backgroundKind(path: string | null): BackgroundKind {
+  const value = path?.trim() ?? "";
+  return /^data:video\//i.test(value) || /^nickel-video:/i.test(value) ||
+    /\.(mp4|m4v|webm|ogv)(?:[?#].*)?$/i.test(value)
+    ? "video"
+    : "image";
+}
+
 export function resolveBackgroundUrl(path: string | null): string | null {
   if (!path) return null;
   const value = path.trim();
   if (!value) return null;
-  if (/^(https?:|data:|blob:|asset:|tauri:|\/\/)/i.test(value)) return value;
+  if (/^(https?:|data:|blob:|nickel-image:|nickel-video:|tauri:|\/\/)/i.test(value))
+    return value;
   if (
     /^[a-zA-Z]:[\\/]/.test(value) ||
     value.startsWith("/") ||
     value.startsWith("\\\\")
   ) {
     try {
-      return convertFileSrc(value);
+      if (backgroundKind(value) === "video")
+        return convertFileSrc(value, "nickel-video");
+      return convertFileSrc(value, "nickel-image");
     } catch {
-      return value;
+      return null;
     }
   }
-  return value;
+  return /^(asset:|file:|javascript:)/i.test(value) ? null : value;
 }
 
 /* ----------------------------------------------------------------------------
-   Background source (asset protocol with dataURL fallback)
+   Validated background protocols (image dataURL fallback only)
    -------------------------------------------------------------------------- */
 
+export interface BackgroundSource {
+  src: string | null;
+  /**
+   * Called from the rendered `<img onError>`. Returns true while a one-time data URL
+   * fallback is in flight; `onFailed` runs if that fallback is unavailable too.
+   */
+  recover: (onFailed?: () => void) => boolean;
+}
+
 /**
- * 背景图源。
- *
- * 先走 Tauri asset 协议（`convertFileSrc`）直接引用本地文件；
- * 若该 URL 加载失败（协议未启用 / 路径不在 scope 内 / CSP 限制），
- * 自动回退到 `image_data_url` 命令读取的 dataURL，保证背景图一定能渲染。
+ * Local images and videos use separate validated protocols; videos never become base64 IPC.
+ * The image protocol is the regular path, so there is no pre-flight probe that would read every
+ * file twice; `image_data_url` is requested only after the real element fails to load.
  */
-export function useBackgroundSrc(path: string | null): string | null {
+export function useBackgroundSrc(path: string | null): BackgroundSource {
   const direct = resolveBackgroundUrl(path);
-  const [src, setSrc] = useState<string | null>(direct);
+  const [fallback, setFallback] = useState<{ path: string; src: string | null } | null>(null);
+  const alive = useRef(true);
 
   useEffect(() => {
-    setSrc(resolveBackgroundUrl(path));
-    if (!path || !direct || !isTauri()) return;
-    let alive = true;
-    const probe = new Image();
-    probe.onerror = () => {
-      invoke<string>("image_data_url", { path })
-        .then((dataUrl) => {
-          if (alive && dataUrl) setSrc(dataUrl);
-        })
-        .catch(() => undefined);
-    };
-    probe.src = direct;
+    alive.current = true;
     return () => {
-      alive = false;
+      alive.current = false;
     };
-  }, [path, direct]);
+  }, []);
 
-  return src;
+  const recover = useCallback(
+    (onFailed?: () => void) => {
+      if (!path || !direct || !isTauri() || backgroundKind(path) === "video") return false;
+      // One attempt per path: a failing data URL must not loop back into another request.
+      if (fallback?.path === path) return false;
+      setFallback({ path, src: null });
+      invoke<string>("image_data_url", { path })
+        .then((src) => {
+          if (!alive.current) return;
+          if (!src) throw new Error("empty-image");
+          setFallback((current) => (current?.path === path ? { path, src } : current));
+        })
+        .catch(() => {
+          if (alive.current) onFailed?.();
+        });
+      return true;
+    },
+    [path, direct, fallback]
+  );
+
+  const src = fallback?.path === path && fallback.src ? fallback.src : direct;
+  return { src, recover };
 }
 
 /* ============================================================================
@@ -374,7 +407,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     decoration,
     decorationOpacity,
   } = settings.customTheme;
-  useEffect(
+  useLayoutEffect(
     () =>
       startThemeRuntime(document.documentElement, {
         accent: settings.accent,

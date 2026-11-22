@@ -12,6 +12,11 @@ use tauri::AppHandle;
 #[allow(dead_code)]
 #[path = "../build_config.rs"]
 mod build_config;
+#[allow(dead_code)]
+#[path = "../embedded_config.rs"]
+mod embedded_config;
+use embedded_config::Field;
+use zeroize::Zeroizing;
 
 /// 返回给前端的 Microsoft 登录配置（序列化为 camelCase）。
 ///
@@ -30,12 +35,38 @@ const DEFAULT_AUTHORITY: &str = "consumers";
 const DEFAULT_REDIRECT_URI: &str = "nickel://auth";
 /// 密钥文件名。
 const SECRETS_FILE_NAME: &str = "secrets.local.json";
-const EMBEDDED_CONFIG: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/nickel-embedded-secrets.json"));
+const EMBEDDED_CONFIG: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/nickel-embedded-config.bin"));
 const TEST_CURSEFORGE_KEY: &str = build_config::TEST_CURSEFORGE_KEY;
 
-fn project_runtime_config(text: &str) -> Result<serde_json::Value, String> {
-    build_config::project(text).map_err(|error| format!("解析 {SECRETS_FILE_NAME} 失败：{error}"))
+/// Backend-only credential handle. Clones copy encrypted bytes, not the plaintext API key.
+#[derive(Clone, Default)]
+pub struct CurseforgeCredential(Vec<u8>);
+
+impl std::fmt::Debug for CurseforgeCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CurseforgeCredential([REDACTED])")
+    }
+}
+
+impl CurseforgeCredential {
+    fn from_text(value: &str) -> Option<Self> {
+        let sealed = embedded_config::seal(&[(Field::CurseforgeKey, value)], |bytes| {
+            getrandom::fill(bytes).map_err(|_| "Runtime randomness unavailable")
+        }).ok()?;
+        Some(Self(sealed))
+    }
+
+    pub(crate) fn open(&self) -> Option<Zeroizing<String>> {
+        embedded_config::open(&self.0, Field::CurseforgeKey).ok().flatten()
+    }
+
+}
+
+fn project_runtime_config(text: &str) -> Result<build_config::SensitiveDocument, String> {
+    build_config::project(text)
+        .map(build_config::SensitiveDocument)
+        .map_err(|error| format!("解析 {SECRETS_FILE_NAME} 失败：{error}"))
 }
 
 /// 解析密钥文件文本 → [`MsaConfig`]。
@@ -74,9 +105,9 @@ fn parse_curseforge_key(text: &str) -> Result<Option<String>, String> {
         .map(str::to_owned))
 }
 
-fn read_config_text(path: &Path) -> Option<String> {
+fn read_config_text(path: &Path) -> Option<Zeroizing<String>> {
     let file = std::fs::File::open(path).ok()?;
-    let mut text = String::new();
+    let mut text = Zeroizing::new(String::with_capacity(build_config::MAX_CONFIG_BYTES + 1));
     file.take(build_config::MAX_CONFIG_BYTES as u64 + 1)
         .read_to_string(&mut text)
         .ok()?;
@@ -92,9 +123,10 @@ fn read_msa_config_from(path: &Path) -> Option<MsaConfig> {
 }
 
 /// 读取单个路径的 CurseForge API Key（语义与 [`read_msa_config_from`] 一致）。
-fn read_curseforge_key_from(path: &Path) -> Option<String> {
+fn read_curseforge_key_from(path: &Path) -> Option<CurseforgeCredential> {
     let text = read_config_text(path)?;
-    parse_curseforge_key(&text).ok().flatten()
+    let key = Zeroizing::new(parse_curseforge_key(&text).ok()??);
+    CurseforgeCredential::from_text(&key)
 }
 
 /// 按顺序取第一个命中的配置（缺失的路径自动跳过）。
@@ -103,16 +135,33 @@ fn first_msa_config<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<MsaConf
 }
 
 /// 按顺序取第一个命中的 CurseForge API Key（缺失的路径自动跳过）。
-fn first_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<String> {
+fn first_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<CurseforgeCredential> {
     paths.into_iter().find_map(|p| read_curseforge_key_from(&p))
 }
 
-fn load_msa_config<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<MsaConfig> {
-    first_msa_config(paths).or_else(|| parse_msa_config(EMBEDDED_CONFIG).ok().flatten())
+fn embedded_msa_config() -> Option<MsaConfig> {
+    let client = embedded_config::open(EMBEDDED_CONFIG, Field::MicrosoftClient).ok()??;
+    let authority = embedded_config::open(EMBEDDED_CONFIG, Field::MicrosoftAuthority).ok()??;
+    let redirect = embedded_config::open(EMBEDDED_CONFIG, Field::MicrosoftRedirect).ok()??;
+    Some(MsaConfig {
+        client_id: client.to_string(),
+        authority: authority.to_string(),
+        redirect_uri: redirect.to_string(),
+    })
 }
 
-fn load_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<String> {
-    first_curseforge_key(paths).or_else(|| parse_curseforge_key(EMBEDDED_CONFIG).ok().flatten())
+fn embedded_curseforge_key() -> Option<CurseforgeCredential> {
+    let credential = CurseforgeCredential(EMBEDDED_CONFIG.to_vec());
+    let key = credential.open()?;
+    (key.as_str() != TEST_CURSEFORGE_KEY).then_some(credential)
+}
+
+fn load_msa_config<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<MsaConfig> {
+    first_msa_config(paths).or_else(embedded_msa_config)
+}
+
+fn load_curseforge_key<I: IntoIterator<Item = PathBuf>>(paths: I) -> Option<CurseforgeCredential> {
+    first_curseforge_key(paths).or_else(embedded_curseforge_key)
 }
 
 /// 开发根仅用于调试构建；发行程序不会读取构建机的源码路径。
@@ -144,11 +193,11 @@ fn runtime_candidate_paths(
 fn candidate_paths(app: &AppHandle) -> Vec<PathBuf> {
     let primary = std::env::var("NICKEL_SECRETS").ok();
     let config = crate::app_paths::config_dir(app).ok();
-    let executable = std::env::current_exe().ok();
+    let executable = crate::app_paths::executable_directory_for(app).ok();
     runtime_candidate_paths(
         primary.as_deref(),
         config.as_deref(),
-        executable.as_deref().and_then(Path::parent),
+        executable.as_deref(),
     )
 }
 
@@ -159,13 +208,17 @@ pub fn msa_config_get(app: AppHandle) -> Result<Option<MsaConfig>, String> {
 }
 
 /// 不注册为前端 IPC；真实 Key 只在后端用于官方请求。
-pub fn curseforge_api_key(app: AppHandle) -> Result<Option<String>, String> {
+pub fn curseforge_api_key(app: AppHandle) -> Result<Option<CurseforgeCredential>, String> {
     Ok(load_curseforge_key(candidate_paths(&app)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn credential_text(value: Option<CurseforgeCredential>) -> Option<String> {
+        value.and_then(|credential| credential.open()).map(|value| value.to_string())
+    }
 
     const SAMPLE: &str = r#"{
       "microsoft": {
@@ -356,7 +409,7 @@ mod tests {
         std::fs::write(&present, CF_SAMPLE).unwrap();
 
         assert_eq!(
-            first_curseforge_key(vec![missing, present.clone()]),
+            credential_text(first_curseforge_key(vec![missing, present.clone()])),
             Some("$2a$10$TESTKEY".to_string())
         );
 
@@ -451,7 +504,7 @@ mod tests {
         let paths = vec![oversized, invalid_utf8, valid];
         assert_eq!(first_msa_config(paths.clone()).unwrap().client_id, "cid");
         assert_eq!(
-            first_curseforge_key(paths).as_deref(),
+            credential_text(first_curseforge_key(paths)).as_deref(),
             Some("$2a$10$TESTKEY")
         );
     }
@@ -494,10 +547,10 @@ mod tests {
         .unwrap();
         std::fs::write(&valid, CF_SAMPLE).unwrap();
         assert_eq!(
-            load_curseforge_key(vec![placeholder, valid]).as_deref(),
+            credential_text(load_curseforge_key(vec![placeholder, valid])).as_deref(),
             Some("$2a$10$TESTKEY")
         );
-        let embedded = load_curseforge_key(Vec::<PathBuf>::new());
+        let embedded = credential_text(load_curseforge_key(Vec::<PathBuf>::new()));
         assert!(embedded.as_deref() != Some(TEST_CURSEFORGE_KEY));
     }
 
@@ -568,7 +621,7 @@ mod tests {
                 format!("{name}-client")
             );
             assert_eq!(
-                load_curseforge_key(paths.clone()).unwrap(),
+                credential_text(load_curseforge_key(paths.clone())).unwrap(),
                 format!("{name}-key")
             );
             std::fs::write(&paths[index], "broken").unwrap();
@@ -587,17 +640,17 @@ mod tests {
             load_msa_config(paths.clone()).unwrap().client_id,
             "primary-client"
         );
-        assert_eq!(load_curseforge_key(paths).as_deref(), Some("config-key"));
+        assert_eq!(credential_text(load_curseforge_key(paths)).as_deref(), Some("config-key"));
     }
 
     #[test]
     fn missing_runtime_paths_fall_back_to_the_embedded_configuration() {
         let missing = temp_path("embedded-fallback");
         assert!(
-            load_msa_config(vec![missing.clone()]) == parse_msa_config(EMBEDDED_CONFIG).unwrap()
+            load_msa_config(vec![missing.clone()]) == embedded_msa_config()
         );
         assert!(
-            load_curseforge_key(vec![missing]) == parse_curseforge_key(EMBEDDED_CONFIG).unwrap()
+            credential_text(load_curseforge_key(vec![missing])) == credential_text(embedded_curseforge_key())
         );
     }
 
@@ -652,14 +705,16 @@ mod tests {
             paths.iter().all(|path| !path.exists()),
             "no external configuration may be supplied to the detached probe"
         );
-        let embedded =
-            build_config::project(EMBEDDED_CONFIG).expect("embedded configuration is valid");
-        let raw: serde_json::Value = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        let embedded = build_config::SensitiveDocument(
+            embedded_config::snapshot(EMBEDDED_CONFIG).expect("embedded configuration is valid"),
+        );
+        let text = Zeroizing::new(embedded.to_string());
+        let projected = build_config::SensitiveDocument(build_config::project(&text).unwrap());
         assert!(
-            raw == embedded,
+            *embedded == *projected,
             "embedded configuration must contain only the four allowed fields"
         );
-        let expected_msa = parse_msa_config(EMBEDDED_CONFIG).unwrap();
+        let expected_msa = embedded_msa_config();
         let msa = load_msa_config(paths.clone());
         assert!(
             expected_msa.is_some(),
@@ -669,9 +724,9 @@ mod tests {
             msa == expected_msa,
             "runtime Microsoft configuration must match the embedded configuration"
         );
-        let curseforge = load_curseforge_key(paths);
+        let curseforge = credential_text(load_curseforge_key(paths));
         assert!(
-            curseforge == parse_curseforge_key(EMBEDDED_CONFIG).unwrap(),
+            curseforge == credential_text(embedded_curseforge_key()),
             "runtime CurseForge configuration must match the embedded configuration"
         );
         let placeholder = embedded["curseforge"]["apiKey"].as_str() == Some(TEST_CURSEFORGE_KEY);

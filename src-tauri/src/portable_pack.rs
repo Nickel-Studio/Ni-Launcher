@@ -31,7 +31,7 @@ const ACCENTS: &[&str] = &[
     "nickel", "copper", "abyss", "paper", "fortyTwo", "custom",
 ];
 const THEME_DECORATIONS: &[&str] = &["none", "lattice", "ribbons", "orbits", "folds"];
-const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"];
+const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif", "mp4", "m4v", "webm", "ogv"];
 const SOURCE_FILE: &str = "SOURCE.txt";
 // 单文件启动器不会复制 bundle resources；固定嵌入许可，且保留 NOTICE 的相对链接布局。
 const LAUNCHER_LICENSE_ENTRIES: &[(&str, &[u8])] = &[
@@ -439,7 +439,7 @@ fn launcher_path_for(source: &Path, development: bool, os: &str) -> Result<&'sta
 }
 
 fn current_launcher() -> Result<(PathBuf, &'static str), String> {
-    let source = std::env::current_exe().map_err(|e| format!("无法定位当前启动器：{e}"))?;
+    let source = app_paths::launcher_executable()?;
     let name = launcher_path_for(
         &source,
         cfg!(debug_assertions) || tauri::is_dev(),
@@ -531,44 +531,17 @@ fn copy_snapshot(
     cancel.check()
 }
 
+fn background_limit(extension: &str) -> u64 {
+    if ["mp4", "m4v", "webm", "ogv"].contains(&extension) {
+        crate::media::MAX_VIDEO_BYTES
+    } else {
+        BACKGROUND_MAX_BYTES
+    }
+}
+
 fn validate_background(path: &Path) -> Result<(), String> {
     instances::reject_links(path)?;
-    let mut file = std::fs::File::open(path).map_err(|e| format!("读取背景图片失败：{e}"))?;
-    let metadata = file.metadata().map_err(|e| e.to_string())?;
-    if !metadata.is_file() || metadata.len() > BACKGROUND_MAX_BYTES {
-        return Err("请选择小于 32 MiB 的本地背景图片后重新导出".into());
-    }
-    let mut header = [0_u8; 32];
-    let count = file
-        .read(&mut header)
-        .map_err(|e| format!("读取背景图片失败：{e}"))?;
-    let bytes = &header[..count];
-    let extension = path
-        .extension()
-        .and_then(|v| v.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let valid = match extension.as_str() {
-        "png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "jpg" | "jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
-        "gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
-        "bmp" => bytes.starts_with(b"BM"),
-        "webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP".as_slice()),
-        "avif" => {
-            bytes.get(4..8) == Some(b"ftyp".as_slice())
-                && bytes
-                    .windows(4)
-                    .any(|part| part == b"avif" || part == b"avis")
-        }
-        _ => false,
-    };
-    if !valid {
-        return Err(
-            "请选择 PNG、JPEG、WebP、GIF、BMP 或 AVIF 本地背景图片，或关闭「附带个性化设置」"
-                .into(),
-        );
-    }
-    Ok(())
+    crate::media::validate_background_file(path)
 }
 
 // Project nested appearance fields instead of copying arbitrary settings JSON.
@@ -639,7 +612,7 @@ fn snapshot_personalization(
                 .filter(|(_, source_manifest)| {
                     is_background_path(&source_manifest.data_directory, background)
                 })
-                .ok_or("请重新选择本地背景图片，或关闭「附带个性化设置」后导出")?;
+                .ok_or("请重新选择本地背景图片或视频，或关闭「附带个性化设置」后导出")?;
             validate_manifest(&source_manifest)?;
             source_root.join(background)
         };
@@ -650,12 +623,12 @@ fn snapshot_personalization(
             .to_ascii_lowercase();
         if !BACKGROUND_EXTENSIONS.contains(&extension.as_str()) {
             return Err(
-                "请将背景转换为 PNG、JPEG、WebP、GIF、BMP 或 AVIF，或关闭「附带个性化设置」".into(),
+                "请选择支持的背景图片或 MP4、M4V、WebM、OGV 视频，或关闭「附带个性化设置」".into(),
             );
         }
         let relative = data_path_for(&manifest.data_directory, &format!("background.{extension}"));
         let destination = root.join(&relative);
-        copy_snapshot(&source, &destination, BACKGROUND_MAX_BYTES, cancel)?;
+        copy_snapshot(&source, &destination, background_limit(&extension), cancel)?;
         validate_background(&destination)?;
         settings.background_image = Some(relative);
     }
@@ -1592,4 +1565,46 @@ mod tests {
         );
         assert_eq!(std::fs::read(&destination).unwrap(), b"existing archive");
     }
+    #[test]
+    fn personalization_video_zip_roundtrip_relocates_only_validated_media() {
+        let fixture = Fixture::new();
+        let cancel = CancellationToken::new();
+        for (extension, bytes) in [
+            ("mp4", b"\0\0\0\x18ftypisom\0\0\0\0isommp42video-fixture".as_slice()),
+            ("m4v", b"\0\0\0\x18ftypisom\0\0\0\0isommp42video-fixture".as_slice()),
+            ("webm", b"\x1a\x45\xdf\xa3\x42\x82\x84webmfixture".as_slice()),
+            ("ogv", b"OggSfixture\x80theora".as_slice()),
+        ] {
+            let mut snapshot = fixture_snapshot(&fixture.0.join(format!("video-{extension}")), false, false);
+            let relative = data_path(&format!("background.{extension}"));
+            let path = snapshot.root.join(&relative);
+            std::fs::write(&path, bytes).unwrap();
+            validate_background(&path).unwrap();
+            let mut settings = select_personalization(&json!({"accent": "custom", "accounts": ["private-fixture"]}));
+            settings.background_image = Some(relative.clone());
+            settings.validate(&snapshot.manifest).unwrap();
+            let personalization = data_path(PERSONALIZATION_FILE);
+            snapshot.manifest.personalization = Some(personalization.clone());
+            snapshot.files.push((relative.clone(), relative.clone()));
+            snapshot.inline_entries.push((personalization.clone(), serde_json::to_vec(&settings).unwrap()));
+            let archive = fixture.0.join(format!("video-{extension}.zip"));
+            snapshot.write(&archive, &cancel, |_, _, _| {}).unwrap();
+            assert_eq!(read_zip_entry(&archive, &relative, crate::media::MAX_VIDEO_BYTES, &cancel).unwrap(), bytes);
+            let relocated = fixture.0.join(format!("video-relocated-{extension}"));
+            std::fs::create_dir(&relocated).unwrap();
+            std::fs::write(relocated.join(MANIFEST_FILE), read_zip_entry(&archive, MANIFEST_FILE, MANIFEST_MAX_BYTES, &cancel).unwrap()).unwrap();
+            extract_zip_subtrees(&archive, &relocated.join(app_paths::DATA_DIRECTORY), &[app_paths::DATA_DIRECTORY.into()], &[], &ArchiveLimits::default(), &cancel).unwrap();
+            let bootstrap = load_bootstrap(&relocated).unwrap().unwrap();
+            let decoded = bootstrap.personalization.unwrap();
+            assert_eq!(decoded, settings);
+            let resolved = decoded.resolved_value(&bootstrap.root, &bootstrap.manifest).unwrap();
+            assert_eq!(PathBuf::from(resolved["backgroundImage"].as_str().unwrap()), bootstrap.root.join(relative));
+            assert!(!serde_json::to_string(&resolved).unwrap().contains("private-fixture"));
+        }
+        assert_eq!(background_limit("mp4"), crate::media::MAX_VIDEO_BYTES);
+        assert_eq!(background_limit("png"), BACKGROUND_MAX_BYTES);
+        // Export and import limits must move together, or a video could export but fail to import.
+        assert!(crate::media::MAX_VIDEO_BYTES <= ArchiveLimits::default().max_entry_bytes);
+    }
+
 }

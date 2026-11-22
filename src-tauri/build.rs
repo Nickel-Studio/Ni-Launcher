@@ -1,47 +1,72 @@
 #[allow(dead_code)]
 mod build_config;
+#[allow(dead_code)]
+mod embedded_config;
 
 fn embed_api_config() {
+    use std::io::Read;
+    use zeroize::Zeroizing;
     for key in [
-        "NICKEL_BUILD_SECRETS",
-        "NICKEL_MSA_CLIENT_ID",
-        "NICKEL_MSA_AUTHORITY",
-        "NICKEL_MSA_REDIRECT_URI",
-        "NICKEL_CURSEFORGE_API_KEY",
+        "NICKEL_BUILD_SECRETS", "NICKEL_MSA_CLIENT_ID", "NICKEL_MSA_AUTHORITY",
+        "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY", "NICKEL_REQUIRE_RELEASE_SECRETS",
     ] {
         println!("cargo:rerun-if-env-changed={key}");
     }
     println!("cargo:rerun-if-changed=build_config.rs");
+    println!("cargo:rerun-if-changed=embedded_config.rs");
     let root = std::path::PathBuf::from(
         std::env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"),
     );
     let explicit = std::env::var_os("NICKEL_BUILD_SECRETS").filter(|path| !path.is_empty());
-    let path = explicit
-        .as_ref()
-        .map(std::path::PathBuf::from)
+    let path = explicit.as_ref().map(std::path::PathBuf::from)
         .unwrap_or_else(|| root.join("../secrets.local.json"));
     println!("cargo:rerun-if-changed={}", path.display());
-    let local = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
+    let mut local = Zeroizing::new(String::with_capacity(build_config::MAX_CONFIG_BYTES + 1));
+    match std::fs::File::open(&path) {
+        Ok(file) => {
+            file.take(build_config::MAX_CONFIG_BYTES as u64 + 1).read_to_string(&mut local)
+                .expect("Unable to read build API configuration");
+        }
         Err(error) if explicit.is_none() && error.kind() == std::io::ErrorKind::NotFound => {
-            "{}".to_owned()
+            local.push_str("{}");
         }
         Err(_) => panic!("Unable to read build API configuration"),
-    };
-    let projected = build_config::from_source(&local, |key| std::env::var(key).ok())
-        .expect("Invalid build API configuration");
-    if projected["curseforge"]["apiKey"].as_str() == Some(build_config::TEST_CURSEFORGE_KEY) {
-        println!(
-            "cargo:warning=CurseForge test placeholder is embedded but will not be used for authentication"
-        );
     }
-    let out =
-        std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("build output directory"));
-    std::fs::write(
-        out.join("nickel-embedded-secrets.json"),
-        projected.to_string(),
-    )
-    .expect("Unable to write embedded API configuration");
+    let projected = build_config::SensitiveDocument(
+        build_config::from_source(&local, |key| std::env::var(key).ok())
+            .expect("Invalid build API configuration"),
+    );
+    let placeholder = projected["curseforge"]["apiKey"].as_str() == Some(build_config::TEST_CURSEFORGE_KEY);
+    if std::env::var("NICKEL_REQUIRE_RELEASE_SECRETS").as_deref() == Ok("1") {
+        assert!(projected["microsoft"]["clientId"].as_str().is_some(),
+            "Release requires Microsoft public client configuration");
+        assert!(projected["curseforge"]["apiKey"].as_str().is_some() && !placeholder,
+            "Release requires a usable CurseForge API key");
+    }
+    if placeholder {
+        println!("cargo:warning=CurseForge test placeholder is embedded but will not be used for authentication");
+    }
+    use embedded_config::Field;
+    let fields: Vec<_> = [
+        (Field::MicrosoftClient, "microsoft", "clientId"),
+        (Field::MicrosoftAuthority, "microsoft", "authority"),
+        (Field::MicrosoftRedirect, "microsoft", "redirectUri"),
+        (Field::CurseforgeKey, "curseforge", "apiKey"),
+    ].into_iter().filter_map(|(field, section, name)| {
+        projected[section][name].as_str().map(|value| (field, value))
+    }).collect();
+    let envelope = embedded_config::seal(&fields, |bytes| {
+        getrandom::fill(bytes).map_err(|_| "Build randomness unavailable")
+    }).expect("Unable to seal embedded API configuration");
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("build output directory"));
+    // Remove only this build's obsolete plaintext output when reusing a pre-hardening target.
+    match std::fs::remove_file(out.join("nickel-embedded-secrets.json")) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => panic!("Unable to remove legacy plaintext API configuration"),
+    }
+    std::fs::write(out.join("nickel-embedded-config.bin"), envelope)
+        .expect("Unable to write embedded API configuration");
 }
 
 fn validate_release_metadata() {

@@ -604,7 +604,7 @@ fn curseforge_loader_type(loader: &str) -> Option<u32> {
     }
 }
 
-async fn curseforge_update(murmur2: u32, compatibility: &Compatibility, settings: &network_settings::NetworkSettings, key: Option<&str>) -> Result<Option<ModUpdate>, String> {
+async fn curseforge_update(murmur2: u32, compatibility: &Compatibility, settings: &network_settings::NetworkSettings, key: Option<&crate::secrets::CurseforgeCredential>) -> Result<Option<ModUpdate>, String> {
     let Some(loader_type) = curseforge_loader_type(&compatibility.loader) else { return Ok(None); };
     if compatibility.minecraft.is_empty() { return Ok(None); }
     let matched = community_network::post_json(
@@ -660,10 +660,10 @@ async fn modrinth_probe(path: PathBuf, compatibility: Compatibility, settings: n
     }
 }
 
-async fn curseforge_probe(path: PathBuf, compatibility: Compatibility, settings: network_settings::NetworkSettings, key: Option<String>) -> UpdateProbe {
+async fn curseforge_probe(path: PathBuf, compatibility: Compatibility, settings: network_settings::NetworkSettings, key: Option<crate::secrets::CurseforgeCredential>) -> UpdateProbe {
     let murmur2 = tokio::task::spawn_blocking(move || murmur2_file(&path)).await;
     let Ok(Ok(murmur2)) = murmur2 else { return UpdateProbe::Unknown };
-    match curseforge_update(murmur2, &compatibility, &settings, key.as_deref()).await {
+    match curseforge_update(murmur2, &compatibility, &settings, key.as_ref()).await {
         Ok(update) => UpdateProbe::Found(update),
         Err(_) => UpdateProbe::Unknown,
     }
@@ -696,7 +696,7 @@ where
     }
 }
 
-async fn fastest_update_for_path(path: PathBuf, compatibility: &Compatibility, settings: &network_settings::NetworkSettings, transfer: &TransferContext, key: Option<String>) -> Option<ModUpdate> {
+async fn fastest_update_for_path(path: PathBuf, compatibility: &Compatibility, settings: &network_settings::NetworkSettings, transfer: &TransferContext, key: Option<crate::secrets::CurseforgeCredential>) -> Option<ModUpdate> {
     race_probes(
         modrinth_probe(path.clone(), compatibility.clone(), settings.clone(), transfer.clone()),
         curseforge_probe(path, compatibility.clone(), settings.clone(), key),
@@ -1316,7 +1316,7 @@ fn commit_mod_update(path: &Path, staged: &Path, target: &Path) -> Result<(), St
     std::fs::remove_file(&backup).map_err(|e| format!("新版已安装，清理旧 Mod 备份失败 {}：{e}", backup.display()))
 }
 
-async fn update_files(task: &TaskContext, paths: &[PathBuf], compatibility: &Compatibility, key: Option<String>) -> Result<(), String> {
+async fn update_files(task: &TaskContext, paths: &[PathBuf], compatibility: &Compatibility, key: Option<crate::secrets::CurseforgeCredential>) -> Result<(), String> {
     let mut updated = 0;
     for path in paths {
         task.check_cancelled()?;

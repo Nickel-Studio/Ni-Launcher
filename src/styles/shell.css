@@ -441,19 +441,6 @@ html.ni-splash-hold .ni-shell {
 :root[data-rich-theme="true"] .ni-switch[data-on="true"] .ni-switch__knob {
   background: var(--accent-fg);
 }
-:root[data-accent="custom"]
-  :is(
-    .ni-btn--primary,
-    .ni-navtab,
-    .ni-navtab__pill,
-    .ni-seg__item,
-    .ni-seg__pill,
-    .ni-check__box,
-    .st-preview__btn--accent,
-    .st-preview__chip--accent
-  ) {
-  transition-property: transform, width, opacity, box-shadow;
-}
 :root[data-theme-motion="paused"] {
   --t-accent: 0ms;
 }

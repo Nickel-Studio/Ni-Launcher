@@ -21,7 +21,11 @@ html {
     --accent-strong var(--t-accent) var(--ease),
     --accent-fg var(--t-accent) var(--ease),
     --accent-soft var(--t-accent) var(--ease),
-    --accent-ring var(--t-accent) var(--ease);
+    --accent-ring var(--t-accent) var(--ease),
+    --accent-text var(--t-accent) var(--ease),
+    --theme-ink var(--t-accent) var(--ease),
+    --theme-chrome-bg var(--t-accent) var(--ease),
+    --theme-chrome-text var(--t-accent) var(--ease);
 }
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -168,9 +172,10 @@ p {
 .ni-bg__image {
   position: absolute;
   inset: -8%;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  object-position: center;
   opacity: var(--_bg-opacity, 0);
   filter: blur(var(--_bg-blur, 0px));
   transform: scale(1.05);
@@ -211,7 +216,7 @@ p {
 /* 仅作为氛围层：不参与语义、不拦截指针。透明度压到几乎不可察觉，
    并只向右上角柔和衰减，避免出现「泛色背景 / 大面积光晕」的观感。
    亮色背景下它只是一点极轻微的提亮，不会抢主体。 */
-:root[data-accent="mono"] .ni-bg__mesh::after {
+:root[data-accent="mono"] .ni-bg:not([data-user-background="true"]) .ni-bg__mesh::after {
   content: "";
   position: absolute;
   inset: 0;

@@ -250,6 +250,24 @@ test("hidden documents pause elapsed active time and resume without duplicate jo
   stop();
 });
 
+test("fortyTwo keeps the switch-in fade, then disables accent transitions for runtime ticks", () => {
+  // The first tick is what flips the state, so it must land after the fade has finished.
+  assert.ok(theme.THEME_TICK_MS > theme.THEME_TRANSITION_MS);
+  const env = environment();
+  const stop = env.start();
+  assert.equal(env.root.dataset.themeMotion, "entering");
+  env.advance(theme.THEME_TICK_MS);
+  assert.equal(env.root.dataset.themeMotion, "running");
+  env.doc.hidden = true;
+  env.doc.dispatch("visibilitychange");
+  assert.equal(env.root.dataset.themeMotion, "paused");
+  env.doc.hidden = false;
+  env.doc.dispatch("visibilitychange");
+  assert.equal(env.root.dataset.themeMotion, "entering");
+  stop();
+  assert.equal(env.root.dataset.themeMotion, undefined);
+});
+
 test("reduced motion freezes the start endpoint and system scheme changes paint immediately", () => {
   const env = environment();
   env.motion.matches = true;
@@ -286,4 +304,18 @@ test("static themes never schedule a job and repeated mount-cleanup leaves no li
       assert.equal(env.doc.count() + env.scheme.count() + env.motion.count(), 0);
     }
   }
+});
+
+test("background settings preserve legacy images and classify video paths and data URLs", () => {
+  for (const path of ["C:/wallpaper.MP4", "/tmp/background.webm", "Nickel/background.ogv", "movie.m4v?version=1", "data:video/webm;base64,fixture", "nickel-video://localhost/fixture"]) {
+    assert.equal(settings.backgroundKind(path), "video", path);
+    assert.equal(settings.normalizeSettings({ backgroundImage: path }).backgroundImage, path);
+  }
+  for (const path of [null, "", "C:/wallpaper.PNG", "data:image/png;base64,fixture", "image.avif", "photo.svg"]) assert.equal(settings.backgroundKind(path), "image");
+  assert.equal(settings.normalizeSettings({ backgroundImage: 12 }).backgroundImage, null);
+  for (const path of ["javascript:alert(1)", "file:///tmp/private.json", "asset://localhost/private"]) assert.equal(settings.resolveBackgroundUrl(path), null);
+});
+
+test("only custom retains a theme description", () => {
+  assert.deepEqual(ACCENT_OPTIONS.filter((option) => option.description).map((option) => option.value), ["custom"]);
 });

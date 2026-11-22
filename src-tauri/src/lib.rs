@@ -44,9 +44,10 @@ mod launch_log_store;
 mod launch_output;
 mod launch_state;
 mod launch_window;
+mod launcher_portable;
 mod loader_availability;
 mod loader_catalog; // 完整加载器清单 / 请求级下载源 / 官方安装器地址
-mod media; // 本地图片 → dataURL（背景图兜底渲染）
+mod media; // Validated background image and video protocols.
 mod memory_plan;
 mod modpacks;
 mod modrinth; // Modrinth 社区资源检索 / 安装（不经镜像，直连公开 API）
@@ -1176,6 +1177,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(media::protocol_plugin())
         // 窗口在配置里设为 `visible: false`：透明 + 无边框窗口一旦先显示、WebView 后绘制，
         // 用户会先看到一块「什么都没有」的透明矩形，然后才是启动画面。
         // 这里等页面加载完成（启动画面已经绘制）再显示，首个可见帧就是启动画面。
@@ -1292,6 +1294,7 @@ pub fn run() {
             secrets::msa_config_get,
             // 本地图片 → dataURL（背景图兜底渲染）
             media::image_data_url,
+            media::background_media_validate,
             // 皮肤
             skin::skin_fetch,
             offline_skin::game_offline_skin_pick,

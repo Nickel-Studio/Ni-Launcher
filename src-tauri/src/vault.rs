@@ -9,10 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use aes_gcm::{
-    Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, OsRng, rand_core::RngCore},
-};
+use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use tauri::AppHandle;
@@ -122,9 +119,7 @@ fn create_key_with(
     }
 
     let mut key = [0u8; KEY_LEN];
-    OsRng
-        .try_fill_bytes(&mut key)
-        .map_err(|_| "生成本地凭据密钥失败".to_string())?;
+    getrandom::fill(&mut key).map_err(|_| "生成本地凭据密钥失败".to_string())?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建凭据密钥目录失败: {e}"))?;
@@ -265,12 +260,10 @@ fn seal_with_key(key: &[u8; KEY_LEN], plaintext: &str) -> Result<String, String>
         Aes256Gcm::new_from_slice(key).map_err(|_| "初始化本地加密失败".to_string())?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    OsRng
-        .try_fill_bytes(&mut nonce_bytes)
-        .map_err(|_| "生成本地加密随机数失败".to_string())?;
+    getrandom::fill(&mut nonce_bytes).map_err(|_| "生成本地加密随机数失败".to_string())?;
 
     let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_bytes())
+        .encrypt(&nonce_bytes.into(), plaintext.as_bytes())
         .map_err(|_| "加密本地凭据失败".to_string())?;
 
     let mut payload = Vec::with_capacity(NONCE_LEN + ciphertext.len());
@@ -297,9 +290,11 @@ fn open_with_key(key: &[u8; KEY_LEN], sealed: &str) -> Result<String, String> {
     let (nonce_bytes, ciphertext) = payload.split_at(NONCE_LEN);
     let cipher =
         Aes256Gcm::new_from_slice(key).map_err(|_| "初始化本地解密失败".to_string())?;
+    let nonce = Nonce::try_from(nonce_bytes)
+        .map_err(|_| "本地凭据已损坏，请重新登录".to_string())?;
 
     let plaintext = cipher
-        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|_| "本地凭据已失效或密钥不匹配，请重新登录".to_string())?;
 
     String::from_utf8(plaintext).map_err(|_| "本地凭据内容无法解析，请重新登录".to_string())
@@ -331,6 +326,14 @@ mod tests {
         assert!(sealed.starts_with(CIPHER_PREFIX));
         assert!(!sealed.contains("p@ss"));
         assert_eq!(open_with_key(&k, &sealed).unwrap(), "p@ss word 密码");
+    }
+
+    #[test]
+    fn reads_existing_v1_standard_gcm_payload_after_crypto_upgrade() {
+        // Independently generated AES-256-GCM data, never an account credential.
+        let sealed = "v1:AwMDAwMDAwMDAwMDSZvEYjlRczRLbSAujjOaYplVgYOZ8/0IW6v11ACLjVIz/+X1QlhPOCY3PH4=";
+        assert_eq!(open_with_key(&key(7), sealed).unwrap(), "legacy-v1-credential-fixture");
+        assert!(open_with_key(&key(8), sealed).is_err());
     }
 
     #[test]

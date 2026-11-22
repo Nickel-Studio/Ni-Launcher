@@ -1,5 +1,9 @@
 #[path = "../build_config.rs"]
 mod build_config;
+#[allow(dead_code)]
+#[path = "../embedded_config.rs"]
+mod embedded_config;
+use zeroize::Zeroizing;
 
 use build_config::{MAX_CONFIG_BYTES, TEST_CURSEFORGE_KEY, from_source, project};
 use serde_json::{Value, json};
@@ -196,13 +200,22 @@ fn authorized_build_source_matches_embedded_whitelist_without_logging_values() {
     let path = explicit.map(std::path::PathBuf::from).unwrap_or_else(|| {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../secrets.local.json")
     });
-    let text = std::fs::read_to_string(path).expect("authorized build source is readable");
-    let expected = from_source(&text, |key| std::env::var(key).ok())
-        .expect("authorized build source passes field validation");
-    let embedded_text = include_str!(concat!(env!("OUT_DIR"), "/nickel-embedded-secrets.json"));
-    let embedded: Value = serde_json::from_str(embedded_text).expect("embedded JSON is valid");
+    let text = Zeroizing::new(match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if std::env::var_os("NICKEL_BUILD_SECRETS").is_none()
+            && error.kind() == std::io::ErrorKind::NotFound => "{}".into(),
+        Err(_) => panic!("authorized build source is readable"),
+    });
+    let expected = build_config::SensitiveDocument(
+        from_source(&text, |key| std::env::var(key).ok())
+            .expect("authorized build source passes field validation"),
+    );
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/nickel-embedded-config.bin"));
+    let embedded = build_config::SensitiveDocument(
+        embedded_config::snapshot(bytes).expect("embedded envelope is valid"),
+    );
     assert!(
-        expected == embedded,
+        *expected == *embedded,
         "embedded whitelist differs from authorized build source"
     );
     assert!(

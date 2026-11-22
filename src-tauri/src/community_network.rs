@@ -35,7 +35,13 @@ impl Platform {
 }
 
 pub fn client() -> Result<reqwest::Client, String> {
-    minecraft_java_rs_core::net::client::build_client(crate::http::TIMEOUT_SECS, false, None)
+    // Custom API-key headers are not stripped by every cross-origin redirect implementation.
+    // API endpoints must answer directly; CDN downloads keep their separate transfer client.
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(crate::http::TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(crate::http::TIMEOUT_SECS))
+        .build()
         .map_err(|_| "初始化社区 API 客户端失败".into())
 }
 
@@ -92,8 +98,9 @@ pub fn api_candidates(
         let mut candidate = RequestCandidate::official(official);
         if platform == Platform::Curseforge {
             if let Some(key) = key.filter(|value| !value.is_empty()) {
-                let value = reqwest::header::HeaderValue::from_str(key)
+                let mut value = reqwest::header::HeaderValue::from_str(key)
                     .map_err(|_| "CurseForge Key 格式无效，请重新配置".to_string())?;
+                value.set_sensitive(true);
                 candidate.headers.insert("x-api-key", value);
             }
         }
@@ -165,14 +172,23 @@ pub async fn get_json<T, V: Fn(&serde_json::Value) -> Result<T, String>>(
     url: &str,
     settings: &NetworkSettings,
     transfer: &TransferContext,
-    key: Option<&str>,
+    key: Option<&crate::secrets::CurseforgeCredential>,
     validate: V,
 ) -> Result<T, String> {
     let mirror = match platform {
         Platform::Modrinth => &settings.modrinth_api_mirror,
         Platform::Curseforge => &settings.curseforge_api_mirror,
     };
-    let candidates = api_candidates(platform, url, mirror, key)?;
+    let candidates = {
+        // Decrypted text exists only while constructing the official request header.
+        let plaintext = if platform == Platform::Curseforge {
+            key.map(|credential| credential.open().ok_or_else(|| "CurseForge credential unavailable".to_string()))
+                .transpose()?
+        } else {
+            None
+        };
+        api_candidates(platform, url, mirror, plaintext.as_deref().map(String::as_str))?
+    };
     transfer::fetch_validated_candidates(
         &client()?,
         transfer,
@@ -196,7 +212,7 @@ pub async fn post_json<T, V: Fn(&serde_json::Value) -> Result<T, String>>(
     platform: Platform,
     url: &str,
     settings: &NetworkSettings,
-    key: Option<&str>,
+    key: Option<&crate::secrets::CurseforgeCredential>,
     body: &serde_json::Value,
     validate: V,
 ) -> Result<T, String> {
@@ -204,7 +220,16 @@ pub async fn post_json<T, V: Fn(&serde_json::Value) -> Result<T, String>>(
         Platform::Modrinth => &settings.modrinth_api_mirror,
         Platform::Curseforge => &settings.curseforge_api_mirror,
     };
-    let candidates = api_candidates(platform, url, mirror, key)?;
+    let candidates = {
+        // Decrypted text exists only while constructing the official request header.
+        let plaintext = if platform == Platform::Curseforge {
+            key.map(|credential| credential.open().ok_or_else(|| "CurseForge credential unavailable".to_string()))
+                .transpose()?
+        } else {
+            None
+        };
+        api_candidates(platform, url, mirror, plaintext.as_deref().map(String::as_str))?
+    };
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(crate::http::TIMEOUT_SECS))
@@ -438,7 +463,8 @@ mod tests {
             Some("test-key"),
         )
         .unwrap();
-        assert!(values[0].headers.contains_key("x-api-key"));
+        assert!(values[0].headers["x-api-key"].is_sensitive());
+        assert!(!format!("{:?}", values[0].headers).contains("test-key"));
         assert!(!values[1].headers.contains_key("x-api-key"));
         assert!(
             api_candidates(
@@ -619,6 +645,42 @@ mod tests {
         });
         (url, worker)
     }
+
+    #[tokio::test]
+    async fn api_redirects_never_forward_credentials_but_cdn_redirects_remain_supported() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let source = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api", source.local_addr().unwrap());
+        let location = format!("http://{}/redirected", target.local_addr().unwrap());
+        let redirect = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = source.accept().await {
+                let mut request = [0_u8; 4096];
+                if socket.read(&mut request).await.is_ok() {
+                    let response = format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    let _ = socket.write_all(response.as_bytes()).await;
+                }
+            }
+        });
+        let mut key = reqwest::header::HeaderValue::from_static("redirect-credential-fixture");
+        key.set_sensitive(true);
+        let response = client().unwrap().get(&url).header("x-api-key", key).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(150), target.accept()).await.is_err());
+        let receiver = tokio::spawn(async move {
+            let (mut socket, _) = target.accept().await.unwrap();
+            let mut request = [0_u8; 4096];
+            let length = socket.read(&mut request).await.unwrap();
+            assert!(!String::from_utf8_lossy(&request[..length]).to_ascii_lowercase().contains("x-api-key"));
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nfixture").await.unwrap();
+        });
+        let response = file_client().unwrap().get(&url).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"fixture");
+        receiver.await.unwrap();
+        redirect.abort();
+    }
+
 
     #[tokio::test]
     async fn ordinary_resource_transfer_falls_back_and_commits_zip() {

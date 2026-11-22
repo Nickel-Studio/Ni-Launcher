@@ -326,8 +326,13 @@
   --accent-soft: rgba(68, 156, 147, 0.14);
   --accent-ring: rgba(68, 156, 147, 0.4);
 }
-:root[data-accent="fortyTwo"],
-:root[data-accent="custom"] {
+/* 四十二：切换进来时保留淡入淡出；运行时在首个 tick（晚于过渡时长）把状态改为 running，
+   之后每 500ms 的取色不再触发整棵树的注册属性过渡。 */
+:root[data-theme-motion="running"] {
+  --t-accent: 0ms;
+}
+/* 编辑自定义主题时滑块需要即时反馈，不做颜色过渡；离开编辑器后切换主题仍有淡入淡出。 */
+:root[data-accent="custom"]:has(.st-custom-decorations) {
   --t-accent: 0ms;
 }
 :root {
@@ -363,6 +368,31 @@
   syntax: "<color>";
   inherits: true;
   initial-value: transparent;
+}
+@property --accent-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-chrome-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-chrome-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --theme-decoration-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.35;
 }
 
 /* ---- Shared semantic aliases for component text, shape and motion -------- */

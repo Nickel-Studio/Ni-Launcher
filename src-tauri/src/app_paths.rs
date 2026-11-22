@@ -37,9 +37,42 @@ fn directory_for_executable(executable: &Path, macos: bool) -> Option<PathBuf> {
     Some(directory.to_path_buf())
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn external_appimage(executable: &Path, image: &Path, appdir: &Path) -> Option<PathBuf> {
+    use std::io::Read;
+    if !image.is_absolute() || !appdir.is_absolute() {
+        return None;
+    }
+    let executable = std::fs::canonicalize(executable).ok()?;
+    let appdir = std::fs::canonicalize(appdir).ok()?;
+    if executable.strip_prefix(&appdir).ok()? != Path::new("usr/bin/ni-launcher") {
+        return None;
+    }
+    let image = std::fs::canonicalize(image).ok()?;
+    let mut file = std::fs::File::open(&image).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut header = [0_u8; 11];
+    file.read_exact(&mut header).ok()?;
+    (header[..4] == *b"\x7fELF" && header[8..11] == *b"AI\x02").then_some(image)
+}
+
+pub fn launcher_executable() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe()
+        .map_err(|_| "无法定位启动器文件".to_string())?;
+    #[cfg(target_os = "linux")]
+    if let (Some(image), Some(appdir)) = (std::env::var_os("APPIMAGE"), std::env::var_os("APPDIR")) {
+        // Never write portable data into the transient, read-only AppImage mount.
+        if let Some(image) = external_appimage(&executable, Path::new(&image), Path::new(&appdir)) {
+            return Ok(image);
+        }
+    }
+    Ok(executable)
+}
+
 pub fn executable_directory() -> Result<PathBuf, String> {
-    std::env::current_exe()
-        .ok()
+    launcher_executable().ok()
         .and_then(|path| directory_for_executable(&path, cfg!(target_os = "macos")))
         .ok_or_else(|| "无法定位程序目录，请将启动器放入可写文件夹后重试".into())
 }
@@ -72,6 +105,17 @@ pub fn portable_root(
     }
     let root = executable_directory_for(app)?;
     Ok(crate::portable_pack::read_manifest(&root)?.map(|manifest| (root, manifest)))
+}
+
+fn launcher_portable_root(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    #[cfg(test)]
+    if !is_product_identifier(&app.config().identifier)
+        && app.try_state::<TestExecutableRoot>().is_none()
+    {
+        return Ok(None);
+    }
+    let root = executable_directory_for(app)?;
+    Ok(crate::launcher_portable::read_marker(&root)?.map(|_| root))
 }
 
 fn has_configuration(directory: &Path) -> bool {
@@ -127,7 +171,11 @@ fn ordinary_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let selected = if let Some((root, manifest)) = portable_root(app)? {
+    let selected = if let Some(root) = launcher_portable_root(app)? {
+        let directory = root.join(DATA_DIRECTORY);
+        crate::instances::reject_links(&directory)?;
+        directory
+    } else if let Some((root, manifest)) = portable_root(app)? {
         let directory = root.join(manifest.data_directory);
         crate::instances::reject_links(&directory)?;
         directory
@@ -144,6 +192,11 @@ pub fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn default_game_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(root) = launcher_portable_root(app)? {
+        let directory = root.join(GAME_DIRECTORY);
+        crate::instances::reject_links(&directory)?;
+        return Ok(directory);
+    }
     if let Some((root, manifest)) = portable_root(app)? {
         let directory = root.join(manifest.game_directory);
         crate::instances::reject_links(&directory)?;
@@ -193,6 +246,11 @@ fn has_game_data(directory: &Path) -> bool {
 /// `.minecraft`，便携包是包内的实例目录。界面只把它展示为「默认实例目录」，
 /// 目录本身的物理名称保持不变。
 pub fn bundled_game_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(root) = launcher_portable_root(app)? {
+        let directory = root.join(GAME_DIRECTORY);
+        crate::instances::reject_links(&directory)?;
+        return Ok(directory);
+    }
     if let Some((root, manifest)) = portable_root(app)? {
         let directory = root.join(manifest.game_directory);
         crate::instances::reject_links(&directory)?;
@@ -204,6 +262,26 @@ pub fn bundled_game_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appimage_uses_external_file_only_for_the_exact_runtime_layout_and_valid_header() {
+        let root = std::env::temp_dir().join(format!("nickel-appimage-paths-{}", crate::store::random_token()));
+        let appdir = root.join("mount");
+        let executable = appdir.join("usr/bin/ni-launcher");
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::write(&executable, b"fixture").unwrap();
+        let image = root.join("Nickel.AppImage");
+        std::fs::write(&image, b"\x7fELF\x02\x01\x01\x00AI\x02fixture").unwrap();
+        assert_eq!(external_appimage(&executable, &image, &appdir), Some(std::fs::canonicalize(&image).unwrap()));
+        assert!(external_appimage(&executable, Path::new("relative.AppImage"), &appdir).is_none());
+        assert!(external_appimage(&executable, &image, &root).is_none());
+        let unrelated = root.join("ni-launcher");
+        std::fs::write(&unrelated, b"fixture").unwrap();
+        assert!(external_appimage(&unrelated, &image, &appdir).is_none());
+        std::fs::write(&image, b"not-an-appimage").unwrap();
+        assert!(external_appimage(&executable, &image, &appdir).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn configuration_priority_selects_one_complete_root() {

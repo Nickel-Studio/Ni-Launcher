@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties } from "react";
-import { Button, SegmentedControl, Slider, Tooltip } from "../ui";
-import { useBackgroundSrc } from "../../lib/settings";
+import { Button, Collapse, SegmentedControl, Slider, Tooltip } from "../ui";
+import { isTauri } from "../../lib/settings";
+import { BackgroundMedia } from "../ui/BackgroundMedia";
 import { FORTY_TWO_END, hslToRgb, rgbToHex } from "../../lib/theme";
 import { ACCENT_OPTIONS, THEME_OPTIONS } from "./accents";
-import { pickImagePath, readFileAsDataUrl } from "./backgroundImage";
+import { BACKGROUND_ACCEPT, pickBackgroundPath, readFileAsDataUrl } from "./backgroundImage";
 import { SettingRow } from "./SettingRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { ThemePreview } from "./ThemePreview";
@@ -36,11 +37,10 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
-  const backgroundUrl = useBackgroundSrc(settings.backgroundImage);
-  const hasBackground = Boolean(backgroundUrl);
-  const selectedAccent = ACCENT_OPTIONS.find(
-    (option) => option.value === settings.accent
-  );
+  const backgroundPath = settings.backgroundImage?.trim() || null;
+  const hasBackground = Boolean(backgroundPath);
+  const [failedPath, setFailedPath] = useState<string | null>(null);
+  const customSelected = settings.accent === "custom";
   const customColor = rgbToHex(
     hslToRgb(
       settings.customTheme.hue,
@@ -54,10 +54,17 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
     setError("");
     setPicking(true);
     try {
-      const path = await pickImagePath();
-      if (path) update({ backgroundImage: path });
-    } catch {
-      fileRef.current?.click();
+      if (!isTauri()) {
+        fileRef.current?.click();
+        return;
+      }
+      const path = await pickBackgroundPath();
+      if (path) {
+        setFailedPath(null);
+        update({ backgroundImage: path });
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setPicking(false);
     }
@@ -67,11 +74,16 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setError("");
+    setPicking(true);
     try {
       const dataUrl = await readFileAsDataUrl(file);
+      setFailedPath(null);
       update({ backgroundImage: dataUrl });
-    } catch {
-      setError("无法读取该图片，请更换文件后重试。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法读取该文件，请更换后重试。");
+    } finally {
+      setPicking(false);
     }
   }
 
@@ -95,7 +107,7 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
       <SettingRow
         stacked
         label="颜色主题"
-        description="保留中性阅读区域；新主题还带有原创背景与顶栏装饰"
+        description="保留中性阅读区域；特殊主题带有背景与顶部装饰"
         control={
           <div className="st-accents" role="radiogroup" aria-label="颜色主题">
             {ACCENT_OPTIONS.map((a, index) => {
@@ -157,33 +169,39 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
           </div>
         }
       />
-      {selectedAccent?.description ? (
+      <Collapse open={customSelected} staggered className="st-custom-note">
         <div className="st-theme-note">
-          <p>
-            {selectedAccent.description}
-            {settings.accent === "fortyTwo"
-              ? "。窗口隐藏时暂停，减弱动效时使用静态青绿。"
-              : "。"}
-          </p>
-          {settings.accent === "custom" && onOpenCustom ? (
+          <p>按自己的喜好调整颜色与顶部装饰。</p>
+          {onOpenCustom ? (
             <Button variant="secondary" size="sm" onClick={onOpenCustom}>
               调整自定义主题
             </Button>
           ) : null}
         </div>
-      ) : null}
+      </Collapse>
       <SettingRow
         stacked
-        label="背景图片"
-        description="选择本地图片后优先显示用户背景，不叠加主题背景装饰"
+        label="背景图片 / 视频"
+        description="支持本地图片、MP4、WebM 和 OGV；视频静音循环播放，不叠加主题背景装饰"
         control={
           <div className="st-bg">
             <div
               className="st-bg__thumb"
               data-empty={hasBackground ? "false" : "true"}
             >
-              {backgroundUrl ? (
-                <img src={backgroundUrl} alt="背景预览" />
+              {backgroundPath ? (
+                <>
+                  <BackgroundMedia
+                    key={backgroundPath}
+                    path={backgroundPath}
+                    animate={false}
+                    onLoad={() => setFailedPath(null)}
+                    onError={() => setFailedPath(backgroundPath)}
+                  />
+                  {failedPath === backgroundPath ? (
+                    <span className="st-bg__thumb-error">背景无法加载，请更换文件</span>
+                  ) : null}
+                </>
               ) : (
                 <span className="st-bg__thumb-empty">未设置背景</span>
               )}
@@ -194,11 +212,15 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
                 loading={picking}
                 onClick={handleChoose}
               >
-                {hasBackground ? "更换图片" : "选择图片"}
+                {hasBackground ? "更换背景" : "选择图片或视频"}
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => update({ backgroundImage: null })}
+                onClick={() => {
+                  setFailedPath(null);
+                  setError("");
+                  update({ backgroundImage: null });
+                }}
                 disabled={!hasBackground}
               >
                 清除背景
@@ -207,7 +229,7 @@ export function AppearancePanel({ settings, update, onOpenCustom }: Props) {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept={BACKGROUND_ACCEPT}
               hidden
               onChange={handleFile}
             />

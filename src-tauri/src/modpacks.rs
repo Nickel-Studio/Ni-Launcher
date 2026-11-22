@@ -657,7 +657,7 @@ fn cf_file(
 async fn cf_metadata(
     project_id: u64,
     file_id: u64,
-    key: Option<&str>,
+    key: Option<&crate::secrets::CurseforgeCredential>,
     context: &crate::app_tasks::TaskContext,
     transfer: &minecraft_java_rs_core::net::transfer::TransferContext,
     pack: bool,
@@ -899,7 +899,7 @@ pub async fn resolve_plan(
                 .parse::<u64>()
                 .map_err(|_| "CurseForge 文件 ID 必须是正整数")?;
             let (project, file) =
-                cf_metadata(project_id, file_id, key.as_deref(), context, &api, true).await?;
+                cf_metadata(project_id, file_id, key.as_ref(), context, &api, true).await?;
             let archive = cf_file(&file, "", project_id, file_id, true)?;
             if !archive.path.to_ascii_lowercase().ends_with(".zip") {
                 return Err("所选 CurseForge 文件不是 ZIP 整合包".into());
@@ -950,7 +950,7 @@ pub async fn resolve_plan(
         archive,
         display_name,
         serde_json::to_value(source).map_err(|e| e.to_string())?,
-        key.as_deref(),
+        key.as_ref(),
         context,
         &api,
     )
@@ -1057,7 +1057,7 @@ pub async fn resolve_local_plan(
         archive,
         instance_name.into(),
         source,
-        key.as_deref(),
+        key.as_ref(),
         context,
         &api,
     )
@@ -1071,7 +1071,7 @@ async fn resolve_manifest(
     archive: PathBuf,
     display_name: String,
     source: Value,
-    key: Option<&str>,
+    key: Option<&crate::secrets::CurseforgeCredential>,
     context: &crate::app_tasks::TaskContext,
     api: &minecraft_java_rs_core::net::transfer::TransferContext,
 ) -> Result<PackPlan, String> {

@@ -44,7 +44,8 @@ SETTINGS = "\u8bbe\u7f6e"
 CONSENT_FIELDS = {"eulaVersion", "eulaAcceptedAt", "changelogSeenVersion"}
 MICROSOFT_FIELDS = {"clientId", "authority", "redirectUri"}
 SYNTHETIC_SETTINGS = {"accountType": "offline", "offlineUsername": "Acceptance", "themeMode": "dark", "accent": "nickel", "titlebarTint": True}
-PROTECTED_PIDS = {17584, 49808, os.getpid()}
+# Only the harness itself and its parent CLI are protected; never hardcode PIDs from a past session.
+PROTECTED_PIDS = {os.getpid(), os.getppid()}
 
 
 class SafetyError(ValueError):
@@ -299,28 +300,41 @@ def prepare_copy(source, directory, protocol=None, expected_sha256=None):
 
 
 def assert_private_tree(directory):
-    root = evidence_path(directory)
-    real_root = Path(os.path.realpath(root))
-    for current, directories, files in os.walk(root, followlinks=False):
-        evidence_path(current)
-        for name in [*directories, *files]:
-            path = Path(current) / name
-            info = path.lstat()
-            linked = stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400
-            if linked:
-                # Windows 会在隔离配置目录的 INetCache 下创建内部缓存联接；
-                # 只有该固定位置、目标仍位于本次输出内的目录联接可以保留，且不进入其内部。
-                internal_cache = stat.S_ISDIR(info.st_mode) and path.parent.name.casefold() == "inetcache"
-                if not internal_cache or not Path(os.path.realpath(path)).is_relative_to(real_root):
-                    raise SafetyError("Only links that stay inside the task-owned native output are allowed")
-                if name in directories:
-                    directories.remove(name)
-                continue
-            value = evidence_path(path)
-            if name.casefold() == "secrets.local.json":
-                raise SafetyError("External API configuration must not exist in native output")
-            if not value.is_dir() and not value.is_file():
-                raise SafetyError("Only regular task-owned files and directories are allowed")
+    def walk_error(error):
+        raise error
+
+    # WebView2 can remove cache files after enumeration, even during normal exit.
+    # Retry the complete scan; never skip an uninspected entry or traversal error.
+    for attempt in range(3):
+        try:
+            root = evidence_path(directory)
+            if not root.is_dir():
+                raise SafetyError("Task-owned native output must remain a directory")
+            real_root = Path(os.path.realpath(root))
+            for current, directories, files in os.walk(root, followlinks=False, onerror=walk_error):
+                evidence_path(current)
+                for name in [*directories, *files]:
+                    path = Path(current) / name
+                    info = path.lstat()
+                    linked = stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400
+                    if linked:
+                        # Only fixed-position internal WebView2 cache junctions are permitted.
+                        internal_cache = stat.S_ISDIR(info.st_mode) and path.parent.name.casefold() == "inetcache"
+                        if not internal_cache or not Path(os.path.realpath(path)).is_relative_to(real_root):
+                            raise SafetyError("Only links that stay inside the task-owned native output are allowed")
+                        if name in directories:
+                            directories.remove(name)
+                        continue
+                    evidence_path(path)
+                    if name.casefold() == "secrets.local.json":
+                        raise SafetyError("External API configuration must not exist in native output")
+                    if not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode):
+                        raise SafetyError("Only regular task-owned files and directories are allowed")
+            return
+        except FileNotFoundError:
+            if attempt == 2:
+                raise
+            time.sleep(0.05)
 
 
 def assert_copy(sandbox, launching=False):

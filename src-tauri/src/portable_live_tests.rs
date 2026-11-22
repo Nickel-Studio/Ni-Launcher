@@ -531,6 +531,49 @@ fn live_portable_bootstrap_transaction_and_paths() -> Result<(), String> {
 }
 
 #[test]
+#[ignore = "Distribution portable paths with real Wry; unique identifier and temporary data only"]
+fn live_launcher_portable_marker_overrides_system_data_without_modpack_import() -> Result<(), String> {
+    let identifier = format!("studio.nickel.launcher.distribution.{}", store::random_token());
+    let app = app(&identifier)?;
+    let system = app.path().app_config_dir().map_err(|error| error.to_string())?;
+    let root = std::env::temp_dir().join(format!("nickel-distribution-{}", store::random_token()));
+    std::fs::create_dir(&root).map_err(|error| error.to_string())?;
+    write(&system.join("settings.json"), br#"{"accent":"rose"}"#)?;
+    let original_system = std::fs::read(system.join("settings.json")).unwrap();
+    let marker = launcher_portable::Marker {
+        schema_version: launcher_portable::SCHEMA_VERSION,
+        format: launcher_portable::FORMAT.into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        target: "x86_64-pc-windows-msvc".into(),
+        launcher: "Nickel.exe".into(),
+        data_directory: app_paths::DATA_DIRECTORY.into(),
+        game_directory: app_paths::GAME_DIRECTORY.into(),
+    };
+    write(&root.join(launcher_portable::MARKER_FILE), &serde_json::to_vec(&marker).unwrap())?;
+    app.manage(app_paths::TestExecutableRoot(root.clone()));
+    let data = root.join(app_paths::DATA_DIRECTORY);
+    let game = root.join(app_paths::GAME_DIRECTORY);
+    assert_eq!(app_paths::config_dir(app.handle())?, data);
+    assert_eq!(app_paths::default_game_dir(app.handle())?, game);
+    assert_eq!(app_paths::bundled_game_dir(app.handle())?, game);
+    assert!(app_paths::portable_root(app.handle())?.is_none());
+    assert!(tauri::async_runtime::block_on(portable_bootstrap::portable_bootstrap_status(app.handle().clone()))?.is_none());
+    assert_eq!(settings_get(app.handle().clone())?, "{}");
+    settings_set(app.handle().clone(), json!({"accent":"emerald"}).to_string())?;
+    assert_eq!(read_json(&data.join("settings.json"))?["accent"], "emerald");
+    assert_eq!(std::fs::read(system.join("settings.json")).unwrap(), original_system);
+    assert!(!root.join(portable_pack::MANIFEST_FILE).exists());
+    assert!(!data.join("portable-import.json").exists());
+    assert!(!data.join("pack.mrpack").exists());
+    std::fs::remove_file(root.join(launcher_portable::MARKER_FILE)).map_err(|error| error.to_string())?;
+    assert_eq!(app_paths::config_dir(app.handle())?, system);
+    drop(app);
+    std::fs::remove_dir_all(system).map_err(|error| error.to_string())?;
+    std::fs::remove_dir_all(root).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[test]
 #[ignore = "真实 Wry 无manifest首运行/系统配置优先/只读错误；全部使用唯一identifier和临时目录"]
 fn live_ordinary_first_run_and_configured_paths() -> Result<(), String> {
     let identifier = format!("studio.nickel.launcher.r6ordinary.{}", store::random_token());

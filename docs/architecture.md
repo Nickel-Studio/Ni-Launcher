@@ -9,11 +9,13 @@
 | `src/styles/tokens.css` | 颜色、字体、尺寸与动效令牌 |
 | `src-tauri/src/lib.rs` | IPC 注册、窗口与启动编排 |
 | `app_paths.rs`、`store.rs`、`vault.rs` | 配置根、账号与凭据存储 |
+| `secrets.rs`、`src-tauri/embedded_config.rs`、`build_config.rs` | API 配置读取顺序、构建期四字段加密封装与运行时解封 |
 | `instances.rs`、`version_settings.rs`、`instance_paths.rs` | 实例身份、继承设置与有效资源目录 |
 | `app_tasks.rs`、`named_profiles.rs` | 下载生命周期与实例事务 |
 | `loader_catalog.rs`、`loader_artifact.rs` | 完整构建清单与安装器解析 |
 | `runtime_settings.rs`、`java_selection.rs`、`memory_plan.rs` | 游戏启动参数、Java 与内存 |
 | `portable_pack.rs`、`portable_bootstrap.rs` | 便携布局、设置投影与首启导入 |
+| `launcher_portable.rs` | 发行用便携启动器标记校验 |
 | `vendor/minecraft-java-rs-core/` | 游戏元数据、传输、校验、加载器与进程启动 |
 
 ## 前后端契约
@@ -42,10 +44,14 @@
 
 便携包以 `nickel.portable.json` 为标记，格式为 `nickel-portable`，数据目录固定为 `Nickel`。载荷、个性化、背景和启动器文件名必须符合这一布局。相对路径保留到落盘，发送界面时才解析为绝对路径。
 
+发行用便携启动器归档另以 `nickel.launcher-portable.json` 为标记（格式 `nickel-launcher-portable`），只决定配置根，不触发整合包导入。两种标记同时出现在同一根目录时直接报错；标记须为受支持的目标平台，启动器文件名与平台对应，数据/游戏目录固定为 `Nickel` / `.minecraft`，否则拒绝并提示重新完整解压。
+
 实例设置通过白名单投影；账号凭据、本机 Java 路径、缓存路径和启动前命令不参与迁移。
 
 ## 界面约束
 
 首页保留左侧启动卡与右侧背景留白。全局状态入口单一，页面复用 `PagerLayout`、`Collapse`、`Modal` 等组件。明暗模式与颜色主题分离；动效降级和键盘焦点均由共享组件管理。
+
+颜色主题由 `startThemeRuntime`（`src/lib/theme.ts`）写入根节点的注册颜色属性，`--t-accent` 控制它们的过渡时长。`data-theme-motion` 取 `entering` / `running` / `static` / `paused` / `reduced`：切换到四十二时先处于 `entering` 保留淡入淡出，首个 500ms tick（晚于 420ms 过渡）改为 `running`，之后的取色不再触发整棵树的过渡；自定义编辑页打开期间同样关闭颜色过渡，保证滑块即时反馈。调整 `THEME_TICK_MS` 或 `THEME_TRANSITION_MS` 时必须保持 tick 间隔大于过渡时长（有单测约束）。
 
 关于页只展示 Nickel 简介、版本、徽标、许可、开发者和鸣谢。品牌与外链常量集中在 `src/lib/brand.ts`，鸣谢头像随应用打包。
