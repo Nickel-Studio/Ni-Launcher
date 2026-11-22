@@ -81,3 +81,23 @@ test("actual-directory audit preserves historical files, blocks strict publicati
     assert(!`${command.stdout}${command.stderr}`.includes(config.curseforge.apiKey));
   } finally { rmSync(root, { recursive: true }); }
 });
+
+test("audit locates envelopes in both Cargo build-dir layouts", () => {
+  for (const segments of [["ni-launcher-fixture"], ["ni-launcher", "0123456789abcdef"]]) {
+    const root = mkdtempSync(path.join(tmpdir(), "nickel-native-layout-"));
+    try {
+      const release = path.join(root, "release");
+      const out = path.join(release, "build", ...segments, "out");
+      mkdirSync(out, { recursive: true });
+      const source = path.join(root, "source.json");
+      writeFileSync(source, JSON.stringify(config));
+      const bytes = envelope(fields);
+      const exe = path.join(release, "ni-launcher.exe");
+      writeFileSync(exe, binary(bytes));
+      writeFileSync(path.join(out, "nickel-embedded-config.bin"), bytes);
+      assert.equal(auditRelease(exe, release, { NICKEL_BUILD_SECRETS: source }).releaseReadyForPublication, true, segments.join("/"));
+      writeFileSync(path.join(out, "nickel-embedded-secrets.json"), "historical-private-fixture");
+      assert.throws(() => auditRelease(exe, release, { NICKEL_BUILD_SECRETS: source }), /Legacy plaintext/);
+    } finally { rmSync(root, { recursive: true }); }
+  }
+});

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = Path("/tmp/nickel-tauri-cli-2.12.4/node_modules/@tauri-apps/cli/tauri.js")
+CLI = Path(os.environ.get("NICKEL_TAURI_CLI", "/tmp/nickel-tauri-cli-2.12.4/node_modules/@tauri-apps/cli/tauri.js"))
 TARGET = ROOT / "src-tauri/target/linux-verification"
 LOG = TARGET / "build.log"
 STATUS = TARGET / "build-status.json"
@@ -14,9 +14,9 @@ STATUS = TARGET / "build-status.json"
 
 def main():
     if sys.platform != "linux" or not CLI.is_file() or not (ROOT / "dist/index.html").is_file():
-        raise SystemExit("This verifier requires the isolated Linux Tauri CLI and pnpm build output")
+        raise SystemExit("This verifier requires the isolated Linux Tauri CLI (set NICKEL_TAURI_CLI) and pnpm build output")
     environment = os.environ.copy()
-    environment["PATH"] = "/home/cyterx/.nvm/versions/node/v26.5.0/bin:/home/cyterx/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # PATH is inherited from the caller; never hardcode a developer's home directory.
     environment["CARGO_TARGET_DIR"] = str(TARGET)
     environment["CARGO_BUILD_JOBS"] = "2"
     environment["NICKEL_CHANNEL"] = "production"

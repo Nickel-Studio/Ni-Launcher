@@ -7,6 +7,8 @@ use base64::Engine as _;
 
 const MAX_BYTES: u64 = 32 * 1024 * 1024;
 const INVALID_IMAGE: &str = "请选择有效的 PNG、JPEG、WebP、GIF、BMP 或 AVIF 本地图片";
+#[cfg_attr(not(windows), allow(dead_code))]
+const NETWORK_PATH: &str = "不支持网络共享或映射网络盘上的文件，请先复制到本地磁盘";
 
 pub(crate) fn raster_mime(path: &Path, bytes: &[u8]) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
@@ -23,7 +25,23 @@ pub(crate) fn raster_mime(path: &Path, bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// `invalid` is the media-specific message, so a rejected video never reports an image-format error.
+/// Mapped network drives look like `Z:\`, so the prefix alone cannot reveal them. Asking the
+/// drive type only reads the local drive-letter table and never opens a connection.
+#[cfg(windows)]
+fn is_remote_drive(letter: u8) -> bool {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetDriveTypeW(root: *const u16) -> u32;
+    }
+    const DRIVE_REMOTE: u32 = 4;
+    let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
+    // SAFETY: `root` is a NUL-terminated UTF-16 buffer that outlives the call.
+    unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
+}
+
+/// Pure path check that runs before any filesystem access, so a rejected network path is
+/// never opened. `invalid` is the media-specific message, so a rejected video never reports
+/// an image-format error.
 fn check_local_path(path: &Path, invalid: &str) -> Result<(), String> {
     if !path.is_absolute() || path.to_string_lossy().len() > 32768 {
         return Err(invalid.into());
@@ -39,13 +57,19 @@ fn check_local_path(path: &Path, invalid: &str) -> Result<(), String> {
                     return Err(invalid.into());
                 }
             }
-            // Network shares stay supported (the old asset scope allowed them): mapped drives
-            // canonicalize to `\\?\UNC\...`. Device namespaces such as `\\.\` remain rejected.
+            // Local disks only. Opening a UNC path (or a mapped drive, which canonicalizes to
+            // `\\?\UNC\...`) makes Windows authenticate to that host with the user's NTLM
+            // credentials, and any `nickel-image:` / `nickel-video:` URL in the webview could
+            // name an attacker's host. Device namespaces such as `\\.\` stay rejected too.
             #[cfg(windows)]
             Component::Prefix(prefix) => {
                 use std::path::Prefix;
-                if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_) | Prefix::UNC(..) | Prefix::VerbatimUNC(..)) {
-                    return Err(invalid.into());
+                match prefix.kind() {
+                    Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                        if is_remote_drive(letter) { return Err(NETWORK_PATH.into()); }
+                    }
+                    Prefix::UNC(..) | Prefix::VerbatimUNC(..) => return Err(NETWORK_PATH.into()),
+                    _ => return Err(invalid.into()),
                 }
             }
             _ => {}
@@ -349,13 +373,21 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn network_share_prefixes_are_allowed_and_device_namespaces_are_rejected() {
-        for path in [r"\\server\share\wall.png", r"\\?\UNC\server\share\wall.mp4", r"C:\wall.png", r"\\?\C:\wall.webm"] {
-            assert!(check_local_path(Path::new(path), INVALID_IMAGE).is_ok(), "{path}");
+    fn only_local_disks_are_allowed_and_network_paths_get_an_explicit_message() {
+        let system = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        for path in [format!(r"{system}\wall.png"), format!(r"\\?\{system}\wall.webm")] {
+            assert!(check_local_path(Path::new(&path), INVALID_IMAGE).is_ok(), "{path}");
         }
-        for path in [r"\\.\pipe\wall.png", r"\\.\C:\wall.png", r"\\server\share\secrets.local.json"] {
-            assert!(check_local_path(Path::new(path), INVALID_IMAGE).is_err(), "{path}");
+        for path in [r"\\server\share\wall.png", r"\\?\UNC\server\share\wall.mp4", r"\\attacker.example@80\s\a.png"] {
+            assert_eq!(check_local_path(Path::new(path), INVALID_VIDEO).unwrap_err(), NETWORK_PATH, "{path}");
         }
+        for path in [r"\\.\pipe\wall.png", r"\\.\C:\wall.png", r"\\?\GLOBALROOT\wall.png"] {
+            assert_eq!(check_local_path(Path::new(path), INVALID_IMAGE).unwrap_err(), INVALID_IMAGE, "{path}");
+        }
+        // The public entry points reject network paths before touching the filesystem.
+        assert_eq!(image_data_url(r"\\attacker.example\s\a.png".into()).unwrap_err(), NETWORK_PATH);
+        assert_eq!(open_video(Path::new(r"\\attacker.example\s\a.mp4")).unwrap_err(), NETWORK_PATH);
+        assert!(!is_remote_drive(system.as_bytes()[0]));
     }
 
     #[cfg(unix)]

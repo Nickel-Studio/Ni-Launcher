@@ -38,9 +38,22 @@ export function auditRelease(binaryPath, releaseDirectory, environment = process
   if (!existsSync(outputDirectory) || !existsSync(binaryPath) || !statSync(binaryPath).isFile()) {
     throw new Error("Native Release audit input unavailable");
   }
+  // Cargo < 1.100 uses build/ni-launcher-<hash>/out; 1.100+ nests build/ni-launcher/<hash>/... (see 9dd140c).
+  const outputs = [];
+  const visit = (directory, depth) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.name === "out") outputs.push(full);
+      else if (depth > 0) visit(full, depth - 1);
+    }
+  };
   for (const entry of readdirSync(outputDirectory, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith("ni-launcher-")) continue;
-    const out = path.join(outputDirectory, entry.name, "out");
+    if (entry.isDirectory() && (entry.name === "ni-launcher" || entry.name.startsWith("ni-launcher-"))) {
+      visit(path.join(outputDirectory, entry.name), 3);
+    }
+  }
+  for (const out of outputs) {
     if (existsSync(path.join(out, "nickel-embedded-secrets.json"))) {
       legacyPlaintextBuildOutputAbsent = false;
     }
