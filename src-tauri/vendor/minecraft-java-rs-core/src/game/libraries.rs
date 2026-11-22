@@ -435,7 +435,10 @@ fn extract_jar_to_dir_cancellable(jar_path: &Path, dest: &Path, cancel: &crate::
             .by_index(i)
             .map_err(|e| LaunchError::Archive(e.to_string()))?;
 
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| LaunchError::Archive(format!("Invalid ZIP entry name: {e}")))?
+            .into_owned();
 
         // META-INF holds the manifest and per-binary `.sha1`/`.git` markers —
         // none are loadable libraries.

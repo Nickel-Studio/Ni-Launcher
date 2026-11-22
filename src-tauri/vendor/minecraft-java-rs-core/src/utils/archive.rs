@@ -85,7 +85,7 @@ pub fn validate_executable_jar(
         let mut entry = archive
             .by_index(index)
             .map_err(|e| LaunchError::Archive(e.to_string()))?;
-        // zip 2 indexes entries by name and hides earlier duplicates. Reject such
+        // zip indexes entries by name and hides earlier duplicates. Reject such
         // directories rather than leaving a shadowed entry's contents unchecked.
         if entry.central_header_start() != central_offset {
             return Err(LaunchError::Archive(
@@ -108,7 +108,11 @@ pub fn validate_executable_jar(
                 "JAR exceeds decompressed size limit".into(),
             ));
         }
-        let is_manifest = entry.name() == "META-INF/MANIFEST.MF" && !entry.is_dir();
+        let is_manifest = entry
+            .name()
+            .map_err(|e| LaunchError::Archive(format!("Invalid ZIP entry name: {e}")))?
+            == "META-INF/MANIFEST.MF"
+            && !entry.is_dir();
         // Reading one byte beyond the budget both detects false size metadata
         // and reaches EOF (where zip verifies CRC) for an exact-budget entry.
         let mut limited = (&mut entry).take(remaining.saturating_add(1));
@@ -267,7 +271,10 @@ fn query_zip_sync(
             let entry = archive
                 .by_index(i)
                 .map_err(|e| LaunchError::Archive(e.to_string()))?;
-            let name = entry.name().to_string();
+            let name = entry
+                .name()
+                .map_err(|e| LaunchError::Archive(format!("Invalid ZIP entry name: {e}")))?
+                .into_owned();
             if let Some(p) = prefix {
                 if !name.starts_with(p) {
                     continue;
@@ -290,7 +297,10 @@ fn query_zip_sync(
             if entry.is_dir() {
                 continue;
             }
-            let name = entry.name().to_string();
+            let name = entry
+                .name()
+                .map_err(|e| LaunchError::Archive(format!("Invalid ZIP entry name: {e}")))?
+                .into_owned();
             if let Some(p) = prefix {
                 if !name.starts_with(p) {
                     continue;
@@ -572,7 +582,8 @@ mod tests {
         let offset = {
             let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
             let entry = archive.by_name("payload.bin").unwrap();
-            entry.data_start() as usize
+            // zip 9 reports the data offset only once the local header has been read.
+            entry.data_start().expect("payload data offset") as usize
         };
         bytes[offset] ^= 1;
         let error = validate_executable_jar(&bytes, JAR_TEST_LIMIT, &[]).unwrap_err();
@@ -602,12 +613,18 @@ mod tests {
             entry.central_header_start() as usize
         };
         // Forge the central directory's uncompressed size; the streaming budget
-        // must still reject data larger than the declared total.
+        // must still reject data larger than the declared total. zip 9 also enforces
+        // the declared size while inflating, so the forged entry may fail inside zip
+        // before our own byte count runs. Either rejection is fine; what must never
+        // happen is accepting the entry.
         bytes[offset + 24..offset + 28].copy_from_slice(&0u32.to_le_bytes());
-        let error = validate_executable_jar(&bytes, total - 1, &[]).unwrap_err();
-        assert!(error.to_string().contains("size limit"), "{error}");
-        let error = validate_executable_jar(&bytes, total, &[]).unwrap_err();
-        assert!(error.to_string().contains("size does not match"), "{error}");
+        for (budget, ours) in [(total - 1, "size limit"), (total, "size does not match")] {
+            let error = validate_executable_jar(&bytes, budget, &[]).unwrap_err().to_string();
+            assert!(
+                error.contains(ours) || error.contains("declared uncompressed size"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

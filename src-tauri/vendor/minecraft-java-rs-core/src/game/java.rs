@@ -521,7 +521,8 @@ async fn extract_zip_to(archive: PathBuf, dest: &Path) -> Result<(), LaunchError
             if entry.is_dir() {
                 continue;
             }
-            let name = crate::utils::archive::validate_relative_path(entry.name()).map_err(LaunchError::Archive)?;
+            let raw = entry.name().map_err(|e| LaunchError::Archive(format!("Invalid ZIP entry name: {e}")))?;
+            let name = crate::utils::archive::validate_relative_path(&raw).map_err(LaunchError::Archive)?;
             if entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000) { return Err(LaunchError::Archive("Archive symlink is unsupported".into())); }
             let stripped = name.splitn(2, '/').nth(1).unwrap_or(&name).to_owned();
             let out = dest.join(&stripped);

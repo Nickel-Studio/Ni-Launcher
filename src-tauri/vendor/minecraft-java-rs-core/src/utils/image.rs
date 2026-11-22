@@ -162,6 +162,7 @@ pub fn read_client_skin_assets(
     let mut targets = Vec::new();
     for name in archive.file_names() {
         cancel.check()?;
+        let name = name.map_err(|e| format!("客户端 JAR 条目名称无效：{e}"))?;
         let slim = if name == STEVE_TEXTURE {
             false
         } else if name == ALEX_TEXTURE {
@@ -186,7 +187,7 @@ pub fn read_client_skin_assets(
             continue;
         };
         // 只有这些将成为输出路径的纹理需要落盘路径校验；无关类文件完全不提取。
-        let path = validate_relative_path(name)?;
+        let path = validate_relative_path(&name)?;
         targets.push(SkinTextureTarget { path, slim });
         if targets.len() > MAX_DEFAULT_SKIN_TEXTURES {
             return Err("客户端默认皮肤条目过多，请重新安装原版客户端".into());
@@ -894,10 +895,12 @@ mod tests {
             .unwrap();
         bytes[central + 24..central + 28].copy_from_slice(&1u32.to_le_bytes());
         std::fs::write(file.path(), bytes).unwrap();
+        // 目录声明 1 字节时，zip 9 在解压超出声明大小时即报错，早于这里的上限；
+        // 两种拒绝都可以，关键是不会按虚假的目录大小读出超限数据。
+        let error = read_skin_png_from_jar(file.path(), entry, &CancellationToken::new()).unwrap_err();
         assert!(
-            read_skin_png_from_jar(file.path(), entry, &CancellationToken::new())
-                .unwrap_err()
-                .contains("大小限制")
+            error.contains("大小限制") || error.contains("declared uncompressed size"),
+            "{error}"
         );
     }
 
