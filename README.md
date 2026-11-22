@@ -12,7 +12,7 @@
 
 Minecraft Java 版启动器 · Windows / macOS / Linux
 
-[![版本](https://img.shields.io/badge/Nickel-1.0.1-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.1)
+[![版本](https://img.shields.io/badge/Nickel-1.0.2-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.2)
 [![CI](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml)
 [![代码许可](https://img.shields.io/badge/Code-AGPL--3.0-343a40)](LICENSE)
 [![美术许可](https://img.shields.io/badge/Art-CC--BY--SA--4.0-343a40)](LICENSE-ASSETS)
@@ -66,15 +66,19 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 
 ## 让启动更合你意
 
-- **明暗模式与颜色主题**：跟随系统、亮色或暗色；黑与白，以及五种彩色主题。还可以放一张自己的背景。
+- **明暗模式与颜色主题**：跟随系统、亮色或暗色；黑与白、五种彩色主题，以及镍光、铜霞、深海、纸灯、四十二和自定义主题。还可以放一张自己的图片或一段视频作为背景。
 - **Mod 管理**：搜索、启用、禁用、检查更新和整理重复条目。
 - **整合包分享**：导出标准 `.mrpack`，或带启动器、外观及实例设置的便携 ZIP。
 - **启动排障**：查看退出原因，打开游戏日志；按版本选择 Java 和内存管理方式。
 - **细节工具**：「更多」里的使用指南、前沿计划和游戏日志清理。
 
-## 1.0.1 修复
+## 1.0.2 更新
 
-恢复实例与加载器使用的草方块、铁砧、红石等既有功能图标及默认 Mod 图，保留原分配映射；Nickel 品牌 Logo 和应用图标保持不变。
+- **正版登录与 CurseForge 搜索正式可用**：发行版内置已授权的 Microsoft 公共客户端与 CurseForge API 配置，下载即可使用，无需另行配置。
+- **新主题与视频背景**：新增镍光、铜霞、深海、纸灯、四十二和自定义主题，主题切换淡入淡出；支持本地 MP4、WebM 等视频背景。
+- **更稳的发行物**：四个平台的安装包都经过配置与许可审计，并附带便携版；内嵌配置以加密形式封装。
+
+完整内容见 [更新记录](CHANGELOG.md)。
 
 ## 开始使用
 
@@ -85,11 +89,11 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 
 | 平台              | 发行格式             | 运行环境                     |
 | ----------------- | -------------------- | ---------------------------- |
-| Windows x64       | `.exe` / `.msi`      | WebView2                     |
-| macOS arm64 / x64 | `.dmg` / `.app`      | 放置完整应用包               |
-| Linux x64         | `.AppImage` / `.deb` | WebKitGTK 4.1 及系统图形依赖 |
+| Windows x64       | `.exe` / `.msi`，便携 `.zip`             | WebView2                     |
+| macOS arm64 / x64 | `.dmg`，便携 `.tar.gz`                   | 放置完整应用包               |
+| Linux x64         | `.AppImage` / `.deb`，便携 `.tar.gz`     | WebKitGTK 4.1 及系统图形依赖 |
 
-详细操作、数据位置、Microsoft 登录配置和常见问题见 [使用指南](docs/usage.md)。
+详细操作、数据位置和常见问题见 [使用指南](docs/usage.md)；从源码构建时的 API 配置见 [开发文档](docs/development.md)。
 
 <details>
 <summary><strong>从源码运行</strong></summary>
