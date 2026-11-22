@@ -41,6 +41,10 @@ test("publishing uses strict credentials, isolated uncached outputs and the all-
   for (const target of ["x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]) assert(workflow.includes(target));
   assert(workflow.includes("python scripts/prepare_release.py"));
   assert(workflow.includes("python scripts/collect_release.py"));
+  // The Release is uploaded from the filtered set; evidence JSON only lives in the Actions artifact.
+  assert(workflow.includes("python scripts/select_release_assets.py --assets release-assets"));
+  assert(workflow.includes("fs.readdirSync('release-public')"));
+  assert(!workflow.includes("fs.readdirSync('release-assets')"));
   assert(workflow.includes("needs: bundle"));
   assert(workflow.includes("if-no-files-found: error"));
   assert(!workflow.includes("bundle/**"));
