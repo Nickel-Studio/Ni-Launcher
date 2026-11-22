@@ -30,7 +30,8 @@ let infrastructureFailure;
 let evidenceWritable = false;
 
 function requireCheck(condition, name) {
-  if (!condition) throw new Error(name);
+  // `check` is a fixed identifier from this file, so it is safe to print on failure.
+  if (!condition) throw Object.assign(new Error(name), { check: name });
 }
 
 function digest(file) {
@@ -89,9 +90,9 @@ function embeddedOutput(messages) {
   return readFileSync(path.join(buildOutput(messages).out_dir, "nickel-embedded-config.bin"));
 }
 
-// Cargo's build-dir layout changed (rustc 1.100 nests `<pkg>/<hash>/...`), so the build script's
-// captured `output` is no longer guaranteed to sit beside `out_dir`. Locate it by content instead:
-// only this probe's build script emits the NICKEL_* rerun instructions.
+// Cargo's build-dir layout changed (rustc 1.100 nests `<pkg>/<hash>/...` and stores the captured
+// build-script stdout as `stdout` instead of `output`), so it is no longer guaranteed to sit beside
+// `out_dir`. Locate it by content: only this probe's build script emits the NICKEL_* rerun instructions.
 function buildScriptInstructions(messages) {
   const outDir = buildOutput(messages).out_dir;
   const marker = `cargo:rerun-if-env-changed=${BUILD_ENVIRONMENT[0]}`;
@@ -103,7 +104,7 @@ function buildScriptInstructions(messages) {
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (depth > 0 && full !== outDir) visit(full, depth - 1);
-      } else if (entry.isFile() && entry.name === "output") {
+      } else if (entry.isFile() && (entry.name === "output" || entry.name === "stdout")) {
         const text = readFileSync(full, "utf8");
         if (text.includes(marker)) found.push({ text, modified: statSync(full).mtimeMs });
       }
@@ -365,8 +366,10 @@ try {
   requireCheck(Object.entries(report.runtime).every(([field, value]) => optionalRuntimeFields.has(field) || value), "runtimeRequiredChecksPassed");
   report.checks.detachedRuntimeProbePassed = true;
   report.checks.configurationSelfContainedAtRuntime = true;
-} catch {
+} catch (error) {
   infrastructureFailure = phase;
+  // Report only the phase and the fixed check identifier; never paths, command output or values.
+  process.stderr.write(`embedded-config verifier failed during ${phase}${error?.check ? ` (${error.check})` : error?.code ? ` (${error.code})` : ""}\n`);
   report.checks[`${phase}Passed`] = false;
 } finally {
   report.checks.processEnvironmentUnchanged = JSON.stringify(process.env) === environmentBefore;
