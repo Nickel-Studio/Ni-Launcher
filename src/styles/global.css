@@ -44,9 +44,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow: hidden;
-  /* 页面根节点也参与圆角裁剪：窗口为 transparent + 无边框，这样即使有任何一层
-     铺满整窗，也不可能在 .ni-shell 的圆角外侧画出方块“补丁”。 */
-  border-radius: var(--shell-radius);
+  /* 不在 body 上加圆角兜底：html 没有设置 overflow，body 的 overflow 会传给视口，
+     body 自身并不裁剪；position: fixed 的后代本来也不受祖先 overflow 裁剪。
+     所以挂在 body 下、铺满整窗的浮层（启动闪屏、弹窗遮罩、下载浮层）必须各自声明
+     border-radius: var(--shell-radius)，tests/window-corners/overlays.test.mjs 会检查。 */
   user-select: none;
   -webkit-user-select: none;
 }

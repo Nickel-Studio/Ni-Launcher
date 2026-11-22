@@ -98,6 +98,7 @@ pnpm tauri dev
 
 ```powershell
 pnpm build
+node --test tests/window-corners/overlays.test.mjs
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --test build_config --test dependency_notices
 node --test scripts/release-secrets.test.mjs scripts/audit-release.test.mjs tests/release-hardening/security.test.mjs
 python -m unittest discover -s scripts -p 'test_*.py' -v
@@ -107,6 +108,8 @@ node tests/embedded-config/verify.mjs --fixture
 node tests/embedded-config/verify.mjs --placeholder
 node tests/embedded-config/verify.mjs
 ```
+
+窗口是透明无边框的，四个圆角只由 `.ni-shell` 的 CSS 画出。挂在 `body` 下、`position: fixed` 且铺满整窗的浮层不受它裁剪，必须自己声明 `border-radius: var(--shell-radius)`，`tests/window-corners/overlays.test.mjs` 会扫描 `src/**/*.css` 和 `index.html` 检查这一点。会贴近窗口边缘的小浮层（如 Tooltip）要在定位时避开四角。
 
 Detached Release 验证器复制实际 build/runtime 密码特性，并验证白名单、随机化、UTF-8/UTF-16LE 明文扫描、门禁及移除临时源码后的运行。合成凭据情景不证明实际 Tauri 包或官方登录成功。`audit-release.mjs` 审计真实二进制与当前构建封装；严格模式同时拒绝历史 `nickel-embedded-secrets.json` 明文输出，不擅自删除已有文件。`--allow-incomplete-local` 只用于局部检查，`releaseReadyForPublication` 始终为 false。
 
