@@ -1,5 +1,7 @@
 /* 下载浮层：视口大小的裁切容器（overflow:hidden 把波纹裁在视口内，
-   避免窄窗横向滚动）；气泡绝对锚定右下角。波纹只在新增任务时播放，不循环。 */
+   避免窄窗横向滚动）；气泡绝对锚定右下角。波纹只在新增任务时播放，不循环。
+   波纹圆环从气泡中心扩散到约 124px 半径，途中会扫过窗口右下角，所以容器要和
+   窗口同圆角，overflow 才会把它裁在圆角以内，不在透明角上画出一段弧。 */
 .dl-overlay {
   /* 40px 圆形入口（--space-7 32 + --space-2 8）。 */
   --dl-bubble-size: calc(var(--space-7) + var(--space-2));
@@ -7,6 +9,7 @@
   inset: 0;
   z-index: var(--z-chrome);
   pointer-events: none;
+  border-radius: var(--shell-radius);
   overflow: hidden;
 }
 

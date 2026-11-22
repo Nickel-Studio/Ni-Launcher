@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
    100% 宽度的控件），所以这里把事件与 aria 直接克隆到触发元素本身。
    定位（R9）：指针悬浮时气泡出现在鼠标右下角并跟随指针（rAF 节流）；
    键盘 focus-visible 无指针坐标，回退到触发元素附近的 top/bottom 定位。
+   两种定位最后都经过 avoidWindowCorners，避开透明窗口的四个圆角。
    ========================================================================== */
 
 export type TooltipSide = "top" | "bottom";
@@ -63,6 +64,8 @@ export interface TooltipProps {
 /** 与 CSS 里 .ni-tooltip 的 --tip-gap / --tip-edge 对应，读不到时用同值兜底。 */
 const FALLBACK_GAP = 8;
 const FALLBACK_EDGE = 8;
+/** 与 tokens.css 的 --shell-radius（窗口圆角半径）对应。 */
+const FALLBACK_SHELL_RADIUS = 14;
 /** 默认延迟：轻扫不打扰，停留片刻才提示。 */
 const DEFAULT_DELAY = 350;
 
@@ -85,6 +88,52 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
 
 /** 指针坐标（视口坐标，对应 position:fixed 的气泡）。 */
 type Point = { x: number; y: number };
+
+type Box = { left: number; top: number };
+
+/**
+ * 窗口四角避让。窗口是透明无边框的，四个圆角只由 .ni-shell 的 border-radius 画出，
+ * 圆角外侧就是桌面；气泡挂在 body 下，不受 .ni-shell 裁剪。--tip-edge 已经让气泡
+ * 本体留在圆角弧线以内，但 --shadow-2 向下和两侧还有十几像素的投影尾巴，气泡贴角时
+ * 会落到圆角外侧，在桌面上留下一小片阴影。
+ *
+ * 气泡同时进入某个角的 corner×corner 方块时（corner = 窗口圆角半径 + --tip-edge），
+ * 沿位移较小的一轴把它推出方块。推完必须仍在 [edge, 视口 - 尺寸 - edge] 以内；
+ * 窗口太小、两轴都推不出去时保持原位，不越出窗口比避开角落更重要。
+ */
+function avoidWindowCorners(
+  box: Box,
+  width: number,
+  height: number,
+  corner: number,
+  edge: number
+): Box {
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+  const nearLeft = box.left < corner;
+  const nearRight = box.left + width > viewW - corner;
+  const nearTop = box.top < corner;
+  const nearBottom = box.top + height > viewH - corner;
+  if (!(nearLeft || nearRight) || !(nearTop || nearBottom)) return box;
+
+  const candidates: Array<Box & { cost: number }> = [];
+  // 同时贴着左右两侧（气泡几乎和窗口一样宽）时，横向怎么推都还在角里，只能走纵向；纵向同理。
+  if (nearLeft !== nearRight) {
+    const left = nearLeft ? corner : viewW - corner - width;
+    if (left >= edge && left <= viewW - width - edge) {
+      candidates.push({ left, top: box.top, cost: Math.abs(left - box.left) });
+    }
+  }
+  if (nearTop !== nearBottom) {
+    const top = nearTop ? corner : viewH - corner - height;
+    if (top >= edge && top <= viewH - height - edge) {
+      candidates.push({ left: box.left, top, cost: Math.abs(top - box.top) });
+    }
+  }
+  if (candidates.length === 0) return box;
+  const best = candidates.reduce((a, b) => (b.cost < a.cost ? b : a));
+  return { left: best.left, top: best.top };
+}
 
 export function Tooltip({
   label,
@@ -160,8 +209,17 @@ export function Tooltip({
     const nextFlip = [flipX ? "x" : "", flipY ? "y" : ""]
       .filter(Boolean)
       .join(" ");
-    const nextLeft = Math.min(Math.max(left, edge), maxLeft);
-    const nextTop = Math.min(Math.max(top, edge), maxTop);
+    const corner = cssPx(tip, "--shell-radius", FALLBACK_SHELL_RADIUS) + edge;
+    const { left: nextLeft, top: nextTop } = avoidWindowCorners(
+      {
+        left: Math.min(Math.max(left, edge), maxLeft),
+        top: Math.min(Math.max(top, edge), maxTop),
+      },
+      width,
+      height,
+      corner,
+      edge
+    );
     setPlacement("pointer");
     setFlip(nextFlip);
     // 坐标未变时复用旧对象：指针停顿时不做无谓重渲染。
@@ -203,12 +261,21 @@ export function Tooltip({
     const maxLeft = Math.max(edge, viewW - tipRect.width - edge);
     const maxTop = Math.max(edge, viewH - tipRect.height - edge);
 
+    const corner = cssPx(tip, "--shell-radius", FALLBACK_SHELL_RADIUS) + edge;
     setPlacement(next);
     setFlip("");
-    setCoords({
-      top: Math.min(Math.max(preferredTop, edge), maxTop),
-      left: Math.min(Math.max(centered, edge), maxLeft),
-    });
+    setCoords(
+      avoidWindowCorners(
+        {
+          top: Math.min(Math.max(preferredTop, edge), maxTop),
+          left: Math.min(Math.max(centered, edge), maxLeft),
+        },
+        tipRect.width,
+        tipRect.height,
+        corner,
+        edge
+      )
+    );
   }, [side]);
 
   const show = useCallback(

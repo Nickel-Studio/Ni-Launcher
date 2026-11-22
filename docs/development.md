@@ -98,6 +98,7 @@ pnpm tauri dev
 
 ```powershell
 pnpm build
+node --test tests/window-corners/overlays.test.mjs
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --test build_config --test dependency_notices
 node --test scripts/release-secrets.test.mjs scripts/audit-release.test.mjs tests/release-hardening/security.test.mjs
 python -m unittest discover -s scripts -p 'test_*.py' -v
@@ -107,6 +108,8 @@ node tests/embedded-config/verify.mjs --fixture
 node tests/embedded-config/verify.mjs --placeholder
 node tests/embedded-config/verify.mjs
 ```
+
+窗口是透明无边框的，四个圆角只由 `.ni-shell` 的 CSS 画出。挂在 `body` 下、`position: fixed` 且铺满整窗的浮层不受它裁剪，必须自己声明 `border-radius: var(--shell-radius)`，`tests/window-corners/overlays.test.mjs` 会扫描 `src/**/*.css` 和 `index.html` 检查这一点。会贴近窗口边缘的小浮层（如 Tooltip）要在定位时避开四角。
 
 Detached Release 验证器复制实际 build/runtime 密码特性，并验证白名单、随机化、UTF-8/UTF-16LE 明文扫描、门禁及移除临时源码后的运行。合成凭据情景不证明实际 Tauri 包或官方登录成功。`audit-release.mjs` 审计真实二进制与当前构建封装；严格模式同时拒绝历史 `nickel-embedded-secrets.json` 明文输出，不擅自删除已有文件。`--allow-incomplete-local` 只用于局部检查，`releaseReadyForPublication` 始终为 false。
 
@@ -133,6 +136,8 @@ Detached Release 验证器复制实际 build/runtime 密码特性，并验证白
 GitHub Secrets 必须配置 `NICKEL_MSA_CLIENT_ID` 和 `NICKEL_CURSEFORGE_API_KEY`；可选 Variables 为 `NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI`。构建使用独立 `src-tauri/target/release-build`，禁止缓存含可恢复配置的 target 输出。只上传经过 `prepare_release.py` 审计的目录，不上传构建缓存、秘密源文件或运行数据。
 
 发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。
+
+MSI 只接受 `主.次.修订[.构建]` 的纯数字版本，带 `-beta` 等预发布标识时必须在 `tauri.conf.json` 的 `bundle.windows.wix.version` 单独指定（1.0.3-beta 用 `1.0.3.1`）；回到纯数字版本时删除该字段，MSI 版本随 `version` 推导。
 
 ### 每目标必须包含 portable
 

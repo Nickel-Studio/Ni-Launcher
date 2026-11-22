@@ -41,6 +41,9 @@ jobs:
       - name: 类型检查 + 生产构建
         run: pnpm build
 
+      - name: 窗口圆角浮层回归
+        run: node --test tests/window-corners/overlays.test.mjs
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

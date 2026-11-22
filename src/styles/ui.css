@@ -609,6 +609,13 @@
   display: grid;
   place-items: center;
   padding: var(--space-6);
+  /* 遮罩挂在 body 下，不受 .ni-shell 的圆角裁剪。窗口是透明的，不自带圆角时
+     暗色底和 backdrop-filter 会把四个透明角涂成方块；overflow 同时裁掉弹窗
+     --shadow-3 在矮窗口里伸到下方两角的投影。clip 不产生滚动容器，hidden 是
+     不支持 clip 的 WebView 的回退。 */
+  border-radius: var(--shell-radius);
+  overflow: hidden;
+  overflow: clip;
   background: var(--overlay);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -884,7 +891,8 @@
 /* ================================================================= Tooltip == */
 /* 自绘悬浮提示：填充式气泡 + 柔和分层阴影（无 1px 描边）。
    --tip-gap / --tip-edge 同时被 Tooltip.tsx 读取用于定位，
-   保证「视觉间距」与「定位计算」同源，两处不会各写一个魔法数字。 */
+   保证「视觉间距」与「定位计算」同源，两处不会各写一个魔法数字。
+   Tooltip.tsx 还会读取 --shell-radius，让气泡避开窗口四个圆角。 */
 .ni-tooltip {
   --tip-gap: var(--space-2);
   --tip-edge: var(--space-2);

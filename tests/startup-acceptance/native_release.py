@@ -33,7 +33,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 EVIDENCE_ROOT = HERE / "evidence"
-REQUIRED_VERSION = "1.0.2"
+REQUIRED_VERSION = "1.0.3-beta"
 EULA_TITLE = "\u5f00\u59cb\u4e4b\u524d\uff0c\u8bf7\u786e\u8ba4 Minecraft EULA"
 ACCEPT = "\u540c\u610f\u5e76\u7b7e\u7f72"
 REJECT = "\u62d2\u7edd"
@@ -1364,7 +1364,7 @@ def run_native(playwright, source, evidence, protocol, expected_sha256, referenc
             check(signed.get("changelogSeenVersion") != REQUIRED_VERSION, "Changelog was acknowledged before its button")
             blocked_gate(session, "Nickel " + REQUIRED_VERSION + " \u66f4\u65b0\u8bf4\u660e")
             changelog = json.loads((ROOT / "CHANGELOG.json").read_text(encoding="utf-8"))
-            check(changelog.get("version") == REQUIRED_VERSION, "The native changelog contract is not version 1.0.2")
+            check(changelog.get("version") == REQUIRED_VERSION, "The native changelog contract is not version " + REQUIRED_VERSION)
             for section in changelog["sections"]:
                 expect(page.locator(".startup-changelog")).to_contain_text(section["title"])
                 for item in section["items"]:
