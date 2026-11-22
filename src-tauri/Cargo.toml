@@ -45,3 +45,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# vendored 核心纳入 workspace：cargo test 会一并运行其全部单元测试（含归档
+# 安全回归），其 dev-dependencies 也统一由根 Cargo.lock 管理与许可审计。
+[workspace]
+members = ["vendor/minecraft-java-rs-core"]
