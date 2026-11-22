@@ -150,7 +150,7 @@ MSI 只接受 `主.次.修订[.构建]` 的纯数字版本，带 `-beta` 等预�
 
 必须完整解压到可写目录，保留启动器旁的 `nickel.launcher-portable.json`；`Nickel/` 存设置和加密账号，`.minecraft/` 存默认游戏数据。macOS 数据位于完整 `.app` 旁，不修改签名包内部。此标记与整合包的 `nickel.portable.json` 独立，不能触发整合包导入；发布归档不包含用户账号、凭据密钥文件、配置原文、Java 或游戏数据，但可包含已授权的四字段内嵌 API 配置。Windows portable 仍依赖 WebView2，Linux 仍依赖相应 GTK/WebKit 系统库，不宣称完全静态或无需平台依赖。
 
-`package_portable.py` 可单独打包/检查，但只有正式 `prepare_release.py` 同时通过官方 CF 请求、Microsoft 设备码预检、最终原生二进制注入审计、许可及归档校验后才能形成上传集。`collect_release.py` 要求四个完整目标、每目标 portable 与安装包，并重新核对清单、哈希及启动器来源；缺任意目标或证据即阻断全部 Release。
+`package_portable.py` 可单独打包/检查，但只有正式 `prepare_release.py` 同时通过官方 CF 请求、Microsoft 设备码预检、最终原生二进制注入审计、许可及归档校验后才能形成上传集。`collect_release.py` 要求四个完整目标、每目标 portable 与安装包，并重新核对清单、哈希及启动器来源；缺任意目标或证据即阻断全部 Release。收集结果（含各目标清单、原生/远程配置审计、AppImage 压缩证据）整体保存为 Actions artifact `Nickel-complete-release`；随后 `select_release_assets.py` 按白名单只挑出安装包、portable 与标签提交的 `git archive` 源码包 `Nickel-<版本>-source.zip`，先对照收集阶段的 `SHA256SUMS.txt` 复核哈希，再重新生成只列这些文件的 `SHA256SUMS.txt` 上传 Release 草稿。证据 JSON 不进 Release；既不是公开产物也不是 `.json` 的文件会阻断上传。
 
 ### AppImage 无损优化
 
