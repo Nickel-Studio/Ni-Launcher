@@ -18,6 +18,8 @@ jobs:
   bundle:
     name: 打包与审计 · ${{ matrix.label }}
     runs-on: ${{ matrix.platform }}
+    # Release credentials live only in the production environment, which admits main and v* tags.
+    environment: production
     env:
       NICKEL_CHANNEL: production
       NICKEL_REQUIRE_RELEASE_SECRETS: "1"
