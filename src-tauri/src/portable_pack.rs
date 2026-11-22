@@ -439,7 +439,7 @@ fn launcher_path_for(source: &Path, development: bool, os: &str) -> Result<&'sta
 }
 
 fn current_launcher() -> Result<(PathBuf, &'static str), String> {
-    let source = std::env::current_exe().map_err(|e| format!("无法定位当前启动器：{e}"))?;
+    let source = app_paths::launcher_executable()?;
     let name = launcher_path_for(
         &source,
         cfg!(debug_assertions) || tauri::is_dev(),

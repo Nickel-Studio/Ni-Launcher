@@ -276,7 +276,7 @@ pub async fn curseforge_save_as(
         &url,
         &network,
         &api,
-        key.as_deref(),
+        key.as_ref(),
         |value| {
             let file = &value["data"];
             if file["modId"].as_u64() != Some(project_id) {

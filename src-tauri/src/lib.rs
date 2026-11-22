@@ -44,6 +44,7 @@ mod launch_log_store;
 mod launch_output;
 mod launch_state;
 mod launch_window;
+mod launcher_portable;
 mod loader_availability;
 mod loader_catalog; // 完整加载器清单 / 请求级下载源 / 官方安装器地址
 mod media; // Validated background image and video protocols.

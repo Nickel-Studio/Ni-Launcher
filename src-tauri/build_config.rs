@@ -3,6 +3,28 @@ use serde_json::{Map, Value};
 pub const MAX_CONFIG_BYTES: usize = 256 * 1024;
 pub const TEST_CURSEFORGE_KEY: &str = "NICKEL_TEST_CURSEFORGE_KEY";
 
+/// Own parsed configuration so private, non-whitelisted values are also cleared on drop.
+pub struct SensitiveDocument(pub Value);
+
+impl std::ops::Deref for SensitiveDocument {
+    type Target = Value;
+    fn deref(&self) -> &Value { &self.0 }
+}
+
+impl Drop for SensitiveDocument {
+    fn drop(&mut self) { clear(&mut self.0); }
+}
+
+pub fn clear(value: &mut Value) {
+    use zeroize::Zeroize;
+    match value {
+        Value::String(text) => text.zeroize(),
+        Value::Array(values) => values.iter_mut().for_each(clear),
+        Value::Object(values) => values.values_mut().for_each(clear),
+        _ => {}
+    }
+}
+
 fn field(section: &Value, name: &str) -> Option<String> {
     section
         .get(name)?
@@ -52,15 +74,14 @@ fn project_value(value: &Value) -> Value {
 }
 
 pub fn project(text: &str) -> Result<Value, String> {
-    Ok(project_value(&parse_document(text)?))
+    let source = SensitiveDocument(parse_document(text)?);
+    Ok(project_value(&source))
 }
 
 pub fn from_source(text: &str, lookup: impl Fn(&str) -> Option<String>) -> Result<Value, String> {
     // Merge before projecting so an environment client ID can complete a partial source section.
-    Ok(project_value(&with_environment(
-        parse_document(text)?,
-        lookup,
-    )))
+    let source = SensitiveDocument(with_environment(parse_document(text)?, lookup));
+    Ok(project_value(&source))
 }
 
 pub fn with_environment(mut value: Value, lookup: impl Fn(&str) -> Option<String>) -> Value {

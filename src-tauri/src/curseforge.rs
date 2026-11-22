@@ -392,7 +392,7 @@ pub(crate) fn pick_file(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// GET JSON，带 CFCore 的 `x-api-key` 头；HTTP 错误转成可读中文（不回显 key）。
-async fn get_json(url: &str, api_key: &str) -> Result<serde_json::Value, String> {
+async fn get_json(url: &str, api_key: Option<&crate::secrets::CurseforgeCredential>) -> Result<serde_json::Value, String> {
     let settings = crate::network_settings::snapshot();
     let context = crate::community_network::context(&settings);
     crate::community_network::get_json(
@@ -400,7 +400,7 @@ async fn get_json(url: &str, api_key: &str) -> Result<serde_json::Value, String>
         url,
         &settings,
         &context,
-        (!api_key.is_empty()).then_some(api_key),
+        api_key,
         |value| {
             if !value["data"].is_array() {
                 return Err("CurseForge 响应结构无效，请重试".into());
@@ -443,7 +443,7 @@ pub async fn curseforge_search(
     limit: Option<u32>,
 ) -> Result<String, String> {
     let kind = normalize_kind(&kind)?;
-    let api_key = crate::secrets::curseforge_api_key(app.clone())?.unwrap_or_default();
+    let api_key = crate::secrets::curseforge_api_key(app.clone())?;
     let class_id = class_id_of(&kind).ok_or_else(|| format!("不支持的资源种类：{kind}"))?;
     let offset = offset.unwrap_or(0).min(10_000);
     let limit = limit.unwrap_or(20).clamp(1, 50); // CF 官方 pageSize 上限 50
@@ -473,7 +473,7 @@ pub async fn curseforge_search(
         url.push_str(&format!("&modLoaderType={loader_type}"));
     }
 
-    let value = get_json(&url, &api_key).await?;
+    let value = get_json(&url, api_key.as_ref()).await?;
     normalize_search(&value)
 }
 
@@ -490,7 +490,7 @@ pub async fn curseforge_project_files(
     limit: Option<u32>,
 ) -> Result<String, String> {
     let kind = normalize_kind(&kind)?;
-    let api_key = crate::secrets::curseforge_api_key(app.clone())?.unwrap_or_default();
+    let api_key = crate::secrets::curseforge_api_key(app.clone())?;
     let project_id = project_id.trim();
     if project_id.is_empty() {
         return Err("缺少项目编号（projectId）".to_string());
@@ -520,7 +520,7 @@ pub async fn curseforge_project_files(
         url.push_str(&format!("&modLoaderType={loader_type}"));
     }
 
-    let value = get_json(&url, &api_key).await?;
+    let value = get_json(&url, api_key.as_ref()).await?;
     let data = value
         .get("data")
         .and_then(|d| d.as_array())
@@ -579,7 +579,7 @@ pub async fn curseforge_install(
                 &url,
                 &context.network,
                 &api,
-                key.as_deref(),
+                key.as_ref(),
                 |value| {
                     let file = &value["data"];
                     if file["modId"].as_u64() != Some(project_id) {

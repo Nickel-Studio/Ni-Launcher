@@ -41,6 +41,17 @@ jobs:
       - name: 类型检查 + 生产构建
         run: pnpm build
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 发布安全与 portable 门禁回归（仅合成凭据）
+        run: |
+          node --test scripts/release-secrets.test.mjs scripts/audit-release.test.mjs tests/release-hardening/security.test.mjs
+          python -m unittest discover -s scripts -p 'test_*.py' -v
+          python -m unittest discover -s tests/startup-acceptance -p test_native_safety.py -v
+          python -m unittest discover -s tests/release-hardening -p 'test_*.py' -v
+
   backend:
     name: Rust · 编译 + 单元测试
     runs-on: ubuntu-22.04
@@ -64,9 +75,16 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Detached Release 注入与运行时覆盖验收
+        run: node tests/embedded-config/verify.mjs --fixture

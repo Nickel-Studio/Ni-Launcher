@@ -57,3 +57,8 @@ tests/*/evidence/
 tests/*/backend-evidence/
 tests/export-regression/.backend-overlay/
 tests/embedded-config/detached-release*.json
+
+# Python 缓存与误生成的 npm 锁文件（项目使用 pnpm）
+__pycache__/
+*.py[cod]
+package-lock.json

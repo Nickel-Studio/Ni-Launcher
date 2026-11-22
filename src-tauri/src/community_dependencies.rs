@@ -76,7 +76,7 @@ async fn metadata(
     suffix: &str,
     settings: &crate::network_settings::NetworkSettings,
     transfer: &minecraft_java_rs_core::net::transfer::TransferContext,
-    key: Option<&str>,
+    key: Option<&crate::secrets::CurseforgeCredential>,
 ) -> Result<Value, String> {
     community_network::get_json(
         platform,
@@ -251,7 +251,7 @@ pub async fn community_dependency_resolve(
                     &format!("mods/{project_id}/files/{file_id}"),
                     &settings,
                     &transfer,
-                    key.as_deref(),
+                    key.as_ref(),
                 )
                 .await?;
                 if file["id"].as_u64() != Some(file_id)
@@ -268,7 +268,7 @@ pub async fn community_dependency_resolve(
         Platform::Modrinth => format!("project/{project_id}"),
         Platform::Curseforge => format!("mods/{project_id}"),
     };
-    let project = metadata(platform, &suffix, &settings, &transfer, key.as_deref()).await?;
+    let project = metadata(platform, &suffix, &settings, &transfer, key.as_ref()).await?;
     validate_project_identity(
         platform,
         &project,
