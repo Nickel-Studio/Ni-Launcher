@@ -89,7 +89,7 @@ fn read_image(path: &Path) -> Result<(&'static str, Vec<u8>), String> {
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_BYTES {
         return Err("图片无效或超过 32 MiB 限制".into());
     }
-    // A single read() may return short on network shares or filter drivers; fill the header.
+    // A single read() may return short under filter drivers (antivirus, cloud sync); fill the header.
     let mut header = Vec::with_capacity(32);
     (&mut file).take(32).read_to_end(&mut header).map_err(|_| INVALID_IMAGE.to_string())?;
     let mime = raster_mime(&canonical, &header).ok_or(INVALID_IMAGE)?;
