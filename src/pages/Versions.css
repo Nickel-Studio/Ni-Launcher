@@ -295,7 +295,7 @@
 
 .vs-dialog-input:disabled {
   opacity: 0.55;
-  cursor: not-allowed;
+  cursor: default;
 }
 
 /* ------------------------------------------------ 右侧：标题 + 卡片区 --- */

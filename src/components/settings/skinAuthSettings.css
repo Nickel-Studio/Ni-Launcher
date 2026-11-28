@@ -37,7 +37,7 @@
   color: var(--text-faint);
   -webkit-text-fill-color: var(--text-faint);
   background: var(--fill-1);
-  cursor: not-allowed;
+  cursor: default;
 }
 .skin-auth-settings__fields input[type="password"]::-ms-reveal {
   display: none;

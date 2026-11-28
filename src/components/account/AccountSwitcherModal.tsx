@@ -11,7 +11,7 @@ export interface AccountSwitcherModalProps {
   activeId: string;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
-  /** 列表里没有想要的账号：退出当前账号，回到登录表单。 */
+  /** 保留当前账号，进入可返回的临时登录表单。 */
   onLoginOther: () => void;
 }
 

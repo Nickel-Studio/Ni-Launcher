@@ -535,7 +535,7 @@
 
 .skin-login__submit:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 
 .skin-login__who-row {

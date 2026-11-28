@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 from oauth_checks import verify_oauth_home, verify_login_feedback
+from navigation_checks import verify_account_return
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--url', required=True)
@@ -34,12 +35,15 @@ with sync_playwright() as p:
     expect(secret).to_have_value('fixture-secret-long-value')
     check('Secret remains masked on focus', True)
     secret.fill('edited-alpha-secret')
+    page.wait_for_timeout(400)
+    page.evaluate("window.__pill = document.querySelector('.skin-auth-settings > .ni-seg'); window.__pillStyle = window.__pill.querySelector('.ni-seg__pill').getAttribute('style')")
     page.get_by_role('button', name='Switch site', exact=True).click()
     expect(page.get_by_text('Beta Skin', exact=True)).to_be_visible()
     expect(secret).to_have_value('fixture-secret-long-value')
     page.get_by_role('button', name='Switch site', exact=True).click()
     expect(secret).to_have_value('edited-alpha-secret')
     check('custom credentials stay scoped to their site', True)
+    check('server edits keep the auth selector and its pill mounted', page.evaluate("window.__pill === document.querySelector('.skin-auth-settings > .ni-seg') && window.__pillStyle === window.__pill.querySelector('.ni-seg__pill').getAttribute('style')"))
     callback = page.get_by_label('回调 URI', exact=True)
     expect(callback).to_be_disabled()
     expect(callback).to_have_attribute('readonly', '')
@@ -101,6 +105,7 @@ with sync_playwright() as p:
     check('cancelled OAuth preparation never starts finish', not page.evaluate("window.__home.calls.some(c=>c.command==='skin_oauth_finish')"))
     verify_oauth_home(page, check, args.url)
     verify_login_feedback(page, check, args.url)
+    verify_account_return(page, check, args.url)
     check('account regression has no runtime errors', not errors)
     browser.close()
 (evidence / 'account-report.json').write_text(json.dumps(checks, ensure_ascii=False, indent=2), encoding='utf-8')

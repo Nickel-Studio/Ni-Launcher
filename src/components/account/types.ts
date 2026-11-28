@@ -68,6 +68,7 @@ export interface Account {
   uuid?: string;
   email?: string;
   server?: string;
+  authMethod?: "classic" | "oauth2";
 }
 
 /** 账号形态的中文短标签。 */

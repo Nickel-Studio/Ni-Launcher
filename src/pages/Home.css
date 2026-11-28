@@ -225,6 +225,18 @@
 .home__form {
   width: 100%;
 }
+.home__login-back.ni-btn {
+  align-self: flex-start;
+  margin-top: calc(-1 * var(--space-3));
+}
+.home__back-icon {
+  transform: rotate(90deg);
+}
+
+.home__swap[data-phase="out"] {
+  animation: none;
+  pointer-events: none;
+}
 
 /* ---------- 底部：启动区 ---------- */
 .home__launch {

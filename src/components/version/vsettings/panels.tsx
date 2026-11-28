@@ -912,18 +912,27 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
     ? `将使用 ${effectiveJavaPath}`
     : "正在读取实例版本信息并解析 Java";
   const javaOptions = [
-    { value: "global", label: "跟随全局" },
-    { value: "", label: "自动选择" },
+    {
+      value: "global",
+      label: "跟随全局",
+      tooltip: global.javaPath || "使用全局 Java 设置",
+    },
+    { value: "", label: "自动选择", tooltip: JAVA_HELP },
     ...javas.map((java) => ({
       value: java.path,
       label: `${java.version || "未知版本"} · ${java.vendor}`,
+      tooltip: java.path,
     })),
   ];
   if (
     settings.javaPath &&
     !javas.some((java) => java.path === settings.javaPath)
   ) {
-    javaOptions.push({ value: settings.javaPath, label: settings.javaPath });
+    javaOptions.push({
+      value: settings.javaPath,
+      label: settings.javaPath,
+      tooltip: settings.javaPath,
+    });
   }
   const memoryManagementOptions = [
     {
@@ -988,7 +997,7 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             placeholder="默认"
           />
         </Row>
-        <Row label="Java" help={JAVA_HELP}>
+        <Row label="Java">
           <Select
             value={settings.javaPath ?? "global"}
             ariaLabel="Java 选择"

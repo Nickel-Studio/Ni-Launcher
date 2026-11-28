@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { IconCheck, IconChevronDown } from "./icons";
+import { Tooltip } from "./Tooltip";
 
 export interface SelectOption {
   value: string;
   label: ReactNode;
   disabled?: boolean;
+  tooltip?: string;
   /** Optional group heading; consecutive options sharing a group render together. */
   group?: string;
 }
@@ -73,23 +75,25 @@ export function Select({
         triggerRef.current?.focus({ preventScroll: true });
       }}
     >
-      <button
-        ref={triggerRef}
-        id={id}
-        type="button"
-        className="ni-select__trigger"
-        data-open={open}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="ni-select__value" data-placeholder={!selected}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <IconChevronDown className="ni-select__chevron" />
-      </button>
+      <Tooltip label={selected?.tooltip ?? ""} disabled={open}>
+        <button
+          ref={triggerRef}
+          id={id}
+          type="button"
+          className="ni-select__trigger"
+          data-open={open}
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="ni-select__value" data-placeholder={!selected}>
+            {selected ? selected.label : placeholder}
+          </span>
+          <IconChevronDown className="ni-select__chevron" />
+        </button>
+      </Tooltip>
 
       {open ? (
         <div className="ni-select__menu" role="listbox">
@@ -101,23 +105,25 @@ export function Select({
                 {showGroup ? (
                   <div className="ni-select__group">{opt.group}</div>
                 ) : null}
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={opt.value === value}
-                  data-selected={opt.value === value}
-                  disabled={opt.disabled}
-                  className="ni-select__option"
-                  onClick={() => {
-                    if (opt.disabled) return;
-                    onChange(opt.value);
-                    setOpen(false);
-                    triggerRef.current?.focus({ preventScroll: true });
-                  }}
-                >
-                  <span>{opt.label}</span>
-                  {opt.value === value ? <IconCheck /> : null}
-                </button>
+                <Tooltip label={opt.tooltip ?? ""}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={opt.value === value}
+                    data-selected={opt.value === value}
+                    disabled={opt.disabled}
+                    className="ni-select__option"
+                    onClick={() => {
+                      if (opt.disabled) return;
+                      onChange(opt.value);
+                      setOpen(false);
+                      triggerRef.current?.focus({ preventScroll: true });
+                    }}
+                  >
+                    <span>{opt.label}</span>
+                    {opt.value === value ? <IconCheck /> : null}
+                  </button>
+                </Tooltip>
               </Fragment>
             );
           })}

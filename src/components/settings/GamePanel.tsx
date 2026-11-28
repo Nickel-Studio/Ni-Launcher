@@ -288,17 +288,22 @@ export function GamePanel() {
     );
   }
   const javaOptions = [
-    { value: "", label: "自动选择适合游戏版本的 Java" },
+    { value: "", label: "自动选择", tooltip: JAVA_LIST_HELP },
     ...javas.map((java) => ({
       value: java.path,
       label: `${java.version} · ${java.vendor || java.path}`,
+      tooltip: java.path,
     })),
   ];
   if (
     settings.javaPath &&
     !javas.some((java) => java.path === settings.javaPath)
   ) {
-    javaOptions.push({ value: settings.javaPath, label: settings.javaPath });
+    javaOptions.push({
+      value: settings.javaPath,
+      label: settings.javaPath,
+      tooltip: settings.javaPath,
+    });
   }
   const suggestedMemoryMb = memoryPlan?.suggestedMemoryMb ?? null;
   const allocatedMemoryMb =
@@ -533,8 +538,7 @@ export function GamePanel() {
             >
               <IconRefresh />
             </IconButton>
-          </div>,
-          JAVA_LIST_HELP
+          </div>
         )}
 
         {javaError ? (

@@ -175,7 +175,7 @@
 }
 
 .cv-combo__input:disabled {
-  cursor: not-allowed;
+  cursor: default;
 }
 
 .cv-combo__chevron {

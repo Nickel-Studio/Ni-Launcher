@@ -834,6 +834,7 @@ mod tests {
             email: Some("user@example.com".into()),
             server: Some(store::DEFAULT_SERVER.into()),
             avatar_url: None,
+            auth_method: Some("classic".into()),
         };
         let value = serde_json::to_value(LoginOutcome::Account {
             account: account.clone(),

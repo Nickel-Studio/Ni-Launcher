@@ -384,7 +384,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
   }
 
   async function install(version: ModrinthVersion, name?: string) {
-    if (installBusy.current || (!pack && !instance.dir)) return;
+    if (installBusy.current) return;
     installBusy.current = true;
     setActionError("");
     setNameError("");
@@ -512,12 +512,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
             ))}
           </div>
         ) : null}
-        {!pack && !instance.dir ? (
-          <p className="pd-card__empty">
-            到「实例与版本」选择目标实例后，可另存为资源文件。
-          </p>
-        ) : null}
-        {loading ? <LoadingCard size="inline" label="正在加载" /> : null}
+        {loading ? <LoadingCard size="detail" label="正在加载" /> : null}
         {listError ? (
           <div className="pd-error" role="alert">
             <IconAlert aria-hidden />
@@ -532,7 +527,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
           </div>
         ) : null}
         {!loading && !listError && groups.length === 0 ? (
-          <p className="pd-card__empty">
+          <p className="pd-downloads__empty" role="status">
             {filter !== ALL_FILTER
               ? "当前筛选下没有版本，请切换版本筛选。"
               : "该项目没有可安装的版本。"}
@@ -612,9 +607,7 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                               undefined
                             }
                             data-version-id={version.id}
-                            disabled={
-                              (!pack && !instance.dir) || Boolean(installingId)
-                            }
+                            disabled={Boolean(installingId)}
                             onClick={(event) =>
                               requestInstall(version, event.currentTarget)
                             }

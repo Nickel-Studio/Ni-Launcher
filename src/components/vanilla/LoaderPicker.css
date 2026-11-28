@@ -110,7 +110,7 @@
   color: var(--warning);
 }
 .van-loader[data-blocked="true"] .van-loader__head {
-  cursor: not-allowed;
+  cursor: default;
 }
 .van-loader__head {
   display: flex;

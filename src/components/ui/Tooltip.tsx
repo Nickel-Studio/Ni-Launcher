@@ -42,6 +42,7 @@ type TooltipChildProps = {
   ref?: Ref<HTMLElement>;
   title?: string;
   "aria-describedby"?: string;
+  "data-ni-tooltip-trigger"?: string;
   onPointerEnter?(event: ReactPointerEvent<HTMLElement>): void;
   onPointerMove?(event: ReactPointerEvent<HTMLElement>): void;
   onPointerLeave?(event: ReactPointerEvent<HTMLElement>): void;
@@ -59,6 +60,7 @@ export interface TooltipProps {
   side?: TooltipSide;
   /** 指针悬浮多久后出现（毫秒）；键盘 focus-visible 立即出现。 */
   delay?: number;
+  disabled?: boolean;
 }
 
 /** 与 CSS 里 .ni-tooltip 的 --tip-gap / --tip-edge 对应，读不到时用同值兜底。 */
@@ -140,6 +142,7 @@ export function Tooltip({
   children,
   side = "top",
   delay = DEFAULT_DELAY,
+  disabled = false,
 }: TooltipProps) {
   const tipId = useId();
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -281,6 +284,7 @@ export function Tooltip({
   const show = useCallback(
     (immediate: boolean, mode: "pointer" | "focus") => {
       clearTimer();
+      if (disabled || !label.trim()) return;
       modeRef.current = mode;
       const reveal = () => {
         timerRef.current = null;
@@ -297,13 +301,17 @@ export function Tooltip({
       }
       timerRef.current = window.setTimeout(reveal, delay);
     },
-    [clearTimer, delay, positionAtPointer, positionAtTrigger]
+    [clearTimer, delay, disabled, label, positionAtPointer, positionAtTrigger]
   );
 
   // 关闭时丢弃旧坐标，避免下次出现时先闪在上一处位置。
   useEffect(() => {
     if (!open) setCoords(null);
   }, [open]);
+
+  useEffect(() => {
+    if (disabled || !label.trim()) hide();
+  }, [disabled, label, hide]);
 
   // 打开后测量：指针模式取最新指针坐标（延迟期内可能已移动），键盘模式回退触发元素。
   useLayoutEffect(() => {
@@ -356,15 +364,29 @@ export function Tooltip({
     }
   }, [positionAtPointer]);
 
+  const ownsEvent = (target: EventTarget | null) =>
+    target instanceof Element &&
+    target
+      .closest("[data-ni-tooltip-trigger]")
+      ?.getAttribute("data-ni-tooltip-trigger") === tipId;
+
   const handlePointerEnter = (event: ReactPointerEvent<HTMLElement>) => {
     childProps.onPointerEnter?.(event);
+    if (!ownsEvent(event.target) || event.pointerType === "touch") return;
     pointerRef.current = { x: event.clientX, y: event.clientY };
     show(false, "pointer");
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     childProps.onPointerMove?.(event);
+    if (!ownsEvent(event.target)) {
+      hide();
+      return;
+    }
+    if (event.pointerType === "touch") return;
+    modeRef.current = "pointer";
     pendingRef.current = { x: event.clientX, y: event.clientY };
+    if (!openRef.current && timerRef.current === null) show(false, "pointer");
     if (rafRef.current === null) {
       rafRef.current = window.requestAnimationFrame(commitPointer);
     }
@@ -372,22 +394,22 @@ export function Tooltip({
 
   const handlePointerLeave = (event: ReactPointerEvent<HTMLElement>) => {
     childProps.onPointerLeave?.(event);
+    pointerRef.current = null;
     hide();
   };
 
   const handleFocus = (event: ReactFocusEvent<HTMLElement>) => {
     childProps.onFocus?.(event);
-    // 只有键盘 focus-visible 才弹提示：鼠标点按带来的聚焦不打扰用户。
-    let focusVisible = true;
-    try {
-      focusVisible =
-        event.target instanceof Element &&
-        event.target.matches(":focus-visible");
-    } catch {
-      // 极老内核不支持该选择器时，退化为「始终提示」（仍是可访问的）。
-      focusVisible = true;
+    if (!ownsEvent(event.target)) return;
+    // Text inputs match :focus-visible even after a mouse click; keep pointer positioning.
+    if (pointerRef.current) {
+      show(false, "pointer");
+    } else if (
+      event.target instanceof Element &&
+      event.target.matches(":focus-visible")
+    ) {
+      show(true, "focus");
     }
-    if (focusVisible) show(true, "focus");
   };
 
   const handleBlur = (event: ReactFocusEvent<HTMLElement>) => {
@@ -397,6 +419,7 @@ export function Tooltip({
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     childProps.onKeyDown?.(event);
+    if (event.key === "Tab") pointerRef.current = null;
     if (event.key === "Escape") hide();
   };
 
@@ -412,6 +435,9 @@ export function Tooltip({
       assignRef(children.props.ref, node);
     },
     title: undefined,
+    "data-ni-tooltip-trigger": label.trim()
+      ? tipId
+      : childProps["data-ni-tooltip-trigger"],
     "aria-describedby": describedBy,
     onPointerEnter: handlePointerEnter,
     onPointerMove: handlePointerMove,

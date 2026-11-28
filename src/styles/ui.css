@@ -33,7 +33,7 @@
 }
 .ni-btn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-btn svg {
   width: 16px;
@@ -280,7 +280,7 @@
 }
 .ni-switch:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-switch__knob {
   position: absolute;
@@ -336,7 +336,7 @@
 }
 .ni-slider:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-slider:focus-visible {
   outline: 2px solid var(--accent-ring);
@@ -447,7 +447,7 @@
 }
 .ni-select__trigger:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-select__value {
   flex: 1 1 auto;
@@ -523,7 +523,7 @@
 }
 .ni-select__option:disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-select__option:focus-visible {
   outline: none;
@@ -562,7 +562,7 @@
 }
 .ni-iconbtn:disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-iconbtn--sm {
   --_s: 26px;

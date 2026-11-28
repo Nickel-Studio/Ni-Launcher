@@ -1,14 +1,14 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import "./LoadingCard.css";
 
-export type LoadingCardSize = "page" | "inline";
+export type LoadingCardSize = "page" | "inline" | "detail";
 export type LoadingCardState = "loading" | "error";
 
 export interface LoadingCardProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
   /** 加载 / 错误文案；省略时按状态使用默认值。 */
   label?: string;
-  /** page = 独立页面占位（自带卡片）；inline = 嵌入现有卡片 / 面板。 */
+  /** page = 带背景卡页面；detail = 无背景卡页面；inline = 嵌入现有面板。 */
   size?: LoadingCardSize;
   /** error 会让矿镐停摆、矿石出现叉号并整体转红，最后一帧定格。 */
   state?: LoadingCardState;

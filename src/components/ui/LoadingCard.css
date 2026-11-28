@@ -251,8 +251,18 @@
   }
 }
 
+.ni-loading--detail,
 .ni-loading--inline {
-  --ni-art-width: var(--loading-art-inline-width);
+  --ni-art-width: calc(var(--loading-art-inline-width) * 1.05);
+}
+.ni-loading--detail {
+  flex: 1 1 auto;
+}
+.ni-loading--detail .ni-loading__card {
+  background: transparent;
+  box-shadow: none;
+}
+.ni-loading--inline {
   width: auto;
   min-height: 0;
   padding: var(--space-3) 0;

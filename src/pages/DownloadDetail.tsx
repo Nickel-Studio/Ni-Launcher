@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, IconButton } from "../components/ui";
+import { Button, IconButton, Tooltip } from "../components/ui";
 import { InlineNotice } from "../components/ui/InlineNotice";
 import { IconAlert } from "../components/resources/icons";
 import { IconCheck, IconClose, IconRefresh } from "../components/ui/icons";
@@ -170,14 +170,15 @@ function FailedCard({ item }: { item: DownloadState }) {
         <span className="dd-failure__mark" aria-hidden="true">
           <IconAlert />
         </span>
-        <button
-          type="button"
-          className="dd-failure__text"
-          title="单击复制错误详情"
-          onClick={() => void handleCopy()}
-        >
-          {message}
-        </button>
+        <Tooltip label="单击复制错误详情">
+          <button
+            type="button"
+            className="dd-failure__text"
+            onClick={() => void handleCopy()}
+          >
+            {message}
+          </button>
+        </Tooltip>
       </div>
       <p
         className="dd-failure__feedback"

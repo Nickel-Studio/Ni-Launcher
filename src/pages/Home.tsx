@@ -20,6 +20,7 @@ import {
   Button,
   Card,
   IconButton,
+  IconChevronDown,
   IconPencil,
   IconSwap,
   Tooltip,
@@ -157,7 +158,10 @@ function useAnimatedSwap(key: string, duration = 170) {
   );
 
   useEffect(() => {
-    if (key === display) return;
+    if (key === display) {
+      setPhase("in");
+      return;
+    }
     // 减弱动效时不播淡出、也不等计时器：CSS 已关闭过渡，再等 170ms 会让
     // 账号区先空一帧再出现，直接替换内容才是正确的降级。
     if (reducedMotion) {
@@ -180,9 +184,11 @@ export function Home() {
   const { settings, update } = useSettings();
   const { context: skinContext, ready: skinContextReady } =
     useSkinAuthContext();
+  const [loginOther, setLoginOther] = useState<AccountType | null>(null);
+  const [savingAccount, setSavingAccount] = useState(false);
   const accountType = skinContext.exclusive
     ? "littleskin"
-    : settings.accountType;
+    : loginOther ?? settings.accountType;
   const skinServer = skinContext.site.server;
 
   // ---- 多账号 ----
@@ -228,13 +234,14 @@ export function Home() {
 
   const typedAccount = useMemo<Account | null>(
     () =>
+      loginOther === null &&
       activeAccount &&
       activeAccount.type === accountType &&
       (accountType !== "littleskin" ||
         sameSkinSite(activeAccount.server ?? "", skinServer))
         ? activeAccount
         : null,
-    [activeAccount, accountType, skinServer]
+    [activeAccount, accountType, skinServer, loginOther]
   );
 
   const reconciledScope = useRef("");
@@ -250,6 +257,7 @@ export function Home() {
   useEffect(() => {
     if (
       !skinContextReady ||
+      loginOther !== null ||
       accountsLoading ||
       reconciledScope.current === accountScope
     )
@@ -285,6 +293,7 @@ export function Home() {
     }
   }, [
     accountScope,
+    loginOther,
     skinContextReady,
     accountsLoading,
     accounts,
@@ -361,6 +370,10 @@ export function Home() {
     (value: string) => {
       if (skinContext.exclusive) return;
       const next = value as AccountType;
+      if (loginOther !== null) {
+        setLoginOther(next);
+        return;
+      }
       update({ accountType: next });
       // 离线形态没有后端账号，清掉 active 避免继续沿用上一次的在线身份。
       const nextActive =
@@ -376,12 +389,13 @@ export function Home() {
       setAccountSwitching(true);
       void setActive(nextActive).finally(() => setAccountSwitching(false));
     },
-    [update, accounts, setActive, skinContext.exclusive, skinServer]
+    [update, accounts, setActive, skinContext.exclusive, skinServer, loginOther]
   );
 
   /** Authentication is already complete; Home alone notifies the final persistence result. */
   const applyMicrosoftAccount = useCallback(
     async (account: Account) => {
+      setSavingAccount(true);
       const result = await persistAccount({
         id: account.id,
         type: "microsoft",
@@ -390,15 +404,19 @@ export function Home() {
         email: account.email,
         server: undefined,
       });
+      setSavingAccount(false);
+      setLoginOther(null);
+      update({ accountType: "microsoft" });
       setAvatarNonce((n) => n + 1);
       const notice = persistNotice(result, MICROSOFT_PERSIST_MESSAGES);
       showToast(notice || "Microsoft 登录成功", notice ? "error" : "success");
     },
-    [persistAccount]
+    [persistAccount, update]
   );
 
   const applySkinAccount = useCallback(
     async (account: SkinAccount) => {
+      setSavingAccount(true);
       const result = await persistAccount({
         id: account.id,
         type: "littleskin",
@@ -406,7 +424,11 @@ export function Home() {
         uuid: account.uuid ?? undefined,
         email: account.email ?? undefined,
         server: account.server ?? skinServer,
+        authMethod: account.authMethod,
       });
+      setSavingAccount(false);
+      setLoginOther(null);
+      if (!skinContext.exclusive) update({ accountType: "littleskin" });
       const session = getSkinSession();
       const profiles: SkinProfile[] =
         session?.profiles ??
@@ -421,7 +443,13 @@ export function Home() {
         notice ? "error" : "success"
       );
     },
-    [persistAccount, skinServer, skinContext.site.name]
+    [
+      persistAccount,
+      skinServer,
+      skinContext.site.name,
+      skinContext.exclusive,
+      update,
+    ]
   );
 
   /** 皮肤站返回多角色：统一在首页弹出单选弹窗（若登录发生在弹窗里，先关掉那个弹窗）。 */
@@ -469,11 +497,19 @@ export function Home() {
     ]
   );
 
-  /** 列表里没有想要的账号：退出当前账号，回到同形态的登录表单。 */
+  // A temporary login form must not log out or overwrite the original account.
   const handleLoginOther = useCallback(() => {
     setSwitcherOpen(false);
-    handleLogout();
-  }, [handleLogout]);
+    setLoginOther(accountType);
+  }, [accountType]);
+
+  const handleCancelLoginOther = useCallback(() => {
+    if (savingAccount) return;
+    setLoginOther(null);
+    setSkinDialogOpen(false);
+    setProfileSwitch(null);
+    setSkinSession(null);
+  }, [savingAccount]);
 
   /** 铅笔：正版去官方皮肤页、皮肤站打开角色列表（离线形态不渲染铅笔）。 */
   const handlePencil = useCallback(async () => {
@@ -533,6 +569,7 @@ export function Home() {
         uuid: updated.uuid ?? undefined,
         email: updated.email ?? typedAccount?.email ?? undefined,
         server: updated.server ?? typedAccount?.server ?? undefined,
+        authMethod: updated.authMethod ?? typedAccount?.authMethod,
       });
       const notice = persistNotice(result, SKIN_PERSIST_MESSAGES);
       if (notice) showToast(notice, "error");
@@ -543,10 +580,12 @@ export function Home() {
 
   const canLaunch =
     skinContextReady &&
+    loginOther === null &&
     instance !== null &&
     launchUsername.trim() !== "" &&
     (accountType === "offline" || typedAccount !== null) &&
     !launcher.running &&
+    !savingAccount &&
     !accountSwitching;
 
   /** 启动失败只在弹窗里出现一次；诊断优先于普通错误。 */
@@ -606,7 +645,9 @@ export function Home() {
     );
 
   // 角色区 / 表单 —— 账号形态或登录态变化时淡出→淡入。
-  const swapKey = `${accountType}:${effectiveIdentity.loggedIn ? "in" : "out"}`;
+  const swapKey = `${accountType}:${
+    loginOther !== null ? "adding" : effectiveIdentity.loggedIn ? "in" : "out"
+  }`;
   const { display: swapDisplay, phase: swapPhase } = useAnimatedSwap(swapKey);
 
   const isOffline = accountType === "offline";
@@ -656,7 +697,9 @@ export function Home() {
           <Tooltip label={effectiveIdentity.name || "未命名"}>
             <h2 className="home__name">{effectiveIdentity.name || "未命名"}</h2>
           </Tooltip>
-          {!isOffline ? <p className="home__email">{emailText}</p> : null}
+          {!isOffline && typedAccount?.authMethod !== "oauth2" ? (
+            <p className="home__email">{emailText}</p>
+          ) : null}
         </div>
       </div>
 
@@ -676,13 +719,15 @@ export function Home() {
         {/* 顶部：账号形态胶囊（全应用唯一形态切换入口） */}
         <div
           className="home__top home__stage home__stage--1"
-          inert={launcher.starting}
+          inert={launcher.starting || savingAccount}
         >
           {skinContext.exclusive ? (
-            <div className="home__skin-title" title={skinServer}>
-              <SkinSiteIcon site={skinContext.site} />
-              {skinContext.site.name} 登录
-            </div>
+            <Tooltip label={skinServer}>
+              <div className="home__skin-title">
+                <SkinSiteIcon site={skinContext.site} />
+                {skinContext.site.name} 登录
+              </div>
+            </Tooltip>
           ) : (
             <AccountTypeTabs
               className="home__accounts"
@@ -691,6 +736,18 @@ export function Home() {
             />
           )}
         </div>
+        {loginOther !== null ? (
+          <Button
+            className="home__login-back"
+            variant="ghost"
+            size="sm"
+            iconLeft={<IconChevronDown className="home__back-icon" />}
+            disabled={savingAccount}
+            onClick={handleCancelLoginOther}
+          >
+            返回
+          </Button>
+        ) : null}
 
         {/* 中部：角色区 / 未登录表单 */}
         <div className="home__body home__stage home__stage--2">
@@ -792,7 +849,7 @@ export function Home() {
       {/* 右侧整片留白：不渲染任何元素，让背景图直接透出 */}
       <div className="home__blank" aria-hidden="true" />
 
-      {/* 切换账号：已保存的账号互切，或退出当前账号去登录另一个 */}
+      {/* 切换账号：已保存账号互切，或保留当前账号临时登录另一个 */}
       <AccountSwitcherModal
         open={switcherOpen}
         onClose={() => setSwitcherOpen(false)}

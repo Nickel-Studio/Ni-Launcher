@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-import { Button, Collapse, SegmentedControl } from "../ui";
+import { Button, Collapse, SegmentedControl, Tooltip } from "../ui";
 import { isTauri } from "../../lib/settings";
 import {
   isBuiltinSkinSite,
@@ -32,23 +32,61 @@ const EMPTY: Config = {
 };
 const queues = new Map<string, Promise<unknown>>();
 export function SkinAuthSettings(props: Props) {
+  const { server, method, root, onChange } = props;
+  const [described, setDescribed] = useState<{
+    server: string;
+    site: SkinSite;
+  } | null>(null);
+  const site =
+    described?.server === server ? described.site : siteFallback(server);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!isTauri()) return;
+      void invoke<SkinSite>("skin_site_describe", { server, legacyName: null })
+        .then((value) => {
+          if (!cancelled) setDescribed({ server, site: value });
+        })
+        .catch(() => undefined);
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [server]);
   return (
-    <SkinAuthSettingsForm
-      key={JSON.stringify([props.server, props.root, props.versionId])}
-      {...props}
-    />
+    <div className="skin-auth-settings">
+      <Tooltip label={site.server}>
+        <p className="skin-auth-settings__caption">{site.name}</p>
+      </Tooltip>
+      <p className="skin-auth-settings__caption">偏好认证方式</p>
+      <SegmentedControl
+        value={method ?? "global"}
+        onChange={(value) =>
+          onChange(value === "global" ? null : (value as SkinAuthMethod))
+        }
+        options={[
+          ...(root ? [{ value: "global", label: "跟随全局" }] : []),
+          { value: "classic", label: "经典登录方式" },
+          { value: "oauth2", label: "OAuth2 方式" },
+        ]}
+      />
+      <SkinAuthSettingsForm
+        key={JSON.stringify([server, root, props.versionId])}
+        {...props}
+      />
+    </div>
   );
 }
 function SkinAuthSettingsForm({
   server,
   method,
   globalMethod = "classic",
-  onChange,
   root,
   versionId,
 }: Props) {
   const [config, setConfig] = useState<Config>(EMPTY);
-  const [site, setSite] = useState<SkinSite>(() => siteFallback(server));
+
   const builtin = isBuiltinSkinSite(server);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -62,7 +100,7 @@ function SkinAuthSettingsForm({
     setReady(false);
     setConfig(EMPTY);
     draft.current = EMPTY;
-    setSite(siteFallback(server));
+
     const timer = window.setTimeout(() => {
       if (!isTauri()) {
         setReady(true);
@@ -87,11 +125,6 @@ function SkinAuthSettingsForm({
             setError(String(e));
           }
         });
-      void invoke<SkinSite>("skin_site_describe", { server, legacyName: null })
-        .then((value) => {
-          if (current === generation.current) setSite(value);
-        })
-        .catch(() => undefined);
     }, 350);
     return () => {
       generation.current++;
@@ -145,22 +178,7 @@ function SkinAuthSettingsForm({
     persist(next);
   };
   return (
-    <div className="skin-auth-settings">
-      <p className="skin-auth-settings__caption" title={site.server}>
-        {site.name}
-      </p>
-      <p className="skin-auth-settings__caption">偏好认证方式</p>
-      <SegmentedControl
-        value={method ?? "global"}
-        onChange={(value) =>
-          onChange(value === "global" ? null : (value as SkinAuthMethod))
-        }
-        options={[
-          ...(root ? [{ value: "global", label: "跟随全局" }] : []),
-          { value: "classic", label: "经典登录方式" },
-          { value: "oauth2", label: "OAuth2 方式" },
-        ]}
-      />
+    <>
       {!builtin && (
         <Collapse open={effective === "oauth2"} staggered>
           <div className="skin-auth-settings__fields">
@@ -218,6 +236,6 @@ function SkinAuthSettingsForm({
           </div>
         </Collapse>
       )}
-    </div>
+    </>
   );
 }

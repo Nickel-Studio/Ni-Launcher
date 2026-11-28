@@ -1358,10 +1358,35 @@ async function runDownloadChecks(): Promise<void> {
     ".dd-failure__text"
   );
   expect(
-    "失败卡显示可执行错误与复制提示",
+    "失败卡显示可执行错误且不使用原生 title",
     failureText.textContent?.includes("请返回资源重新下载") === true &&
-      failureText.getAttribute("title") === "单击复制错误详情",
+      !failureText.hasAttribute("title"),
     failureText.textContent ?? ""
+  );
+  failureText.dispatchEvent(
+    new PointerEvent("pointerover", {
+      bubbles: true,
+      pointerType: "mouse",
+      clientX: 100,
+      clientY: 100,
+    })
+  );
+  const copyTip = await waitFor(
+    () =>
+      Array.from(document.querySelectorAll('[role="tooltip"]')).find(
+        (node) => node.textContent === "单击复制错误详情"
+      ),
+    "复制错误的跟随鼠标提示"
+  );
+  expect(
+    "复制提示使用统一鼠标跟随模式",
+    copyTip.getAttribute("data-side") === "pointer"
+  );
+  failureText.dispatchEvent(
+    new PointerEvent("pointerout", {
+      bubbles: true,
+      pointerType: "mouse",
+    })
   );
   const feedback = required<HTMLElement>(errorCard, ".dd-failure__feedback");
   expect(

@@ -29,6 +29,8 @@ let accounts = [
     type: "littleskin",
     name: "Alpha Player",
     server: "https://a.example",
+    authMethod: "oauth2",
+    email: "oauth@example.test",
     uuid: "22222222222222222222222222222222",
   },
   {
@@ -36,6 +38,8 @@ let accounts = [
     type: "littleskin",
     name: "Beta Player",
     server: "https://b.example",
+    authMethod: "classic",
+    email: "classic@example.test",
     uuid: "33333333333333333333333333333333",
   },
 ];

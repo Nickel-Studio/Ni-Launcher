@@ -51,6 +51,8 @@ pub struct Account {
     pub email: Option<String>,
     pub server: Option<String>,
     pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub auth_method: Option<String>,
 }
 
 /// 本机加密后的敏感字符串。
@@ -179,6 +181,8 @@ impl StoredAccount {
             email: self.email.clone(),
             server: self.server.clone(),
             avatar_url: self.avatar_url.clone(),
+            auth_method: (self.account_type == "littleskin")
+                .then(|| if self.oauth.is_some() { "oauth2" } else { "classic" }.to_string()),
         }
     }
 
@@ -641,6 +645,26 @@ mod tests {
         assert!(parse_accounts("{not json").is_empty());
         assert_eq!(parse_accounts("[{\"id\":\"x\"}]").len(), 1);
     }
+
+    #[test]
+    fn public_auth_method_comes_from_stored_credentials() {
+        let mut stored = StoredAccount {
+            account_type: "littleskin".into(),
+            ..Default::default()
+        };
+        assert_eq!(stored.to_public().auth_method.as_deref(), Some("classic"));
+        stored.oauth = Some(SealedSecret::new("fixture-sealed-oauth"));
+        let public = serde_json::to_value(stored.to_public()).unwrap();
+        assert_eq!(public["authMethod"], "oauth2");
+        assert!(!public.to_string().contains("fixture-sealed-oauth"));
+        stored.account_type = "microsoft".into();
+        assert_eq!(stored.to_public().auth_method, None);
+        let legacy: Account = serde_json::from_value(serde_json::json!({
+            "id": "legacy", "type": "littleskin", "name": "Player", "uuid": "uuid"
+        })).unwrap();
+        assert_eq!(legacy.auth_method, None);
+    }
+
 
     #[test]
     fn normalize_fills_defaults() {

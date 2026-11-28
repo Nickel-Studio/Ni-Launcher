@@ -501,6 +501,7 @@ const bridge = window as unknown as {
     setSaveMode: (mode: "cancel" | "save") => void;
     failHistory: (projectId: string, count: number) => void;
     taskCount: () => number;
+    setInstance: typeof setLaunchInstance;
   };
 };
 bridge.__TAURI_INTERNALS__ = {
@@ -529,6 +530,7 @@ bridge.__communityDependencies = {
     historyFailures.set(projectId, count);
   },
   taskCount: () => taskSequence,
+  setInstance: setLaunchInstance,
 };
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing community regression root");

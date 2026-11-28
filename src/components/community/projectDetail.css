@@ -13,6 +13,12 @@
   padding-bottom: var(--space-6);
   animation: ni-fade-up var(--t) var(--ease-out) both;
 }
+.pd-page:has(.ni-loading--detail) {
+  min-height: calc(100dvh - var(--titlebar-h) - var(--gutter) * 2);
+}
+.pd-downloads:has(> .ni-loading--detail) {
+  flex: 1 1 auto;
+}
 .pd-back__icon {
   transform: rotate(90deg);
 }
@@ -70,7 +76,7 @@
   overflow-wrap: anywhere;
 }
 .pd-error,
-.pd-card__empty {
+.pd-downloads__empty {
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-sm);
@@ -97,7 +103,7 @@
   min-width: 0;
   margin: 0;
 }
-.pd-card__empty {
+.pd-downloads__empty {
   background: var(--fill-2);
   color: var(--text-dim);
 }
@@ -218,7 +224,7 @@
 }
 .pd-row:disabled {
   opacity: 0.55;
-  cursor: not-allowed;
+  cursor: default;
 }
 /* Nickel 立方徽记：64px 源图行内显示为 32px（2x 清晰）。 */
 .pd-row__release {
