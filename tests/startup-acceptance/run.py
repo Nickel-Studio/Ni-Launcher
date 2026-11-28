@@ -153,7 +153,7 @@ def main():
         "evidenceDirectory": str(evidence),
         "nativeAcceptance": False,
         "nativeExecuted": False,
-        "version": "1.0.3-beta",
+        "version": "1.0.3",
         "finishedAt": datetime.now(timezone.utc).isoformat(),
         "stages": stages,
         "sourcesBefore": before,

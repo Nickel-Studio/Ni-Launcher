@@ -12,7 +12,7 @@
 
 Minecraft Java 版启动器 · Windows / macOS / Linux
 
-[![版本](https://img.shields.io/badge/Nickel-1.0.3--beta-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.3-beta)
+[![版本](https://img.shields.io/badge/Nickel-1.0.3-343a40)](https://github.com/Nickel-Studio/Ni-Launcher/releases/tag/v1.0.3)
 [![CI](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Nickel-Studio/Ni-Launcher/actions/workflows/ci.yml)
 [![代码许可](https://img.shields.io/badge/Code-AGPL--3.0-343a40)](LICENSE)
 [![美术许可](https://img.shields.io/badge/Art-CC--BY--SA--4.0-343a40)](LICENSE-ASSETS)
@@ -72,8 +72,11 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 - **启动排障**：查看退出原因，打开游戏日志；按版本选择 Java 和内存管理方式。
 - **细节工具**：「更多」里的使用指南、前沿计划和游戏日志清理。
 
-## 1.0.3-beta 更新
+## 1.0.3 更新
 
+- **启动按钮会变身**：准备期间直接在主按钮上取消；进度条、百分比、文件数与速度按阶段浮现，准备阶段不再残留下载数据。
+- **多实例启动**：隔离实例可以先后启动，旧实例退出或诊断不会打断新的启动准备。
+- **登录与界面打磨**：皮肤站登录改为固定回调的站内授权，登录提示统一为单一路径；社区依赖、下载提示和悬浮提示的交互更加一致。
 - **圆角窗口不再漏角**：打开弹窗、出现下载提示或悬浮提示时，透明窗口的四个圆角不再被方形的遮罩、波纹或投影盖住。
 - **解压库安全修复**：升级 zip 解压库并修复 3 个安全漏洞，恶意压缩包、JAR 和整合包无法再绕过启动器的路径与大小校验。
 
@@ -92,11 +95,11 @@ Minecraft Java 版启动器 · Windows / macOS / Linux
 3. 在「资源 → 原版游戏」安装一个版本，或在「选择版本」添加已有游戏目录。
 4. 选中实例，回到首页，启动游戏。
 
-| 平台              | 发行格式             | 运行环境                     |
-| ----------------- | -------------------- | ---------------------------- |
-| Windows x64       | `.exe` / `.msi`，便携 `.zip`             | WebView2                     |
-| macOS arm64 / x64 | `.dmg`，便携 `.tar.gz`                   | 放置完整应用包               |
-| Linux x64         | `.AppImage` / `.deb`，便携 `.tar.gz`     | WebKitGTK 4.1 及系统图形依赖 |
+| 平台              | 发行格式                             | 运行环境                     |
+| ----------------- | ------------------------------------ | ---------------------------- |
+| Windows x64       | `.exe` / `.msi`，便携 `.zip`         | WebView2                     |
+| macOS arm64 / x64 | `.dmg`，便携 `.tar.gz`               | 放置完整应用包               |
+| Linux x64         | `.AppImage` / `.deb`，便携 `.tar.gz` | WebKitGTK 4.1 及系统图形依赖 |
 
 详细操作、数据位置和常见问题见 [使用指南](docs/usage.md)；从源码构建时的 API 配置见 [开发文档](docs/development.md)。
 

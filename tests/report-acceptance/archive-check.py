@@ -38,7 +38,7 @@ def inspect(archive):
         check("private fixture values removed", all(value not in corpus for value in [b"private-access-value", b"private-secret-value", b"private-password-value", b"PrivateName", b"do-not-export"]))
         check("private files excluded", not any(name.endswith(("accounts.json", "secrets.local.json")) for name in names))
         manifest = json.loads(zipped.read("report.json"))
-        check("product release identity", manifest["product"] == "Nickel" and manifest["version"] == "1.0.3-beta")
+        check("product release identity", manifest["product"] == "Nickel" and manifest["version"] == "1.0.3")
         check("complete manifest matches all collected sources", manifest["complete"] is True and set(manifest["files"]) == expected - {"report.json", "READ-ME.txt", "failure.txt"})
         check("manifest has no source host paths", not any(key in manifest for key in ["directory", "root", "account", "secrets"]))
         guide = zipped.read("READ-ME.txt").decode("utf-8")

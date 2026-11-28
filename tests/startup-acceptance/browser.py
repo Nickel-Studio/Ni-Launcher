@@ -16,7 +16,7 @@ ACK = "\u6211\u5df2\u77e5\u6653"
 RETRY = "\u91cd\u8bd5"
 EXIT = "\u65e0\u6cd5\u7ee7\u7eed\u63d0\u4f9b\u670d\u52a1"
 REVISION = "minecraft-eula-v1"
-VERSION = "1.0.3-beta"
+VERSION = "1.0.3"
 ACCEPTED = {"eulaVersion": REVISION, "eulaAcceptedAt": 1700000000}
 COMPLETE = {**ACCEPTED, "changelogSeenVersion": VERSION}
 
@@ -39,7 +39,7 @@ def is_eula(page):
 
 
 def is_changelog(page):
-    expect(page.get_by_role("dialog", name="Nickel 1.0.3-beta \u66f4\u65b0\u8bf4\u660e")).to_be_visible()
+    expect(page.get_by_role("dialog", name="Nickel 1.0.3 \u66f4\u65b0\u8bf4\u660e")).to_be_visible()
 
 
 def sign(page):

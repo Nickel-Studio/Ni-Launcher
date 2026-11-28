@@ -1,7 +1,7 @@
 {
   "name": "ni-launcher",
   "private": true,
-  "version": "1.0.3-beta",
+  "version": "1.0.3",
   "description": "Nickel / Ni / 镍 — Minecraft Java 版启动器",
   "license": "AGPL-3.0-only",
   "author": "Nickel Studio (ItzArona and ItzPlana)",
