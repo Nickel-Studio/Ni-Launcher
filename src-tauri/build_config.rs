@@ -117,19 +117,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_four_public_build_fields_are_embedded() {
+    fn only_authorized_public_build_fields_are_embedded() {
         let input = serde_json::json!({
             "$comment": "do not embed", "accounts": ["private"],
             "microsoft": {"clientId": "fixture-client", "authority": "common", "redirectUri": "nickel://auth",
                 "objectId": "private-object", "tenantId": "private-tenant", "clientSecret": "private-secret", "refreshToken": "private-token"},
-            "curseforge": {"apiKey": "fixture-key", "password": "private-password"}
+            "curseforge": {"apiKey": "fixture-key", "password": "private-password"},
+            "littleskin": {"clientId": "fixture-skin", "clientSecret": "fixture-skin-secret",
+                "redirectUri": "nickel://skin", "password": "private-password"}
         });
         let output = project(&input.to_string()).unwrap();
         assert_eq!(
             output,
             serde_json::json!({
                 "microsoft": {"clientId":"fixture-client", "authority":"common", "redirectUri":"nickel://auth"},
-                "curseforge":{"apiKey":"fixture-key"}
+                "curseforge":{"apiKey":"fixture-key"},
+                "littleskin": {"clientId":"fixture-skin", "clientSecret":"fixture-skin-secret", "redirectUri":"nickel://skin"}
             })
         );
         assert!(!output.to_string().contains("private"));

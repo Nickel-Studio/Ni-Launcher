@@ -1,4 +1,4 @@
-//! API 配置优先读取运行时覆盖，最后回退构建内嵌的四字段白名单。
+//! API 配置优先读取运行时覆盖，最后回退构建内嵌的七字段白名单。
 //! 缺失、不可读或解析失败的字段跳过；用户凭据不参与构建投影。
 //! CurseForge Key 仅供后端请求，测试占位符永远不作为认证值发送。
 
@@ -692,6 +692,9 @@ mod tests {
             "NICKEL_MSA_AUTHORITY",
             "NICKEL_MSA_REDIRECT_URI",
             "NICKEL_CURSEFORGE_API_KEY",
+            "NICKEL_LITTLESKIN_CLIENT_ID",
+            "NICKEL_LITTLESKIN_CLIENT_SECRET",
+            "NICKEL_LITTLESKIN_REDIRECT_URI",
         ] {
             assert!(
                 std::env::var_os(key).is_none(),
@@ -712,7 +715,7 @@ mod tests {
         let projected = build_config::SensitiveDocument(build_config::project(&text).unwrap());
         assert!(
             *embedded == *projected,
-            "embedded configuration must contain only the four allowed fields"
+            "embedded configuration must contain only the allowed fields"
         );
         let expected_msa = embedded_msa_config();
         let msa = load_msa_config(paths.clone());

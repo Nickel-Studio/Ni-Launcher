@@ -161,7 +161,7 @@ fn document_limits_apply_before_parsing_or_environment_overrides() {
 }
 
 #[test]
-fn build_lookup_and_projection_are_limited_to_the_four_authorized_fields() {
+fn build_lookup_and_projection_are_limited_to_authorized_fields() {
     let looked_up = std::cell::RefCell::new(Vec::new());
     let source = r#"{"microsoft":{"clientSecret":"private-fixture","tenantId":"private-fixture"},"tokens":["private-fixture"]}"#;
     let projected = from_source(source, |key| {
@@ -175,12 +175,16 @@ fn build_lookup_and_projection_are_limited_to_the_four_authorized_fields() {
             "NICKEL_MSA_CLIENT_ID",
             "NICKEL_MSA_AUTHORITY",
             "NICKEL_MSA_REDIRECT_URI",
-            "NICKEL_CURSEFORGE_API_KEY"
+            "NICKEL_CURSEFORGE_API_KEY",
+            "NICKEL_LITTLESKIN_CLIENT_ID",
+            "NICKEL_LITTLESKIN_CLIENT_SECRET",
+            "NICKEL_LITTLESKIN_REDIRECT_URI"
         ]
     );
-    assert_eq!(projected.as_object().unwrap().len(), 2);
+    assert_eq!(projected.as_object().unwrap().len(), 3);
     assert_eq!(projected["microsoft"].as_object().unwrap().len(), 3);
     assert_eq!(projected["curseforge"].as_object().unwrap().len(), 1);
+    assert_eq!(projected["littleskin"].as_object().unwrap().len(), 3);
     assert!(!projected.to_string().contains("private-fixture"));
 }
 

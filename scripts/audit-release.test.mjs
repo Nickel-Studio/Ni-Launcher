@@ -9,8 +9,16 @@ import { auditNativeBinary, auditRelease } from "./audit-release.mjs";
 import { projectBuildConfig, TEST_KEY } from "./release-secrets.mjs";
 import { envelope } from "../tests/embedded-config/fixtures.mjs";
 
-const config = projectBuildConfig({ microsoft: { clientId: "native-client-fixture" }, curseforge: { apiKey: "native-key-fixture" } });
-const fields = [[1, config.microsoft.clientId], [2, config.microsoft.authority], [3, config.microsoft.redirectUri], [4, config.curseforge.apiKey]];
+const config = projectBuildConfig({
+  microsoft: { clientId: "native-client-fixture" },
+  curseforge: { apiKey: "native-key-fixture" },
+  littleskin: { clientId: "native-skin-client", clientSecret: "native-skin-secret", redirectUri: "nickel://auth" },
+});
+const fields = [
+  [1, config.microsoft.clientId], [2, config.microsoft.authority], [3, config.microsoft.redirectUri],
+  [4, config.curseforge.apiKey], [5, config.littleskin.clientId],
+  [6, config.littleskin.clientSecret], [7, config.littleskin.redirectUri],
+];
 const binary = (bytes) => Buffer.concat([Buffer.from("native-binary-fixture"), bytes]);
 
 test("native audit compares field values without depending on JSON insertion order or duplicate cache copies", () => {
@@ -42,8 +50,11 @@ test("native audit rejects missing, additional, changed, corrupted and plaintext
 
 test("local audit never calls an absent or placeholder credential complete", () => {
   for (const key of [null, TEST_KEY]) {
-    const expected = projectBuildConfig({ microsoft: config.microsoft, curseforge: { apiKey: key } });
-    const bytes = envelope(key ? fields.map(([id, value]) => [id, id === 4 ? key : value]) : fields.slice(0, 3));
+    const source = { microsoft: config.microsoft, littleskin: config.littleskin };
+    if (key) source.curseforge = { apiKey: key };
+    const expected = projectBuildConfig(source);
+    const chosen = key ? fields.map(([id, value]) => [id, id === 4 ? key : value]) : fields.filter(([id]) => id !== 4);
+    const bytes = envelope(chosen);
     assert.equal(auditNativeBinary(binary(bytes), [bytes], expected, false).releaseConfigurationComplete, false);
     assert.throws(() => auditNativeBinary(binary(bytes), [bytes], expected));
   }

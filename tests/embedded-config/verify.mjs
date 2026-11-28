@@ -181,7 +181,10 @@ try {
     '        Err("Application directory discovery is outside this isolated loader probe".into())',
     "    }", "    pub fn executable_directory_for(_app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {",
     "        std::env::current_exe().ok().and_then(|path| path.parent().map(std::path::Path::to_path_buf))",
-    "            .ok_or_else(|| \"Unable to locate probe executable\".into())", "    }", "}", "pub mod secrets;", "",
+    "            .ok_or_else(|| \"Unable to locate probe executable\".into())", "    }", "}",
+    "pub mod skin_auth {", "    pub const CALLBACK: &str = \"nickel://auth\";",
+    "    pub struct ClientConfig { pub client_id: String, pub client_secret: String }", "}",
+    "pub mod secrets;", "",
   ].join("\n"));
   const lockfile = readFileSync(path.join(root, "src-tauri/Cargo.lock"), "utf8");
   const manifest = readFileSync(path.join(root, "src-tauri/Cargo.toml"), "utf8");

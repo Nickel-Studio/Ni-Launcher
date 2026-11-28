@@ -5,6 +5,7 @@
 //! - clientToken 由后端生成并随账号缓存
 //! - agent 固定 `{ name: "Minecraft", version: 1 }`（`name` 大小写敏感，LittleSkin 拒绝小写）
 //! - 错误按 `errorMessage` 映射为可读中文
+//! - 皮肤站切换到 OAuth2 时，角色选择仍走 `yggdrasil_select_profile`；`oauth_*` 会话转交 `skin_oauth`，密码认证仍是默认路径
 //!
 //! ## 多角色账号
 //! 同一账号在皮肤站下可能有多个角色（`availableProfiles`）。此时**不能**擅自挑一个就落库，

@@ -49,11 +49,11 @@ if (-not (Test-Path -LiteralPath secrets.local.json)) {
 
 ### 注入边界
 
-构建只允许四个字段：`microsoft.clientId`、`microsoft.authority`、`microsoft.redirectUri`、`curseforge.apiKey`。账号 access/refresh token、密码、client secret、tenant/object ID 等不进入构建投影。
+构建只允许七个字段：`microsoft.clientId`、`microsoft.authority`、`microsoft.redirectUri`、`curseforge.apiKey`，以及随程序分发的 LittleSkin 应用 `littleskin.clientId`、`littleskin.clientSecret`、`littleskin.redirectUri`。账号 access/refresh token、密码、用户自定义应用 Secret、tenant/object ID 等不进入构建投影。
 
-默认输入为项目根的 `secrets.local.json`；`NICKEL_BUILD_SECRETS` 可指定另一个已授权文件。非空的 `NICKEL_MSA_CLIENT_ID`、`NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI` 和 `NICKEL_CURSEFORGE_API_KEY` 优先覆盖对应字段。显式输入不可读或格式错误时构建失败，不输出原文。
+默认输入为项目根的 `secrets.local.json`；`NICKEL_BUILD_SECRETS` 可指定另一个已授权文件。非空的 `NICKEL_MSA_CLIENT_ID`、`NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI`、`NICKEL_CURSEFORGE_API_KEY`、`NICKEL_LITTLESKIN_CLIENT_ID`、`NICKEL_LITTLESKIN_CLIENT_SECRET` 和 `NICKEL_LITTLESKIN_REDIRECT_URI` 优先覆盖对应字段。显式输入不可读或格式错误时构建失败，不输出原文。
 
-输出为每次构建随机化的 AES-256-GCM 四字段封装 `nickel-embedded-config.bin`，不再嵌入明文 JSON。CF 句柄仅保存加密字节，构造请求头时短暂解封；受控临时缓冲区和支持的密码内部状态在释放时清除，build/runtime 使用同一特性并有 `ZeroizeOnDrop` 编译期约束。
+输出为每次构建随机化的 AES-256-GCM 七字段封装 `nickel-embedded-config.bin`，不再嵌入明文 JSON。CF 句柄仅保存加密字节，构造请求头时短暂解封；受控临时缓冲区和支持的密码内部状态在释放时清除，build/runtime 使用同一特性并有 `ZeroizeOnDrop` 编译期约束。
 
 这能提高直接 `strings` 扫描和静态提取的成本，但可执行文件仍包含解码材料，无法阻止有本地控制权的逆向、调试、hook 或内存提取。清除不保证覆盖寄存器、操作系统副本或 HTTP 库的头部存储。不要把混淆或 CSP 当成不可提取保证；真正不随客户端分发的 CF Key 需要自有后端代理，并另行评估服务运营和 API 授权约束。
 
@@ -133,7 +133,7 @@ Detached Release 验证器复制实际 build/runtime 密码特性，并验证白
 
 [CI](../.github/workflows/ci.yml) 在 `main` 推送和 PR 上运行前端构建、production 通道 Rust 测试及发布安全/portable 门禁的合成回归。[Build](../.github/workflows/build.yml) 支持手动打包与 `v*` 标签，覆盖 Windows x64、macOS arm64 / x64 和 Linux x64；四目标全部通过收集门禁后才向 Release 草稿上传产物。
 
-GitHub Secrets 必须配置 `NICKEL_MSA_CLIENT_ID` 和 `NICKEL_CURSEFORGE_API_KEY`；可选 Variables 为 `NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI`。构建使用独立 `src-tauri/target/release-build`，禁止缓存含可恢复配置的 target 输出。只上传经过 `prepare_release.py` 审计的目录，不上传构建缓存、秘密源文件或运行数据。
+GitHub Secrets 必须配置 `NICKEL_MSA_CLIENT_ID` 和 `NICKEL_CURSEFORGE_API_KEY`；可选 Variables 为 `NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI`。如需在发行版内置 LittleSkin OAuth2，还需配置 `NICKEL_LITTLESKIN_CLIENT_ID`、`NICKEL_LITTLESKIN_CLIENT_SECRET` 和 `NICKEL_LITTLESKIN_REDIRECT_URI`，或写入构建配置文件。构建使用独立 `src-tauri/target/release-build`，禁止缓存含可恢复配置的 target 输出。只上传经过 `prepare_release.py` 审计的目录，不上传构建缓存、秘密源文件或运行数据。
 
 发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。
 
@@ -148,7 +148,7 @@ MSI 只接受 `主.次.修订[.构建]` 的纯数字版本，带 `-beta` 等预�
 | macOS x64   | DMG                    | 完整 `.app` 的 `Nickel_<版本>_macos-x64_portable.tar.gz`   |
 | Linux x64   | DEB、优化后的 AppImage | `Nickel_<版本>_linux-x64_portable.tar.gz`                  |
 
-必须完整解压到可写目录，保留启动器旁的 `nickel.launcher-portable.json`；`Nickel/` 存设置和加密账号，`.minecraft/` 存默认游戏数据。macOS 数据位于完整 `.app` 旁，不修改签名包内部。此标记与整合包的 `nickel.portable.json` 独立，不能触发整合包导入；发布归档不包含用户账号、凭据密钥文件、配置原文、Java 或游戏数据，但可包含已授权的四字段内嵌 API 配置。Windows portable 仍依赖 WebView2，Linux 仍依赖相应 GTK/WebKit 系统库，不宣称完全静态或无需平台依赖。
+必须完整解压到可写目录，保留启动器旁的 `nickel.launcher-portable.json`；`Nickel/` 存设置和加密账号，`.minecraft/` 存默认游戏数据。macOS 数据位于完整 `.app` 旁，不修改签名包内部。此标记与整合包的 `nickel.portable.json` 独立，不能触发整合包导入；发布归档不包含用户账号、凭据密钥文件、配置原文、Java 或游戏数据，但可包含已授权的白名单内嵌 API 配置。Windows portable 仍依赖 WebView2，Linux 仍依赖相应 GTK/WebKit 系统库，不宣称完全静态或无需平台依赖。
 
 `package_portable.py` 可单独打包/检查，但只有正式 `prepare_release.py` 同时通过官方 CF 请求、Microsoft 设备码预检、最终原生二进制注入审计、许可及归档校验后才能形成上传集。`collect_release.py` 要求四个完整目标、每目标 portable 与安装包，并重新核对清单、哈希及启动器来源；缺任意目标或证据即阻断全部 Release。收集结果（含各目标清单、原生/远程配置审计、AppImage 压缩证据）整体保存为 Actions artifact `Nickel-complete-release`；随后 `select_release_assets.py` 按白名单只挑出安装包、portable 与标签提交的 `git archive` 源码包 `Nickel-<版本>-source.zip`，先对照收集阶段的 `SHA256SUMS.txt` 复核哈希，再重新生成只列这些文件的 `SHA256SUMS.txt` 上传 Release 草稿。证据 JSON 不进 Release；既不是公开产物也不是 `.json` 的文件会阻断上传。
 

@@ -5,6 +5,7 @@
 //! - `active_account.json`  —— 当前激活账号 id
 //! - `game.json`            —— 游戏 / 版本设置（纯 JSON 文本透传）
 //! - `instances.json`       —— 实例（版本根目录）注册表（纯 JSON 文本透传）
+//! - `skin-oauth-clients.json` —— 各站点/实例的加密 OAuth 应用配置（仅后端落盘，不回传前端）
 //!
 //! 本模块为纯逻辑（不涉及网络），便于单元测试；文件损坏时安全回退为默认值，
 //! 不 panic。
