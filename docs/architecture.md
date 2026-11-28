@@ -9,7 +9,8 @@
 | `src/styles/tokens.css` | 颜色、字体、尺寸与动效令牌 |
 | `src-tauri/src/lib.rs` | IPC 注册、窗口与启动编排 |
 | `app_paths.rs`、`store.rs`、`vault.rs` | 配置根、账号与凭据存储 |
-| `secrets.rs`、`src-tauri/embedded_config.rs`、`build_config.rs` | API 配置读取顺序、构建期四字段加密封装与运行时解封 |
+| `secrets.rs`、`src-tauri/embedded_config.rs`、`build_config.rs` | API 配置读取顺序、构建期七字段加密封装与运行时解封 |
+| `skin_auth.rs`、`skin_oauth.rs` | 皮肤站固定回调 OAuth2、内置与自定义应用边界、登录策略与角色选择 |
 | `instances.rs`、`version_settings.rs`、`instance_paths.rs` | 实例身份、继承设置与有效资源目录 |
 | `app_tasks.rs`、`named_profiles.rs` | 下载生命周期与实例事务 |
 | `loader_catalog.rs`、`loader_artifact.rs` | 完整构建清单与安装器解析 |

@@ -84,6 +84,7 @@ export interface AppSettings {
   offlineUsername: string;
   accountType: "microsoft" | "littleskin" | "offline";
   littleskinServer: string;
+  skinAuthMethod: "classic" | "oauth2";
   memoryMb: number;
   /** 前沿计划：添加孤立 `.minecraft` 时用上级目录名作为展示名。 */
   instanceNamingOptimize: boolean;
@@ -108,6 +109,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineUsername: "Player",
   accountType: "microsoft",
   littleskinServer: "https://littleskin.cn",
+  skinAuthMethod: "classic",
   memoryMb: 4096,
   instanceNamingOptimize: false,
 };
@@ -302,6 +304,7 @@ export function normalizeSettings(input: unknown): AppSettings {
     typeof raw.offlineUsername === "string"
       ? raw.offlineUsername.slice(0, 16)
       : DEFAULT_SETTINGS.offlineUsername;
+  out.skinAuthMethod = raw.skinAuthMethod === "oauth2" ? "oauth2" : "classic";
   out.littleskinServer =
     typeof raw.littleskinServer === "string" && raw.littleskinServer.trim()
       ? raw.littleskinServer
@@ -341,6 +344,7 @@ function persistSettings(settings: AppSettings): Promise<void> {
     .catch(() => undefined)
     .then(async () => {
       if (isTauri()) await invoke("settings_set", { json });
+      window.dispatchEvent(new Event("skin-auth-settings-changed"));
       try {
         window.localStorage.setItem(STORAGE_KEY, json);
       } catch {

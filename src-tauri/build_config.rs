@@ -70,6 +70,11 @@ fn project_value(value: &Value) -> Value {
     if let Some(key) = field(&value["curseforge"], "apiKey") {
         result.insert("curseforge".into(), serde_json::json!({ "apiKey": key }));
     }
+    let mut skin = Map::new();
+    for key in ["clientId", "clientSecret", "redirectUri"] {
+        if let Some(value) = field(&value["littleskin"], key) { skin.insert(key.into(), Value::String(value)); }
+    }
+    if !skin.is_empty() { result.insert("littleskin".into(), Value::Object(skin)); }
     Value::Object(result)
 }
 
@@ -93,6 +98,9 @@ pub fn with_environment(mut value: Value, lookup: impl Fn(&str) -> Option<String
         ("NICKEL_MSA_AUTHORITY", "microsoft", "authority"),
         ("NICKEL_MSA_REDIRECT_URI", "microsoft", "redirectUri"),
         ("NICKEL_CURSEFORGE_API_KEY", "curseforge", "apiKey"),
+        ("NICKEL_LITTLESKIN_CLIENT_ID", "littleskin", "clientId"),
+        ("NICKEL_LITTLESKIN_CLIENT_SECRET", "littleskin", "clientSecret"),
+        ("NICKEL_LITTLESKIN_REDIRECT_URI", "littleskin", "redirectUri"),
     ] {
         if let Some(text) = lookup(env_key).filter(|text| !text.trim().is_empty()) {
             if !value[section].is_object() {
@@ -109,19 +117,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_four_public_build_fields_are_embedded() {
+    fn only_authorized_public_build_fields_are_embedded() {
         let input = serde_json::json!({
             "$comment": "do not embed", "accounts": ["private"],
             "microsoft": {"clientId": "fixture-client", "authority": "common", "redirectUri": "nickel://auth",
                 "objectId": "private-object", "tenantId": "private-tenant", "clientSecret": "private-secret", "refreshToken": "private-token"},
-            "curseforge": {"apiKey": "fixture-key", "password": "private-password"}
+            "curseforge": {"apiKey": "fixture-key", "password": "private-password"},
+            "littleskin": {"clientId": "fixture-skin", "clientSecret": "fixture-skin-secret",
+                "redirectUri": "nickel://skin", "password": "private-password"}
         });
         let output = project(&input.to_string()).unwrap();
         assert_eq!(
             output,
             serde_json::json!({
                 "microsoft": {"clientId":"fixture-client", "authority":"common", "redirectUri":"nickel://auth"},
-                "curseforge":{"apiKey":"fixture-key"}
+                "curseforge":{"apiKey":"fixture-key"},
+                "littleskin": {"clientId":"fixture-skin", "clientSecret":"fixture-skin-secret", "redirectUri":"nickel://skin"}
             })
         );
         assert!(!output.to_string().contains("private"));

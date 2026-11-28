@@ -33,7 +33,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 EVIDENCE_ROOT = HERE / "evidence"
-REQUIRED_VERSION = "1.0.3-beta"
+REQUIRED_VERSION = "1.0.3"
 EULA_TITLE = "\u5f00\u59cb\u4e4b\u524d\uff0c\u8bf7\u786e\u8ba4 Minecraft EULA"
 ACCEPT = "\u540c\u610f\u5e76\u7b7e\u7f72"
 REJECT = "\u62d2\u7edd"

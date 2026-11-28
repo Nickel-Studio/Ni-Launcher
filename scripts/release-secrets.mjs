@@ -8,11 +8,13 @@ const magic = Buffer.from("NICKCFG1");
 export const TEST_KEY = "NICKEL_TEST_CURSEFORGE_KEY";
 export const BUILD_ENVIRONMENT = [
   "NICKEL_BUILD_SECRETS", "NICKEL_MSA_CLIENT_ID", "NICKEL_MSA_AUTHORITY",
-  "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY", "NICKEL_REQUIRE_RELEASE_SECRETS",
+  "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY",
+  "NICKEL_LITTLESKIN_CLIENT_ID", "NICKEL_LITTLESKIN_CLIENT_SECRET", "NICKEL_LITTLESKIN_REDIRECT_URI", "NICKEL_REQUIRE_RELEASE_SECRETS",
 ];
 const fields = [
   ["microsoft", "clientId"], ["microsoft", "authority"],
   ["microsoft", "redirectUri"], ["curseforge", "apiKey"],
+  ["littleskin", "clientId"], ["littleskin", "clientSecret"], ["littleskin", "redirectUri"],
 ];
 const valid = (value) => typeof value === "string" && value.trim().length > 0 &&
   Buffer.byteLength(value.trim()) <= 8192 && !/\p{Cc}/u.test(value.trim());
@@ -82,15 +84,15 @@ export function requireReleaseConfig(config) {
 // A decoder for auditing the actual native build, not a claim of client-side secrecy.
 export function openEnvelope(bytes) {
   const fail = () => { throw new Error("Invalid embedded API configuration"); };
-  if (!Buffer.isBuffer(bytes) || bytes.length < 9 || bytes.length > 9 + 4 * (81 + 8192 + 16) ||
-      !bytes.subarray(0, 8).equals(magic) || bytes[8] > 4) fail();
+  if (!Buffer.isBuffer(bytes) || bytes.length < 9 || bytes.length > 9 + 7 * (81 + 8192 + 16) ||
+      !bytes.subarray(0, 8).equals(magic) || bytes[8] > 7) fail();
   let offset = 9;
   const seen = new Set();
   const records = [];
   for (let index = 0; index < bytes[8]; index++) {
     if (offset + 81 > bytes.length) fail();
     const id = bytes[offset++];
-    if (id < 1 || id > 4 || seen.has(id)) fail();
+    if (id < 1 || id > 7 || seen.has(id)) fail();
     seen.add(id);
     const left = bytes.subarray(offset, offset += 32);
     const right = bytes.subarray(offset, offset += 32);

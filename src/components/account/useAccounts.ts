@@ -23,6 +23,10 @@ function normalizeAccount(raw: unknown): Account | null {
     uuid: typeof item.uuid === "string" ? item.uuid : undefined,
     email: typeof item.email === "string" ? item.email : undefined,
     server: typeof item.server === "string" ? item.server : undefined,
+    authMethod:
+      item.authMethod === "oauth2" || item.authMethod === "classic"
+        ? item.authMethod
+        : undefined,
   };
 }
 

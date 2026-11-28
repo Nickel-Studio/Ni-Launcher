@@ -535,7 +535,7 @@
 
 .skin-login__submit:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 
 .skin-login__who-row {
@@ -712,6 +712,45 @@
 /* 居中按钮行（正版登录按钮）。 */
 .account-form__row--center {
   justify-content: center;
+}
+.skin-oauth-login__button {
+  max-width: 100%;
+}
+.skin-oauth-login__button > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skin-site-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  position: relative;
+  top: var(--icon-optical-shift);
+}
+.skin-site-icon--fallback {
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--fill-2);
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+.home__skin-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  color: var(--accent-text, var(--accent));
+  font-weight: 600;
+  user-select: none;
+}
+.home__skin-title .skin-site-icon {
+  width: 20px;
+  height: 20px;
 }
 
 /* ---------- 无障碍：尊重 reduced-motion（胶囊退化为无位移的瞬时切换） ---------- */

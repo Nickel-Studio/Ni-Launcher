@@ -46,16 +46,11 @@ def active(page):
 
 
 def panel(page, version_id):
-    return active(page).locator(f'.pd-deps[data-version-id="{version_id}"]')
+    return active(page).locator('.pd-group').filter(has=page.locator(f'.pd-row[data-version-id="{version_id}"]')).locator('.pd-deps')
 
 
 def wait_ready(page, version_id):
-    page.wait_for_function("""id => {
-      const frame = document.querySelector('.resources-detail:not([hidden])');
-      const block = frame?.querySelector(`.pd-deps[data-version-id="${id}"]`);
-      return block?.querySelector('.pd-deps__toggle')?.getAttribute('aria-expanded') === 'true'
-        && block?.querySelector('.pd-deps__body')?.getAttribute('aria-busy') === 'false';
-    }""", arg=version_id)
+    expect(panel(page, version_id)).to_have_attribute('aria-busy', 'false')
 
 
 def select_option(page, selector, label):
@@ -85,12 +80,16 @@ def back(page, nested=True):
 
 
 def expand_dependencies(page, version_id):
-    block = panel(page, version_id)
-    trigger = block.locator(".pd-deps__toggle")
-    if trigger.get_attribute("aria-expanded") != "true":
-        trigger.click()
+    # Scroll each group so lazy version rows can identify their owning panel.
+    show_all_groups(page)
+    for group in active(page).locator('.pd-group').all():
+        toggle = group.locator('.pd-group__toggle')
+        if toggle.get_attribute('aria-expanded') != 'true':
+            toggle.click()
+        group.locator('.pd-list').scroll_into_view_if_needed()
+        page.wait_for_timeout(60)
     wait_ready(page, version_id)
-    return block
+    return panel(page, version_id)
 
 
 def show_all_groups(page):
@@ -127,7 +126,7 @@ def frame_state(page, remember=False):
         sameDOM: node === window.__rememberedDetail,
         filter: node.querySelector('.pd-pill[aria-pressed="true"]')?.textContent,
         groups: [...node.querySelectorAll('.pd-group')].map(group => [group.querySelector('.pd-group__title').textContent, group.dataset.open]),
-        dependencies: [...node.querySelectorAll('.pd-deps__toggle')].map(toggle => [toggle.getAttribute('aria-label'), toggle.getAttribute('aria-expanded')]),
+        dependencies: [...node.querySelectorAll('.pd-deps__project')].map(button => button.getAttribute('aria-label')),
         top: document.querySelector('.ni-content').scrollTop,
         focus: document.activeElement?.getAttribute('aria-label')
       };
@@ -177,202 +176,162 @@ def attach_session(page, name):
 
 def functional(page):
     open_mod(page)
-    check("合并检索保留两源相同 slug 的独立项目", page.get_by_role("button", name="查看 Modrinth dependency regression 的版本", exact=True).count() == 1
-          and page.get_by_role("button", name="查看 CurseForge dependency regression 的版本", exact=True).count() == 1)
-    search = page.get_by_role("searchbox", name="搜索Mod")
-    search.fill("Nickel retained search")
-    mc = page.get_by_role("combobox", name="MC 版本", exact=True)
-    mc.fill("1.20.1")
-    mc.press("Enter")
-    select_option(page, ".cv-loader .ni-select__trigger", "NeoForge")
-    select_option(page, ".cv-toolbar__source .ni-select__trigger", "Modrinth")
-    page.wait_for_function("window.__communityDependencies.calls.filter(c => c.command === 'modrinth_search').at(-1)?.args.query === 'Nickel retained search'")
-    page.get_by_role("button", name="下一页", exact=True).click()
-    expect(page.locator(".cv-pager__page")).to_have_text("2")
+    check('两平台同 slug 仍为独立项目', page.get_by_role('button', name='查看 Modrinth dependency regression 的版本', exact=True).count() == 1
+          and page.get_by_role('button', name='查看 CurseForge dependency regression 的版本', exact=True).count() == 1)
+    search = page.get_by_role('searchbox', name='搜索Mod')
+    search.fill('Nickel retained search')
+    mc = page.get_by_role('combobox', name='MC 版本', exact=True)
+    mc.fill('1.20.1'); mc.press('Enter')
+    select_option(page, '.cv-loader .ni-select__trigger', 'NeoForge')
+    select_option(page, '.cv-toolbar__source .ni-select__trigger', 'Modrinth')
+    page.wait_for_function("window.__communityDependencies.calls.filter(c=>c.command==='modrinth_search').at(-1)?.args.query==='Nickel retained search'")
+    page.get_by_role('button', name='下一页', exact=True).click()
+    expect(page.locator('.cv-pager__page')).to_have_text('2')
     page.wait_for_timeout(450)
-    card = page.get_by_role("button", name="查看 Modrinth dependency regression 的版本", exact=True)
-    card.scroll_into_view_if_needed()
+    card = page.get_by_role('button', name='查看 Modrinth dependency regression 的版本', exact=True)
     card.focus()
-    page.locator(".ni-pager__page").evaluate("node => { node.scrollTop = 160; }")
+    page.locator('.ni-pager__page').evaluate('node=>node.scrollTop=160')
     saved_search = search_state(page, True)
-    check("检索保留状态验收使用非零滚动与第二页", saved_search["top"] > 0 and saved_search["page"] == "2", saved_search)
+    check('返回检索测试确实具有第二页和非零滚动', saved_search['top'] > 0 and saved_search['page'] == '2')
     card.click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Modrinth dependency regression")
-    expect(active(page).locator('.pd-row[data-version-id="MainMRCurrent"]')).to_be_visible()
-    check("必要前置折叠时不发解析或下载请求", not page.evaluate("window.__communityDependencies.calls.some(c => c.command === 'community_dependency_resolve')"))
-    show_all_groups(page)
-    expand_history(page)
-    block = expand_dependencies(page, "MainMRCurrent")
-    check("Modrinth 仅必要关系且保留 Fabric 与 Quilt API", block.get_by_role("button", name="打开前置 Fabric API 的详情", exact=True).count() == 1
-          and block.get_by_role("button", name="打开前置 Quilt API 的详情", exact=True).count() == 1
-          and not any(label in block.inner_text() for label in ("OptionalMR", "IncompatibleMR", "EmbeddedMR", "Historical dependency only")))
-    check("Modrinth 重复声明、别名、自依赖去重后仍保留同名不同项目与不同固定版本", block.locator(".pd-deps__item").count() == 11
-          and block.get_by_role("button", name="打开前置 Same named required project 的详情", exact=True).count() == 2
-          and block.get_by_role("button", name="打开前置 Pinned dependency 的详情", exact=True).count() == 2)
-    check("仅文件名回退保留手动提示且没有可猜测的详情入口", block.locator(".pd-deps__unresolved").filter(has_text="manual-required.jar").count() == 1
-          and block.locator(".pd-deps__unresolved").filter(has_text="manual-quilt.jar").count() == 1
-          and "仅提供文件名，无法定位项目" in block.inner_text())
-    check("项目读取失败、固定版本被换成 latest、项目身份不符均显示可重试错误", block.get_by_role("button", name="重试读取前置 项目 UnstableMR", exact=True).count() == 1
-          and "返回的前置版本与声明不一致" in block.inner_text()
-          and "指定前置版本不属于返回的项目" in block.inner_text())
-    screenshot(page, "modrinth-required-before-retry")
-    tasks_before = page.evaluate("window.__communityDependencies.taskCount()")
-    cancelled = save_version(page, "MainMRCurrent")
-    check("前置网络失败不阻止主资源另存为取消且不创建任务", cancelled["taskId"] is None and page.evaluate("window.__communityDependencies.taskCount()") == tasks_before
-          and cancelled["args"]["versionId"] == "MainMRCurrent")
-    saved = save_version(page, "MainMRCurrent", "save")
-    check("前置失败时主资源仍走原另存为保存流程", saved["taskId"] is not None and saved["args"]["slugOrId"] == "ParentMR"
-          and saved["args"]["instanceVersionId"] == "fixture-instance"
-          and saved["args"]["dir"] == "C:/NickelDependencyFixture")
-    block.get_by_role("button", name="重试读取前置 项目 UnstableMR", exact=True).click()
-    wait_ready(page, "MainMRCurrent")
-    check("重试恢复三个失败前置，不替换指定版本或丢失同名项目", block.locator(".pd-deps__project").count() == 9
-          and block.locator('[role="alert"]').count() == 0 and block.locator(".pd-deps__item").count() == 11)
-    history = expand_dependencies(page, "MainMRHistory")
-    check("Modrinth 历史版本只展示它自己的必要前置", history.locator(".pd-deps__item").count() == 1
-          and "Historical dependency only" in history.inner_text() and "Fabric API" not in history.inner_text()
-          and "Historical dependency only" not in block.inner_text())
-    exact_link = block.get_by_role("button", name="打开前置 Pinned dependency 的详情", exact=True).filter(has_text="要求版本 2.0.0")
-    exact_link.scroll_into_view_if_needed()
+    block = expand_dependencies(page, 'MainMRCurrent')
+    check('进入详情即加载，无逐文件前置折叠入口', active(page).locator('.pd-deps__toggle').count() == 0
+          and page.evaluate("window.__communityDependencies.calls.some(c=>c.command==='community_dependency_resolve')"))
+    check('加载器 API 排除、同名项目分离、同项目多固定版本合并展示', block.locator('.pd-deps__item').count() == 8
+          and block.get_by_role('button', name='打开前置 Same named required project 的详情', exact=True).count() == 2
+          and block.get_by_role('button', name='打开前置 Pinned dependency 的详情', exact=True).count() == 1
+          and not any(text in block.inner_text() for text in ['Fabric API', 'Quilt API', 'OptionalMR', 'IncompatibleMR', 'EmbeddedMR', 'Historical dependency only']))
+    check('仅文件名关系保留可执行错误，不猜测项目', block.locator('.pd-deps__unresolved').filter(has_text='manual-required.jar').count() == 1
+          and block.locator('.pd-deps__unresolved').filter(has_text='manual-quilt.jar').count() == 1)
+    check('错误版本与项目身份返回均被拒绝', '返回的前置版本与声明不一致' in block.inner_text()
+          and '指定前置版本不属于返回的项目' in block.inner_text())
+    tasks_before = page.evaluate('window.__communityDependencies.taskCount()')
+    cancelled = save_version(page, 'MainMRCurrent')
+    check('依赖失败不阻止取消另存为且不建任务', cancelled['taskId'] is None and page.evaluate('window.__communityDependencies.taskCount()') == tasks_before)
+    saved = save_version(page, 'MainMRCurrent', 'save')
+    check('主文件仍经正常另存为通道', saved['taskId'] is not None and saved['args']['slugOrId'] == 'ParentMR'
+          and saved['args']['instanceVersionId'] == 'fixture-instance' and saved['args']['dir'] == 'C:/NickelDependencyFixture')
+    before_retry = page.evaluate('({...window.__communityDependencies.attempts})')
+    block.get_by_role('button', name='重试', exact=True).first.click()
+    expect(block.get_by_role('button', name='打开前置 Retry dependency 的详情', exact=True)).to_be_visible()
+    wait_ready(page, 'MainMRCurrent')
+    after_retry = page.evaluate('window.__communityDependencies.attempts')
+    check('重试只请求失败项，成功结果和版本关系复用', all(after_retry[key] == value for key,value in before_retry.items()
+          if not any(failed in key for failed in ['UnstableMR', 'WrongPinnedMR', 'IdentityMR']))
+          and block.locator('.pd-deps__project').count() == 6 and block.get_by_role('button', name='重试', exact=True).count() == 0)
+    history = expand_dependencies(page, 'MainMRHistory')
+    check('历史组保持自身关系，不混入当前文件', history.locator('.pd-deps__item').count() == 1
+          and 'Historical dependency only' in history.inner_text() and 'Historical dependency only' not in block.inner_text())
+    calls_before = page.evaluate("window.__communityDependencies.calls.filter(c=>c.command==='community_dependency_resolve').length")
+    toggle = active(page).locator('.pd-group__toggle').first
+    toggle.click(); toggle.click()
+    page.wait_for_timeout(250)
+    check('外层重新展开不重复请求', calls_before == page.evaluate("window.__communityDependencies.calls.filter(c=>c.command==='community_dependency_resolve').length"))
+    screenshot(page, 'modrinth-grouped-prerequisites')
+
+    exact_link = block.get_by_role('button', name='打开前置 Strict pinned dependency 的详情', exact=True)
     exact_link.focus()
     parent_state = frame_state(page, True)
-    check("父详情状态验收使用非零外层滚动", parent_state["top"] > 0, parent_state)
-    saves_before = page.evaluate("window.__communityDependencies.saves.length")
+    saves_before = page.evaluate('window.__communityDependencies.saves.length')
     exact_link.click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Pinned dependency")
-    expect(active(page).locator('.pd-row[data-required="true"]')).to_have_attribute("data-version-id", "ExactMR1")
-    check("固定版本历史读取失败仍保留原指定版本可下载", "History metadata network failure" in active(page).inner_text()
-          and "2.0.0" in active(page).locator(".pd-dependency-context").inner_text()
-          and active(page).locator('.pd-row[data-version-id="LatestMR"]').count() == 0)
-    no_auto_actions(page, "点击必要前置只导航详情，不自动安装或打开另存为", saves_before)
-    cancelled_exact = save_version(page, "ExactMR1")
-    check("固定前置另存为严格使用 ExactMR1 而非最新版本", cancelled_exact["args"]["versionId"] == "ExactMR1"
-          and cancelled_exact["args"]["slugOrId"] == "PinnedMR" and cancelled_exact["taskId"] is None)
-    active(page).locator(".pd-error").get_by_role("button", name="重试", exact=True).click()
-    page.wait_for_function("document.querySelector('.resources-detail:not([hidden]) .pd-error') === null")
-    latest_group = active(page).locator(".pd-group").filter(has=page.locator(".pd-group__title", has_text="1.21.1"))
-    latest_group.locator(".pd-group__toggle").scroll_into_view_if_needed()
-    if latest_group.locator(".pd-group__toggle").get_attribute("aria-expanded") != "true":
-        latest_group.locator(".pd-group__toggle").click()
-    expect(latest_group.locator('.pd-row[data-version-id="LatestMR"]')).to_be_visible()
-    check("历史重试后指定旧版本置顶且新版本仍保留供手动选择", active(page).locator(".pd-group").first.locator(".pd-row").first.get_attribute("data-version-id") == "ExactMR1"
-          and active(page).locator('.pd-row[data-version-id="LatestMR"]').count() == 1)
-    active(page).locator(".pd-card").scroll_into_view_if_needed()
-    screenshot(page, "modrinth-fixed-version-history")
-    active(page).get_by_role("button", name="1.20.1", exact=True).click()
-    nested = expand_dependencies(page, "ExactMR1")
-    nested_link = nested.get_by_role("button", name="打开前置 Nested dependency 的详情", exact=True)
+    expect(active(page).locator('.pd-row[data-required="true"]')).to_have_attribute('data-version-id', 'WrongExact1')
+    no_auto_actions(page, '唯一指定版本导航不产生下载或安装', saves_before)
+    exact_save = save_version(page, 'WrongExact1')
+    check('唯一指定文件另存为保留原 ID', exact_save['args']['versionId'] == 'WrongExact1' and exact_save['args']['slugOrId'] == 'WrongPinnedMR')
+    back(page)
+    compare_frame_state('返回父页恢复 DOM、筛选、展开、滚动和焦点', parent_state, frame_state(page))
+
+    ambiguous = panel(page, 'MainMRCurrent').get_by_role('button', name='打开前置 Pinned dependency 的详情', exact=True)
+    ambiguous.focus()
+    parent_state = frame_state(page, True)
+    ambiguous.click()
+    expect(active(page).locator('.pd-error')).to_be_visible()
+    check('多指定版本不擅自选择单一版本，历史失败仍真实显示', active(page).locator('[data-required="true"]').count() == 0
+          and 'History metadata network failure' in active(page).inner_text()
+          and active(page).locator('.pd-dependency-context').count() == 0)
+    active(page).locator('.pd-error').get_by_role('button', name='重试', exact=True).click()
+    expect(active(page).locator('.pd-error')).to_have_count(0)
+    show_all_groups(page)
+    for toggle in active(page).locator('.pd-group__toggle').all():
+        if toggle.get_attribute('aria-expanded') != 'true': toggle.click()
+    check('多固定版本的文件历史完整保留且不标记伪指定', active(page).locator('[data-required="true"]').count() == 0)
+    for version_id in ['ExactMR1', 'ExactMR2', 'LatestMR']:
+        for group in active(page).locator('.pd-group').all(): group.scroll_into_view_if_needed()
+        result = save_version(page, version_id)
+        check(f'{version_id} 手动下载保持文件身份', result['args']['versionId'] == version_id and result['args']['slugOrId'] == 'PinnedMR')
+    nested = expand_dependencies(page, 'ExactMR1')
+    nested_link = nested.get_by_role('button', name='打开前置 Nested dependency 的详情', exact=True)
     nested_link.focus()
     child_state = frame_state(page, True)
-    before_nested = page.evaluate("window.__communityDependencies.saves.length")
     nested_link.click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Nested dependency")
-    no_auto_actions(page, "二级前置也只导航，不产生安装或另存为动作", before_nested)
+    expect(active(page).locator('.pd-card__title')).to_have_text('Nested dependency')
+    expect(active(page).locator('.pd-row')).to_be_visible()
+    check('无依赖详情不显示空前置区或零数量', active(page).locator('.pd-deps').count() == 0
+          and '0 项前置' not in active(page).inner_text() and '无必要前置' not in active(page).inner_text())
     back(page)
-    compare_frame_state("从二级前置返回保持子详情 DOM、过滤、展开、滚动与触发焦点", child_state, frame_state(page))
-    page.evaluate("window.__rememberedDetail = document.querySelectorAll('.resources-detail')[0]")
+    compare_frame_state('二级详情返回保持子页状态', child_state, frame_state(page))
+    page.evaluate("window.__rememberedDetail=document.querySelectorAll('.resources-detail')[0]")
     back(page)
-    compare_frame_state("从固定前置返回保持父详情 DOM、过滤、两组展开、前置展开、滚动与焦点", parent_state, frame_state(page))
-    second_link = panel(page, "MainMRCurrent").get_by_role("button", name="打开前置 Pinned dependency 的详情", exact=True).filter(has_text="要求版本 1.0.0")
-    second_link.click()
-    expect(active(page).locator('.pd-row[data-required="true"]')).to_have_attribute("data-version-id", "ExactMR2")
-    second_save = save_version(page, "ExactMR2")
-    check("同一项目的另一个固定版本 ExactMR2 独立保留并按原 ID 另存为", second_save["args"]["versionId"] == "ExactMR2")
-    back(page)
-    panel(page, "MainMRCurrent").get_by_role("button", name="打开前置 Fabric API 的详情", exact=True).click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Fabric API")
-    check("project-only API 不冒充固定 latest，详情明确要求手动选兼容文件", "未指定前置版本" in active(page).locator(".pd-dependency-context").inner_text()
-          and active(page).locator('[data-required="true"]').count() == 0)
-    active(page).get_by_role("button", name="打开项目页", exact=True).click()
-    show_all_groups(page)
-    expand_history(page)
-    api_save = save_version(page, "FabricOld")
-    check("project-only 前置允许手动选择历史文件并使用普通另存为入口", api_save["args"]["versionId"] == "FabricOld" and api_save["args"]["slugOrId"] == "FabricAPI")
-    back(page)
-    panel(page, "MainMRCurrent").get_by_role("button", name="打开前置 Quilt API 的详情", exact=True).click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Quilt API")
-    check("Quilt API 保留实际 Quilt 加载器文件与普通版本下载", "Quilt" in active(page).inner_text() and active(page).locator('.pd-row[data-version-id="QuiltNew"]').count() == 1)
-    back(page)
+    compare_frame_state('多层返回保持父页状态', parent_state, frame_state(page))
+    check('返回父页不重复请求父项目依赖', after_retry == {key:value for key,value in page.evaluate('window.__communityDependencies.attempts').items() if key in after_retry})
     back(page, False)
-    restored_search = search_state(page)
-    check("返回检索保持原 DOM、关键词、MC 条件、加载器、来源、第二页、结果和滚动", restored_search["sameDOM"]
-          and all(saved_search[key] == restored_search[key] for key in ("query", "mcVersion", "loader", "source", "page", "results", "focus"))
-          and abs(saved_search["top"] - restored_search["top"]) <= 2, {"before": saved_search, "after": restored_search})
-    select_option(page, ".cv-toolbar__source .ni-select__trigger", "CurseForge")
-    open_project(page, "CurseForge dependency regression")
-    show_all_groups(page)
-    expand_history(page)
-    cf_block = expand_dependencies(page, "50000")
-    check("CurseForge 仅 numeric relationType 3，保留两 API 和同名不同 ID", cf_block.locator(".pd-deps__item").count() == 5
-          and cf_block.get_by_role("button", name="打开前置 Fabric API 的详情", exact=True).count() == 1
-          and cf_block.get_by_role("button", name="打开前置 Quilt API 的详情", exact=True).count() == 1
-          and cf_block.get_by_role("button", name="打开前置 Same named required project 的详情", exact=True).count() == 2)
-    check("CurseForge 非必要及字符串 relationType 不触发解析", not page.evaluate("window.__communityDependencies.calls.some(c => c.command === 'community_dependency_resolve' && String(c.args.projectId).startsWith('990'))"))
-    cf_cancel = save_version(page, "50000")
-    check("CurseForge 失败前置不阻止主文件另存为取消", cf_cancel["taskId"] is None and cf_cancel["args"]["projectId"] == "10000" and cf_cancel["args"]["fileId"] == "50000")
-    cf_save = save_version(page, "50000", "save")
-    check("CurseForge 主资源保存也使用既有受管另存为通道", cf_save["taskId"] is not None and cf_save["args"]["fileId"] == "50000")
-    cf_block.get_by_role("button", name="重试读取前置 项目 10103", exact=True).click()
-    wait_ready(page, "50000")
-    check("CurseForge 前置网络失败可重试恢复且不安装", cf_block.locator(".pd-deps__project").count() == 5 and cf_block.locator('[role="alert"]').count() == 0)
-    cf_history = expand_dependencies(page, "50001")
-    check("CurseForge 必要前置也按具体文件分组，不混入当前文件", cf_history.locator(".pd-deps__item").count() == 1
-          and "Historical dependency only" in cf_history.inner_text() and "Historical dependency only" not in cf_block.inner_text())
-    screenshot(page, "curseforge-required-dependencies")
-    cf_link = cf_block.get_by_role("button", name="打开前置 Fabric API 的详情", exact=True)
-    cf_link.focus()
-    cf_parent = frame_state(page, True)
-    before_cf_link = page.evaluate("window.__communityDependencies.saves.length")
-    cf_link.click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Fabric API")
-    no_auto_actions(page, "CurseForge 前置点击只进入自身平台详情", before_cf_link)
-    check("CurseForge project-only 前置明确未指定版本且无 latest 指定标记", "未指定前置版本" in active(page).locator(".pd-dependency-context").inner_text()
-          and active(page).locator('[data-required="true"]').count() == 0)
-    show_all_groups(page)
-    expand_history(page)
-    cf_api_save = save_version(page, "60001")
-    check("CurseForge 前置手动选旧文件时保持 projectId/fileId 身份并走另存为", cf_api_save["args"]["projectId"] == "306612" and cf_api_save["args"]["fileId"] == "60001")
-    active(page).get_by_role("button", name="打开项目页", exact=True).click()
+    restored = search_state(page)
+    check('返回检索保持条件、第二页、结果和滚动', restored['sameDOM']
+          and all(saved_search[key] == restored[key] for key in ['query','mcVersion','loader','source','page','results','focus'])
+          and abs(saved_search['top']-restored['top']) <= 2, {'before':saved_search,'after':restored})
+
+    select_option(page, '.cv-toolbar__source .ni-select__trigger', 'CurseForge')
+    open_project(page, 'CurseForge dependency regression')
+    cf_block = expand_dependencies(page, '50000')
+    check('CurseForge 只展示 required 且排除两 API', cf_block.locator('.pd-deps__item').count() == 3
+          and cf_block.get_by_role('button', name='打开前置 Same named required project 的详情', exact=True).count() == 2
+          and not any(text in cf_block.inner_text() for text in ['Fabric API','Quilt API']))
+    check('CurseForge 非必要或字符串关系不请求', not page.evaluate("window.__communityDependencies.calls.some(c=>c.command==='community_dependency_resolve' && String(c.args.projectId).startsWith('990'))"))
+    cf_cancel = save_version(page, '50000')
+    check('CurseForge 依赖失败仍可取消另存为', cf_cancel['taskId'] is None and cf_cancel['args']['fileId'] == '50000')
+    cf_save = save_version(page, '50000', 'save')
+    check('CurseForge 主文件保存不走安装', cf_save['taskId'] is not None and cf_save['args']['projectId'] == '10000')
+    cf_block.get_by_role('button', name='重试', exact=True).click()
+    expect(cf_block.get_by_role('button', name='打开前置 Retry dependency 的详情', exact=True)).to_be_visible()
+    cf_history = expand_dependencies(page, '50001')
+    check('CurseForge 历史关系隔离', cf_history.locator('.pd-deps__item').count() == 1
+          and 'Historical dependency only' in cf_history.inner_text() and 'Historical dependency only' not in cf_block.inner_text())
+    cf_link = cf_block.get_by_role('button', name='打开前置 Same named required project 的详情', exact=True).first
+    cf_link.focus(); cf_parent = frame_state(page, True); cf_link.click()
+    expect(active(page).locator('.pd-row')).to_be_visible()
+    check('project-only 前置无伪指定和解释装饰', active(page).locator('[data-required="true"]').count() == 0
+          and active(page).locator('.pd-dependency-context').count() == 0)
+    cf_result = save_version(page, '10101Current')
+    check('CurseForge 前置手动下载保留平台与文件编号', cf_result['args']['projectId'] == '10101' and cf_result['args']['fileId'] == '10101Current')
+    active(page).get_by_role('button', name='打开项目页', exact=True).click()
     back(page)
-    compare_frame_state("CurseForge 返回保持父详情 DOM、筛选、展开与滚动焦点", cf_parent, frame_state(page))
-    panel(page, "50000").get_by_role("button", name="打开前置 Quilt API 的详情", exact=True).click()
-    expect(active(page).locator(".pd-card__title")).to_have_text("Quilt API")
-    quilt_cf_save = save_version(page, "70001")
-    check("CurseForge Quilt API 未过滤且下载仍按原文件编号", quilt_cf_save["args"]["projectId"] == "634179" and quilt_cf_save["args"]["fileId"] == "70001")
-    back(page)
-    all_calls = page.evaluate("window.__communityDependencies.calls")
-    check("两源详情历史读取不带截断兼容条件且解析仅读取声明标识", all(call["args"]["gameVersion"] == "" and call["args"]["loader"] == ""
-          for call in all_calls if call["command"] in ("modrinth_project_versions", "curseforge_project_files")))
-    check("全流程未调用安装命令且没有未预期 IPC", not page.evaluate("window.__communityDependencies.unexpected.length")
-          and not any(call["command"].endswith("_install") for call in all_calls))
-    report["functionalIPC"] = page.evaluate("({calls: window.__communityDependencies.calls, saves: window.__communityDependencies.saves, attempts: window.__communityDependencies.attempts, taskCount: window.__communityDependencies.taskCount()})")
+    compare_frame_state('CurseForge 返回保持父页状态', cf_parent, frame_state(page))
+    all_calls = page.evaluate('window.__communityDependencies.calls')
+    check('两源读取完整历史且无安装和未知 IPC', not page.evaluate('window.__communityDependencies.unexpected.length')
+          and all(call['args']['gameVersion'] == '' and call['args']['loader'] == '' for call in all_calls if call['command'] in ['modrinth_project_versions','curseforge_project_files'])
+          and not any(call['command'].endswith('_install') for call in all_calls))
+    report['functionalIPC'] = page.evaluate('({calls:window.__communityDependencies.calls,saves:window.__communityDependencies.saves,attempts:window.__communityDependencies.attempts})')
 
 
 def metadata_failure(page):
     open_mod(page)
-    for source, title, version_id in (("Modrinth", "Modrinth dependency regression", "MainMRCurrent"), ("CurseForge", "CurseForge dependency regression", "50000")):
-        if source == "CurseForge":
-            select_option(page, ".cv-toolbar__source .ni-select__trigger", source)
-        open_project(page, title)
-        block = expand_dependencies(page, version_id)
-        check(f"{source} 旧响应缺少前置元数据时按精确版本读取且失败可重试", "Required metadata network failure" in block.inner_text()
-              and block.get_by_role("button", name="重试前置检测", exact=True).count() == 1)
-        cancelled = save_version(page, version_id)
-        check(f"{source} 整体前置检测失败仍不阻碍主资源另存为", cancelled["taskId"] is None)
-        block.get_by_role("button", name="重试前置检测", exact=True).click()
-        wait_ready(page, version_id)
-        check(f"{source} 整体检测重试只恢复该版本必要元数据", block.locator(".pd-deps__item").count() >= 5
-              and block.get_by_role("button", name="重试前置检测", exact=True).count() == 0)
-        back(page, False)
-    calls = page.evaluate("window.__communityDependencies.calls")
-    parent_lookups = [call["args"] for call in calls
-                      if call["command"] == "community_dependency_resolve"
-                      and call["args"].get("projectId") in ("ParentMR", "10000")]
-    check("元数据回退从未猜测 latest 或调用安装", not page.evaluate("window.__communityDependencies.unexpected.length")
-          and not any(call["command"].endswith("_install") for call in calls)
-          and {(lookup["platform"], lookup["projectId"], lookup["versionId"]) for lookup in parent_lookups}
-          == {("modrinth", "ParentMR", "MainMRCurrent"), ("curseforge", "10000", "50000")}, parent_lookups)
-    report["metadataIPC"] = page.evaluate("({calls: window.__communityDependencies.calls, saves: window.__communityDependencies.saves, attempts: window.__communityDependencies.attempts})")
+    for source,title,version_id in [('Modrinth','Modrinth dependency regression','MainMRCurrent'),('CurseForge','CurseForge dependency regression','50000')]:
+        if source == 'CurseForge': select_option(page,'.cv-toolbar__source .ni-select__trigger',source)
+        open_project(page,title)
+        block = expand_dependencies(page,version_id)
+        check(f'{source} 旧响应缺少元数据按精确版本读取', 'Required metadata network failure' in block.inner_text())
+        cancelled = save_version(page,version_id)
+        check(f'{source} 元数据缺失不阻止主文件另存为', cancelled['taskId'] is None)
+        block.get_by_role('button',name='重试',exact=True).first.click()
+        expect(block.get_by_role('button',name='打开前置 Same named required project 的详情',exact=True)).to_have_count(2)
+        check(f'{source} 精确元数据恢复后按分组显示且 API 排除', 'Required metadata network failure' not in block.inner_text()
+              and 'Fabric API' not in block.inner_text() and 'Quilt API' not in block.inner_text())
+        back(page,False)
+    calls=page.evaluate('window.__communityDependencies.calls')
+    lookups=[call['args'] for call in calls if call['command']=='community_dependency_resolve' and call['args'].get('projectId') in ['ParentMR','10000']]
+    check('旧响应回退只请求原文件，不猜 latest', {(v['platform'],v['projectId'],v['versionId']) for v in lookups}
+          == {('modrinth','ParentMR','MainMRCurrent'),('curseforge','10000','50000')})
+    report['metadataIPC']=page.evaluate('({calls:window.__communityDependencies.calls,attempts:window.__communityDependencies.attempts})')
 
 
 GEOMETRY = """input => {
@@ -483,16 +442,16 @@ def focus_capture(browser, scale, width, height, name):
 with sync_playwright() as playwright:
     browser = None
     launch_errors = []
-    for channel in ("msedge", "chrome", None):
+    for channel in ("msedge", "chrome"):
         try:
-            browser = playwright.chromium.launch(headless=True, **({"channel": channel} if channel else {}))
-            report["browserChannel"] = channel or "cached-chromium"
+            browser = playwright.chromium.launch(headless=True, channel=channel)
+            report["browserChannel"] = channel
             report["browserVersion"] = browser.version
             break
         except Exception as error:
             launch_errors.append(str(error))
     if browser is None:
-        raise RuntimeError("Cannot launch a cached browser: " + "\n".join(launch_errors))
+        raise RuntimeError("Cannot launch an installed browser: " + "\n".join(launch_errors))
     try:
         if args.inspect:
             page = browser.new_page(viewport={"width": 1100, "height": 850}, reduced_motion="reduce")

@@ -1,17 +1,9 @@
 /**
- * 社区资源检索页（单页头 + 单工具栏 + 结果列表）。
- *
- * 三层堆叠已拍平：本组件是唯一的页头与工具栏——
- * h2 分类名（无 eyebrow）+ 一行工具栏（搜索框 flex-1 · MC 版本可输入下拉 ·
- * 加载器下拉（常驻，仅 Mod 分类）· 来源下拉）。
- * 来源=全部 时并行调两源检索合并展示（useCombinedSearch），其余走单源 hook。
- * 「共 N 个结果」在结果列表上方的独立计数行；分页是列表底部的
- * 「上一页 · 页码 · 下一页」按钮组，切换 kind / query / 筛选 / 来源
- * 都会回到第 1 页，翻页后列表滚回顶部（reduced-motion 下瞬时跳转）。
- * 点结果卡 → `onOpenDetail` 上抛给 Resources.tsx（独立详情页替换内嵌展开区）。
- *
- * 通过 `useDetailInstance` 静默识别当前启动实例的真实 MC 版本与
- * 加载器，作为两个下拉的默认值；识别失败全部落「全部」，不报错、不提示。
+ * 社区资源检索页：单页头、工具栏、结果列表与底部分页，不显示结果计数。
+ * 来源=全部时并行查询两源；切换分类、关键词或筛选回到第 1 页。
+ * 返回第一页沿用正常翻页流程，回到顶部只滚动当前活动容器。
+ * 实例的真实 MC 版本与加载器作为默认筛选；识别失败静默回退全部。
+ * 点结果卡通过 onOpenDetail 进入由 Resources 保留的独立详情页。
  */
 import {
   useCallback,
@@ -160,6 +152,13 @@ export function CommunitySearchPage({
     scrollTimer.current = null;
     scrollFrame.current = null;
   }, []);
+  useEffect(() => {
+    const target =
+      listAnchorRef.current?.closest<HTMLElement>(".ni-pager__page");
+    target?.addEventListener("resource-scroll-cancel", cancelScroll);
+    return () =>
+      target?.removeEventListener("resource-scroll-cancel", cancelScroll);
+  }, [cancelScroll]);
   const scrollToTop = useCallback(() => {
     cancelScroll();
     const reduced = window.matchMedia(
@@ -229,7 +228,6 @@ export function CommunitySearchPage({
   const goPrev = useCallback(() => setPage((p) => Math.max(1, p - 1)), []);
   const goNext = useCallback(() => setPage((p) => p + 1), []);
 
-  const showCount = view.state === "ready" && view.total !== null;
   const isLoading = view.state === "loading";
 
   return (
@@ -285,13 +283,8 @@ export function CommunitySearchPage({
       </header>
 
       <>
-        {/* 翻页锚点：纯空 div（aria-hidden 不遮蔽计数行的 live 播报）。 */}
+        {/* 翻页锚点：纯空 div。 */}
         <div ref={listAnchorRef} aria-hidden="true" />
-        {showCount ? (
-          <p className="cv-count" aria-live="polite">
-            共 {view.total} 个结果
-          </p>
-        ) : null}
 
         {source === "all" ? (
           <ModrinthSearchPage
@@ -318,6 +311,7 @@ export function CommunitySearchPage({
           <CommunityPagination
             page={page}
             hasMore={view.hasMore}
+            onFirst={() => setPage(1)}
             onPrevious={goPrev}
             onNext={goNext}
           />

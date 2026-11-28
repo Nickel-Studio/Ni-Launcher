@@ -150,3 +150,9 @@ fn live_resource_context_isolation_and_missing_target() -> Result<(), String> {
     if config.exists() { std::fs::remove_dir_all(config).map_err(|e| e.to_string())?; }
     result
 }
+
+#[test]
+fn inactive_auth_server_does_not_enforce_third_party_login() {
+    let settings = runtime_settings::resolve(&serde_json::json!({}), &serde_json::json!({"serverLogin":"any", "authServer":"https://old.example"}), None).unwrap();
+    assert!(apply_account(&mut launch_options(), &settings, None).is_ok());
+}

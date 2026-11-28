@@ -53,7 +53,7 @@ class NativeSafetyTests(unittest.TestCase):
         return native.prepare_copy(self.source, self.root / name, self.protocol, native.file_hash(self.source))
 
     def test_derives_current_backend_protocol_and_release(self):
-        self.assertEqual(self.protocol.version, "1.0.3-beta")
+        self.assertEqual(self.protocol.version, "1.0.3")
         self.assertEqual(self.protocol.eula_revision, "minecraft-eula-v1")
         self.assertEqual(self.protocol.data_directory, "Nickel")
         self.assertEqual(self.protocol.game_directory, ".minecraft")

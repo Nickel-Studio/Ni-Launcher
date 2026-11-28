@@ -5,6 +5,7 @@
 //! - `active_account.json`  —— 当前激活账号 id
 //! - `game.json`            —— 游戏 / 版本设置（纯 JSON 文本透传）
 //! - `instances.json`       —— 实例（版本根目录）注册表（纯 JSON 文本透传）
+//! - `skin-oauth-clients.json` —— 各站点/实例的加密 OAuth 应用配置（仅后端落盘，不回传前端）
 //!
 //! 本模块为纯逻辑（不涉及网络），便于单元测试；文件损坏时安全回退为默认值，
 //! 不 panic。
@@ -51,6 +52,8 @@ pub struct Account {
     pub email: Option<String>,
     pub server: Option<String>,
     pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub auth_method: Option<String>,
 }
 
 /// 本机加密后的敏感字符串。
@@ -114,6 +117,10 @@ pub struct StoredAccount {
     /// 无法枚举 / 改绑，服务端要求重新 `authenticate`。明文不落盘、不回传前端。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<SealedSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<SealedSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_api: Option<String>,
 }
 
 impl std::fmt::Debug for StoredAccount {
@@ -154,6 +161,8 @@ impl Default for StoredAccount {
             refresh_token: None,
             expires_at: None,
             password: None,
+            oauth: None,
+            auth_api: None,
         }
     }
 }
@@ -173,6 +182,8 @@ impl StoredAccount {
             email: self.email.clone(),
             server: self.server.clone(),
             avatar_url: self.avatar_url.clone(),
+            auth_method: (self.account_type == "littleskin")
+                .then(|| if self.oauth.is_some() { "oauth2" } else { "classic" }.to_string()),
         }
     }
 
@@ -593,12 +604,15 @@ mod tests {
             refresh_token: Some("REFRESH-TOKEN-VALUE".into()),
             expires_at: Some(123),
             password: Some(SealedSecret::new("v1:CIPHER-VALUE")),
+            oauth: Some(SealedSecret::new("v1:OAUTH-CIPHER")),
+            auth_api: None,
         };
         let public = stored.to_public();
         let value = serde_json::to_value(&public).unwrap();
         assert!(value.get("accessToken").is_none());
         assert!(value.get("clientToken").is_none());
         assert!(value.get("refreshToken").is_none());
+        assert!(value.get("oauth").is_none());
         assert!(value.get("password").is_none(), "密码密文不得回传前端");
         assert_eq!(
             value.get("type").and_then(|v| v.as_str()),
@@ -632,6 +646,26 @@ mod tests {
         assert!(parse_accounts("{not json").is_empty());
         assert_eq!(parse_accounts("[{\"id\":\"x\"}]").len(), 1);
     }
+
+    #[test]
+    fn public_auth_method_comes_from_stored_credentials() {
+        let mut stored = StoredAccount {
+            account_type: "littleskin".into(),
+            ..Default::default()
+        };
+        assert_eq!(stored.to_public().auth_method.as_deref(), Some("classic"));
+        stored.oauth = Some(SealedSecret::new("fixture-sealed-oauth"));
+        let public = serde_json::to_value(stored.to_public()).unwrap();
+        assert_eq!(public["authMethod"], "oauth2");
+        assert!(!public.to_string().contains("fixture-sealed-oauth"));
+        stored.account_type = "microsoft".into();
+        assert_eq!(stored.to_public().auth_method, None);
+        let legacy: Account = serde_json::from_value(serde_json::json!({
+            "id": "legacy", "type": "littleskin", "name": "Player", "uuid": "uuid"
+        })).unwrap();
+        assert_eq!(legacy.auth_method, None);
+    }
+
 
     #[test]
     fn normalize_fills_defaults() {

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatedSwap, Button } from "../ui";
 import { isTauri } from "../../lib/settings";
+import { showToast } from "../../lib/toast";
+import { notifyLoginError } from "./loginFeedback";
 import { IconEye, IconEyeOff, IconLock, IconUser } from "./icons";
 import {
   setSkinSession,
-  toReadableError,
   type SkinAccount,
   type SkinLoginOutcome,
   type SkinSession,
@@ -62,24 +63,29 @@ export function LittleSkinAccount({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  /** 收尾：把后端落库的权威账号交给调用方（入库与激活都在那边完成）。 */
-  const finish = useCallback(
-    async (account: SkinAccount) => {
-      await onAccount(account);
-    },
-    [onAccount]
-  );
+  const pending = useRef(false);
+  const generation = useRef(0);
+  useEffect(() => {
+    setBusy(false);
+    setError("");
+    setPassword("");
+    setPhase("identify");
+    return () => {
+      generation.current++;
+      pending.current = false;
+    };
+  }, [server]);
 
   const submit = useCallback(async () => {
     const username = email.trim();
     const endpoint = server.trim();
-    if (!username || !password || !endpoint || busy) return;
-
+    if (!username || !password || !endpoint || pending.current) return;
     if (!isTauri()) {
-      setError("当前环境不支持登录（请在桌面应用中运行）");
+      showToast("当前环境不支持登录（请在桌面应用中运行）", "error");
       return;
     }
-
+    const current = ++generation.current;
+    pending.current = true;
     setBusy(true);
     setError("");
     try {
@@ -88,34 +94,42 @@ export function LittleSkinAccount({
         username,
         password,
       });
-
-      // 密码使命结束：立即从内存状态丢弃，不做任何持久化。
+      if (current !== generation.current) {
+        if (outcome.status === "select") {
+          void invoke("yggdrasil_cancel", {
+            sessionId: outcome.sessionId,
+          }).catch(() => undefined);
+        }
+        return;
+      }
       setPassword("");
-
       if (outcome.status === "select") {
         if (outcome.profiles.length === 0) {
+          void invoke("yggdrasil_cancel", {
+            sessionId: outcome.sessionId,
+          }).catch(() => undefined);
           setError("该账号下没有可用角色，请先到皮肤站创建角色");
           return;
         }
-        setSkinSession({
+        const session = {
           sessionId: outcome.sessionId,
           profiles: outcome.profiles,
-        });
-        onProfileSelect({
-          sessionId: outcome.sessionId,
-          profiles: outcome.profiles,
-        });
+        };
+        setSkinSession(session);
+        onProfileSelect(session);
         return;
       }
-
       setSkinSession(null);
-      await finish(outcome.account);
+      await onAccount(outcome.account);
     } catch (err) {
-      setError(toReadableError(err));
+      if (current === generation.current) notifyLoginError("皮肤站", err);
     } finally {
-      setBusy(false);
+      if (current === generation.current) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
-  }, [busy, email, finish, onProfileSelect, password, server]);
+  }, [email, onAccount, onProfileSelect, password, server]);
 
   const next = useCallback(() => {
     if (!email.trim()) return;
@@ -124,6 +138,7 @@ export function LittleSkinAccount({
   }, [email]);
 
   const back = useCallback(() => {
+    if (pending.current) return;
     setPhase("identify");
     setPassword("");
     setShowPassword(false);

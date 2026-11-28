@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Button, Collapse, IconButton } from "../ui";
+import { Button, Collapse, IconButton, Tooltip } from "../ui";
 import { IconCheck, IconChevronDown, IconRefresh } from "../ui/icons";
 import { IconAlert } from "../resources/icons";
 import { IconDownloadTray } from "../download/icons";
@@ -567,38 +567,34 @@ function LoaderCard({
       data-blocked={blocked}
     >
       <div className="van-loader__heading">
-        <button
-          ref={head}
-          type="button"
-          className="van-loader__head"
-          onClick={canExpand ? onToggle : undefined}
-          disabled={!canExpand}
-          title={blockedReason || undefined}
-          aria-expanded={canExpand ? isOpen : undefined}
-          aria-controls={canExpand ? `van-builds-${id}` : undefined}
-        >
-          <img
-            className="van-loader__icon"
-            src={blockIconSrc(ICON_KEYS[id])}
-            width={28}
-            height={28}
-            alt=""
-            draggable={false}
-          />
-          <span className="van-loader__name">{label}</span>
-          <span
-            className="van-loader__status"
-            title={blockedReason || provider.error || undefined}
+        <Tooltip label={blockedReason || provider.error || ""}>
+          <button
+            ref={head}
+            type="button"
+            className="van-loader__head"
+            onClick={canExpand ? onToggle : undefined}
+            disabled={!canExpand}
+            aria-expanded={canExpand ? isOpen : undefined}
+            aria-controls={canExpand ? `van-builds-${id}` : undefined}
           >
-            {status}
-          </span>
-          {picked && canExpand ? (
-            <IconCheck className="van-loader__check" />
-          ) : null}
-          {canExpand ? (
-            <IconChevronDown className="van-loader__chevron" />
-          ) : null}
-        </button>
+            <img
+              className="van-loader__icon"
+              src={blockIconSrc(ICON_KEYS[id])}
+              width={28}
+              height={28}
+              alt=""
+              draggable={false}
+            />
+            <span className="van-loader__name">{label}</span>
+            <span className="van-loader__status">{status}</span>
+            {picked && canExpand ? (
+              <IconCheck className="van-loader__check" />
+            ) : null}
+            {canExpand ? (
+              <IconChevronDown className="van-loader__chevron" />
+            ) : null}
+          </button>
+        </Tooltip>
         {failed ? (
           <Button
             className="van-loader__retry"
@@ -723,28 +719,29 @@ function BuildRow({
       data-compatibility={option.compatibility}
       data-version={option.version}
     >
-      <button
-        type="button"
-        className="van-build__pick"
-        aria-pressed={picked}
-        onClick={onPick}
-        disabled={!installable}
-        title={availability || undefined}
-      >
-        <img
-          className="van-loader__icon"
-          src={blockIconSrc(ICON_KEYS[id])}
-          width={28}
-          height={28}
-          alt=""
-          draggable={false}
-        />
-        <span className="van-build__text">
-          <span className="van-build__version">{option.label}</span>
-          {detail ? <span className="van-build__meta">{detail}</span> : null}
-        </span>
-        {picked ? <IconCheck className="van-build__check" /> : null}
-      </button>
+      <Tooltip label={availability}>
+        <button
+          type="button"
+          className="van-build__pick"
+          aria-pressed={picked}
+          onClick={onPick}
+          disabled={!installable}
+        >
+          <img
+            className="van-loader__icon"
+            src={blockIconSrc(ICON_KEYS[id])}
+            width={28}
+            height={28}
+            alt=""
+            draggable={false}
+          />
+          <span className="van-build__text">
+            <span className="van-build__version">{option.label}</span>
+            {detail ? <span className="van-build__meta">{detail}</span> : null}
+          </span>
+          {picked ? <IconCheck className="van-build__check" /> : null}
+        </button>
+      </Tooltip>
       <div className="van-build__actions">
         {option.capability.saveInstaller ? (
           <IconButton

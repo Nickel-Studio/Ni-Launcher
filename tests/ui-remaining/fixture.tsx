@@ -364,6 +364,7 @@ function jeiVersion(
     gameVersions: ["1.21.1"],
     datePublished: "2026-01-01T00:00:00Z",
     releaseType: "release",
+    dependencies: [],
     files: [
       {
         url: `https://example.invalid/${filename}`,
@@ -520,6 +521,7 @@ function PaginationFixture() {
     <CommunityPagination
       page={page}
       hasMore
+      onFirst={() => setPage(1)}
       onPrevious={() => setPage((value) => Math.max(1, value - 1))}
       onNext={() => setPage((value) => value + 1)}
     />
@@ -812,11 +814,9 @@ async function runResultAndToolbarChecks(): Promise<void> {
     pagination.querySelectorAll<HTMLButtonElement>("button")
   );
   expect(
-    "分页只保留上一页与下一页",
-    pagerButtons.length === 2 &&
-      pagerButtons.every(
-        (button) => button.getAttribute("aria-label") !== "第一页"
-      ),
+    "分页包含返回第一页、上一页与下一页",
+    pagerButtons.length === 3 &&
+      pagerButtons[0].getAttribute("aria-label") === "返回第一页",
     pagerButtons.map((button) => button.getAttribute("aria-label")).join(", ")
   );
   required<HTMLButtonElement>(
@@ -1103,10 +1103,11 @@ async function runDetailChecks(): Promise<void> {
   if (placeholder) {
     const placeholderHeight = placeholder.getBoundingClientRect().height;
     const style = getComputedStyle(placeholder);
-    const reservedHeight = ["--pd-row-height", "--space-7", "--space-1"]
-      .reduce((total, token) => total + parseFloat(style.getPropertyValue(token)), 0);
+    const reservedHeight = parseFloat(
+      style.getPropertyValue("--pd-row-height")
+    );
     expect(
-      "懒挂载占位保留版本行和依赖入口高度",
+      "懒挂载占位只保留版本行高度，不再保留前置折叠入口",
       Math.abs(placeholderHeight - reservedHeight) <= 1,
       `${placeholderHeight}`
     );
@@ -1358,10 +1359,35 @@ async function runDownloadChecks(): Promise<void> {
     ".dd-failure__text"
   );
   expect(
-    "失败卡显示可执行错误与复制提示",
+    "失败卡显示可执行错误且不使用原生 title",
     failureText.textContent?.includes("请返回资源重新下载") === true &&
-      failureText.getAttribute("title") === "单击复制错误详情",
+      !failureText.hasAttribute("title"),
     failureText.textContent ?? ""
+  );
+  failureText.dispatchEvent(
+    new PointerEvent("pointerover", {
+      bubbles: true,
+      pointerType: "mouse",
+      clientX: 100,
+      clientY: 100,
+    })
+  );
+  const copyTip = await waitFor(
+    () =>
+      Array.from(document.querySelectorAll('[role="tooltip"]')).find(
+        (node) => node.textContent === "单击复制错误详情"
+      ),
+    "复制错误的跟随鼠标提示"
+  );
+  expect(
+    "复制提示使用统一鼠标跟随模式",
+    copyTip.getAttribute("data-side") === "pointer"
+  );
+  failureText.dispatchEvent(
+    new PointerEvent("pointerout", {
+      bubbles: true,
+      pointerType: "mouse",
+    })
   );
   const feedback = required<HTMLElement>(errorCard, ".dd-failure__feedback");
   expect(

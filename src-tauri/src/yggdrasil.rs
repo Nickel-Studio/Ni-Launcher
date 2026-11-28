@@ -5,6 +5,7 @@
 //! - clientToken 由后端生成并随账号缓存
 //! - agent 固定 `{ name: "Minecraft", version: 1 }`（`name` 大小写敏感，LittleSkin 拒绝小写）
 //! - 错误按 `errorMessage` 映射为可读中文
+//! - 皮肤站切换到 OAuth2 时，角色选择仍走 `yggdrasil_select_profile`；`oauth_*` 会话转交 `skin_oauth`，密码认证仍是默认路径
 //!
 //! ## 多角色账号
 //! 同一账号在皮肤站下可能有多个角色（`availableProfiles`）。此时**不能**擅自挑一个就落库，
@@ -242,6 +243,8 @@ fn build_account(
         refresh_token: None,
         expires_at: None,
         password,
+        oauth: None,
+        auth_api: None,
     }
     .normalize()
 }
@@ -361,6 +364,7 @@ pub async fn yggdrasil_select_profile(
     session_id: String,
     profile_id: String,
 ) -> Result<Account, String> {
+    if session_id.starts_with("oauth_") { return crate::skin_oauth::select(app, session_id, profile_id).await; }
     // 会话表锁必须限制在这个块内：后面要 await 刷新，MutexGuard 不能跨 await。
     let (profile, pending) = {
         let mut map = pending_lock();
@@ -437,6 +441,7 @@ pub async fn yggdrasil_select_profile(
 /// 下次启动会走刷新 / 重新登录兜底。
 #[tauri::command]
 pub async fn yggdrasil_cancel(app: AppHandle, session_id: String) -> Result<(), String> {
+    if session_id.starts_with("oauth_") { crate::skin_oauth::skin_oauth_cancel(Some(session_id)); return Ok(()); }
     let pending = {
         let mut map = pending_lock();
         purge_expired(&mut map, Instant::now());
@@ -552,6 +557,7 @@ pub async fn yggdrasil_refresh(app: AppHandle, id: String) -> Result<Account, St
         return Err("缺少账号 id".to_string());
     }
     let account = store::find_account(&app, &id).ok_or_else(|| "账号不存在".to_string())?;
+    if account.oauth.is_some() { return crate::skin_oauth::refresh(app, account).await; }
     let (resp, client_token) =
         refresh_tokens(&account, Some(selected_profile_json(&account))).await?;
     apply_refresh(&app, &account, &resp, client_token, None)
@@ -568,6 +574,7 @@ pub async fn yggdrasil_profiles(app: AppHandle, id: String) -> Result<ProfileLis
         return Err("缺少账号 id".to_string());
     }
     let account = store::find_account(&app, &id).ok_or_else(|| "账号不存在".to_string())?;
+    if account.oauth.is_some() { return crate::skin_oauth::list_profiles(app, account).await; }
     // 已落盘账号的地址非法时拒绝重新认证，绝不把密码发往默认站点。
     let site = store::validate_stored_server(account.server.clone())?;
 
@@ -828,6 +835,7 @@ mod tests {
             email: Some("user@example.com".into()),
             server: Some(store::DEFAULT_SERVER.into()),
             avatar_url: None,
+            auth_method: Some("classic".into()),
         };
         let value = serde_json::to_value(LoginOutcome::Account {
             account: account.clone(),

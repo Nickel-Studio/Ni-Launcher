@@ -18,6 +18,7 @@ SOURCE_FILES = [
     "src/pages/Home.tsx", "src/pages/Home.css", "src/components/launch/useLauncher.ts",
     "src/components/launch/LaunchPanel.tsx", "src/components/launch/launch.css",
     "src/components/launch/LaunchButton.tsx", "src/components/launch/ProgressBar.tsx",
+    "src/components/launch/LaunchTransition.tsx",
     "src/components/ui/Modal.tsx", "src/lib/settings.ts", "src/lib/instances.ts",
     "src/styles/tokens.css", "src/styles/global.css", "src/styles/ui.css", "src/styles/shell.css",
 ]

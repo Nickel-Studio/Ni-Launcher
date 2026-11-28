@@ -1,5 +1,5 @@
 import { memo, type CSSProperties } from "react";
-import { IconButton } from "../ui";
+import { IconButton, Tooltip } from "../ui";
 import { IconCheck, IconSettings, IconTrash } from "../ui/icons";
 import type { InstanceEntry } from "./instancesApi";
 import { blockIconSrc, loaderLabel, typeLabel } from "./instanceVisuals";
@@ -55,9 +55,9 @@ export const InstanceCard = memo(function InstanceCard({
           draggable={false}
         />
         <span className="vs-card__head">
-          <span className="vs-card__name" title={entry.displayName}>
-            {entry.displayName}
-          </span>
+          <Tooltip label={entry.displayName}>
+            <span className="vs-card__name">{entry.displayName}</span>
+          </Tooltip>
           <span className="vs-card__subtitle">
             {entry.minecraftVersion || typeLabel(entry.type)} ·{" "}
             {loaderLabel(entry.loader)}

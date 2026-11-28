@@ -33,7 +33,7 @@
 }
 .ni-btn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-btn svg {
   width: 16px;
@@ -280,7 +280,7 @@
 }
 .ni-switch:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-switch__knob {
   position: absolute;
@@ -336,7 +336,7 @@
 }
 .ni-slider:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-slider:focus-visible {
   outline: 2px solid var(--accent-ring);
@@ -447,7 +447,7 @@
 }
 .ni-select__trigger:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-select__value {
   flex: 1 1 auto;
@@ -523,7 +523,7 @@
 }
 .ni-select__option:disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-select__option:focus-visible {
   outline: none;
@@ -562,7 +562,7 @@
 }
 .ni-iconbtn:disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: default;
 }
 .ni-iconbtn--sm {
   --_s: 26px;
@@ -1023,4 +1023,12 @@
   .ni-select__option {
     transition: none;
   }
+}
+
+.ni-modal__backdrop[data-closing="true"] { animation: ni-modal-backdrop-out 180ms var(--ease-out) both; }
+.ni-modal__backdrop[data-closing="true"] .ni-modal { animation: ni-modal-out 180ms var(--ease-out) both; }
+@keyframes ni-modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ni-modal-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.975); } }
+@media (prefers-reduced-motion: reduce) {
+  .ni-modal__backdrop[data-closing="true"], .ni-modal__backdrop[data-closing="true"] .ni-modal { animation-duration: 1ms; }
 }

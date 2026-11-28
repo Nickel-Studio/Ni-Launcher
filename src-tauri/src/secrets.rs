@@ -1,4 +1,4 @@
-//! API 配置优先读取运行时覆盖，最后回退构建内嵌的四字段白名单。
+//! API 配置优先读取运行时覆盖，最后回退构建内嵌的七字段白名单。
 //! 缺失、不可读或解析失败的字段跳过；用户凭据不参与构建投影。
 //! CurseForge Key 仅供后端请求，测试占位符永远不作为认证值发送。
 
@@ -692,6 +692,9 @@ mod tests {
             "NICKEL_MSA_AUTHORITY",
             "NICKEL_MSA_REDIRECT_URI",
             "NICKEL_CURSEFORGE_API_KEY",
+            "NICKEL_LITTLESKIN_CLIENT_ID",
+            "NICKEL_LITTLESKIN_CLIENT_SECRET",
+            "NICKEL_LITTLESKIN_REDIRECT_URI",
         ] {
             assert!(
                 std::env::var_os(key).is_none(),
@@ -712,7 +715,7 @@ mod tests {
         let projected = build_config::SensitiveDocument(build_config::project(&text).unwrap());
         assert!(
             *embedded == *projected,
-            "embedded configuration must contain only the four allowed fields"
+            "embedded configuration must contain only the allowed fields"
         );
         let expected_msa = embedded_msa_config();
         let msa = load_msa_config(paths.clone());
@@ -755,4 +758,23 @@ mod tests {
             })
         );
     }
+}
+
+pub(crate) fn littleskin_config(app: &AppHandle) -> Option<crate::skin_auth::ClientConfig> {
+    for path in candidate_paths(app) {
+        if let Some(text) = read_config_text(&path) {
+            if let Ok(value) = project_runtime_config(&text) {
+                let section = &value["littleskin"];
+                if let (Some(id), Some(secret), Some(redirect)) = (section["clientId"].as_str(), section["clientSecret"].as_str(), section["redirectUri"].as_str()) {
+                    if redirect == crate::skin_auth::CALLBACK { return Some(crate::skin_auth::ClientConfig { client_id: id.into(), client_secret: secret.into() }); }
+                }
+            }
+        }
+    }
+    let redirect = embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinRedirect).ok()??;
+    if redirect.as_str() != crate::skin_auth::CALLBACK { return None; }
+    Some(crate::skin_auth::ClientConfig {
+        client_id: embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinClient).ok()??.to_string(),
+        client_secret: embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinSecret).ok()??.to_string(),
+    })
 }

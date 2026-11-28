@@ -72,6 +72,8 @@ mod skin; // 皮肤获取 / 上传
 mod store; // 本地持久化 + 纯工具
 mod vault; // 本机凭据静态加密（皮肤站密码）
 mod version_settings; // per-version 设置 / 版本改名 / 删除 / 补全文件
+mod skin_auth;
+mod skin_oauth;
 mod yggdrasil; // Yggdrasil（LittleSkin）认证
 
 /// Mojang 官方版本清单（version_manifest_v2）。
@@ -101,6 +103,9 @@ pub enum FrontendEvent {
     },
     Speed {
         bps: f64,
+    },
+    Estimated {
+        seconds: f64,
     },
     Stage {
         message: String,
@@ -140,9 +145,7 @@ impl From<&LaunchEvent> for FrontendEvent {
                 file_type: kind.clone(),
             },
             LaunchEvent::Speed(bps) => FrontendEvent::Speed { bps: *bps },
-            LaunchEvent::Estimated(secs) => FrontendEvent::Stage {
-                message: format!("预计剩余 {secs:.0}s"),
-            },
+            LaunchEvent::Estimated(secs) => FrontendEvent::Estimated { seconds: *secs },
             LaunchEvent::Check {
                 current,
                 total,
@@ -198,6 +201,7 @@ fn redact_frontend_event(event: &mut FrontendEvent) {
         }
         FrontendEvent::Preparing { .. }
         | FrontendEvent::Speed { .. }
+        | FrontendEvent::Estimated { .. }
         | FrontendEvent::Close { .. }
         | FrontendEvent::Started
         | FrontendEvent::Cancelled => {}
@@ -624,14 +628,18 @@ async fn run_launch_scoped(
     instances::reject_links(&base)?;
     std::fs::create_dir_all(&base).map_err(|e| format!("创建游戏目录失败：{e}"))?;
     let base = std::fs::canonicalize(base).map_err(|e| format!("解析游戏目录失败：{e}"))?;
-    let running = app_tasks::with_idle_directory(&base, || launch_state::begin(&base))?;
+
     let global: serde_json::Value =
         serde_json::from_str(&game::game_settings_get(app.clone())?).unwrap_or_default();
     let local = runtime_settings::read_local(&base, &p.version);
     let isolation = runtime_settings::resolve_isolation(&global, &local);
     let directory = runtime_settings::game_directory(&base, &p.version, isolation);
-    instances::reject_links(&directory)?;
-    std::fs::create_dir_all(&directory).map_err(|e| format!("创建游戏工作目录失败：{e}"))?;
+    // Isolated instances can coexist; shared working directories remain exclusive.
+    let running = app_tasks::with_idle_directory(&base, || {
+        instances::reject_links(&directory)?;
+        std::fs::create_dir_all(&directory).map_err(|e| format!("创建游戏工作目录失败：{e}"))?;
+        launch_state::begin(&directory)
+    })?;
     error_report::begin_session(&directory)?;
     let log_path = runtime_settings::start_launch_log(&directory);
     let (total_memory, available_memory) = runtime_settings::physical_memory_mb();
@@ -707,7 +715,7 @@ async fn run_launch_scoped(
             message: java_stage,
         },
     );
-    let auth_server = apply_active_account(&app, &mut options, &settings)?;
+    let auth_server = apply_active_account(&app, &mut options, &settings).await?;
     let mut launcher = Launcher::new(options);
     let (tx, rx) = tokio::sync::mpsc::channel::<LaunchEvent>(1024);
     let captured = Arc::new(Mutex::new(launch_output::OutputCapture::default()));
@@ -845,7 +853,13 @@ async fn run_launch_scoped(
             );
         }
     }
-    // 进程已生成：准备阶段结束，前端收起启动中面板；此后的取消按钮不再可用。
+    // Release preparation ownership before the UI can request another launch.
+    {
+        let mut current = launch_control_lock();
+        if current.as_ref().is_some_and(|control| control.launch_id == launch_id) {
+            *current = None;
+        }
+    }
     emit_launch_event(&app, &launch_id, FrontendEvent::Started);
     let diagnostic_version = version_context.minecraft_version.clone();
     let diagnostic_loader = version_context.loader.clone().unwrap_or_default();
@@ -971,7 +985,7 @@ async fn run_launch_scoped(
     Ok(())
 }
 
-fn apply_active_account(
+async fn apply_active_account(
     app: &AppHandle,
     options: &mut LaunchOptions,
     settings: &runtime_settings::EffectiveSettings,
@@ -988,6 +1002,12 @@ fn apply_active_account(
     let account = active
         .as_deref()
         .and_then(|id| store::find_account(app, id));
+    apply_account(options, settings, account.clone())?;
+    if let Some(account) = account.as_ref().filter(|a| a.oauth.is_some()) {
+        skin_oauth::refresh(app.clone(), account.clone()).await?;
+        let refreshed = store::find_account(app, &account.id).ok_or("账号已移除")?;
+        return apply_account(options, settings, Some(refreshed));
+    }
     apply_account(options, settings, account)
 }
 
@@ -1016,21 +1036,22 @@ fn apply_account(
             "当前账号不符合{server_name}的登录方式，请切换账号或修改实例设置"
         ));
     }
-    if !settings.auth_server.trim().is_empty() && kind != "littleskin" {
+    if settings.server_login == "thirdParty" && settings.auth_server.trim().is_empty() { return Err("请先配置实例的皮肤站地址".into()); }
+    if settings.server_login == "thirdParty" && kind != "littleskin" {
         return Err(format!("请切换到{server_name}对应的第三方账号后启动"));
     }
     let auth_server = if kind == "littleskin" {
         let server =
             store::normalize_server(account.as_ref().and_then(|account| account.server.clone()));
-        if !settings.auth_server.trim().is_empty()
-            && server != store::normalize_server(Some(settings.auth_server.clone()))
+        if settings.server_login == "thirdParty"
+            && !skin_auth::same_site(&server, &settings.auth_server)
         {
             return Err(format!(
                 "当前账号的认证服务器与{server_name}不一致，请切换账号后启动"
             ));
         }
         // authlib-injector 要用 Yggdrasil API 根；站点根（`https://littleskin.cn`）拿不到认证接口。
-        Some(store::yggdrasil_base(&server))
+        Some(account.as_ref().and_then(|a| a.auth_api.clone()).unwrap_or_else(|| store::yggdrasil_base(&server)))
     } else {
         None
     };
@@ -1109,7 +1130,10 @@ fn build_options(params: &ResolvedLaunch, base: PathBuf) -> LaunchOptions {
 }
 
 fn launch_from_startup_arguments(app: &AppHandle) {
-    let request = version_settings::startup_launch_arguments(std::env::args_os().skip(1));
+    launch_from_arguments(app, std::env::args_os().skip(1));
+}
+fn launch_from_arguments(app: &AppHandle, args: impl IntoIterator<Item = std::ffi::OsString>) {
+    let request = version_settings::startup_launch_arguments(args);
     if matches!(&request, Ok(None)) {
         return;
     }
@@ -1150,7 +1174,6 @@ fn launch_from_startup_arguments(app: &AppHandle) {
     });
 }
 
-#[cfg(any(windows, test))]
 fn diagnostics_enabled(value: Option<&std::ffi::OsStr>) -> bool {
     value.is_some_and(|value| {
         let value = value.to_string_lossy();
@@ -1175,6 +1198,15 @@ mod diagnostics_tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            skin_oauth::diagnostic("secondary_instance_received");
+            for argument in &args { if argument.starts_with("nickel:") { skin_oauth::handle_callback(argument); } }
+            if args.iter().any(|arg| arg == "--launch-instance") {
+                launch_from_arguments(app, args.iter().skip(1).map(std::ffi::OsString::from));
+            }
+            if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(media::protocol_plugin())
@@ -1203,6 +1235,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            use tauri_plugin_deep_link::DeepLinkExt;
+            app.deep_link().on_open_url(|event| {
+                skin_oauth::diagnostic("deep_link_event_received");
+                for url in event.urls() { skin_oauth::handle_callback(url.as_str()); }
+            });
             let stored = settings_get(app.handle().clone()).unwrap_or_else(|_| "{}".into());
             let value = serde_json::from_str(&stored).unwrap_or(serde_json::Value::Null);
             network_settings::apply(network_settings::from_value(&value).unwrap_or_default());
@@ -1281,6 +1318,13 @@ pub fn run() {
             accounts::accounts_remove,
             accounts::accounts_set_active,
             // Yggdrasil（LittleSkin）
+            skin_auth::skin_site_describe,
+            skin_auth::skin_auth_context,
+            skin_auth::skin_oauth_config_get,
+            skin_auth::skin_oauth_config_set,
+            skin_oauth::skin_oauth_begin,
+            skin_oauth::skin_oauth_finish,
+            skin_oauth::skin_oauth_cancel,
             yggdrasil::yggdrasil_login,
             yggdrasil::yggdrasil_refresh,
             yggdrasil::yggdrasil_profiles,
@@ -1430,6 +1474,7 @@ mod tests {
                 file_type: "assets".into(),
             },
             FrontendEvent::Speed { bps: 1024.0 },
+            FrontendEvent::Estimated { seconds: 12.0 },
             FrontendEvent::Stage {
                 message: "preparing".into(),
             },
@@ -1532,6 +1577,15 @@ mod tests {
             value.get("message").and_then(|v| v.as_str()),
             Some("GPU 偏好未生效，游戏继续启动")
         );
+    }
+
+    #[test]
+    fn download_estimate_does_not_reset_the_progress_stage() {
+        let event = FrontendEvent::from(&LaunchEvent::Estimated(12.5));
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["type"], "estimated");
+        assert_eq!(value["seconds"], 12.5);
+        assert!(value.get("message").is_none());
     }
 
     #[test]

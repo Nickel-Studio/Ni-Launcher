@@ -161,3 +161,9 @@
     transition: none;
   }
 }
+
+.dl-top { width: 40px; height: 40px; bottom: var(--gutter); background: var(--accent); color: var(--accent-fg); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(8px) scale(.9); animation: none; transition: opacity 160ms var(--ease), transform 160ms var(--ease), visibility 160ms, bottom 160ms var(--ease); }
+.dl-top[data-visible="true"] { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+.dl-top[data-download="true"] { bottom: calc(var(--gutter) + 52px); }
+.dl-top:hover { background: var(--accent-strong); color: var(--accent-fg); }
+@media (prefers-reduced-motion: reduce) { .dl-top { transition: none; } }

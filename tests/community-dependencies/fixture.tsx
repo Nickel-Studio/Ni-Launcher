@@ -285,7 +285,14 @@ const histories = new Map<string, ModrinthVersion[]>([
       ),
     ],
   ],
-  ["PinnedMR", [version("LatestMR", "PinnedMR", "9.0.0", "1.21.1")]],
+  [
+    "PinnedMR",
+    [
+      version("LatestMR", "PinnedMR", "9.0.0", "1.21.1"),
+      exactVersions.get("ExactMR1")!,
+      exactVersions.get("ExactMR2")!,
+    ],
+  ],
   [
     "FabricAPI",
     [
@@ -501,6 +508,7 @@ const bridge = window as unknown as {
     setSaveMode: (mode: "cancel" | "save") => void;
     failHistory: (projectId: string, count: number) => void;
     taskCount: () => number;
+    setInstance: typeof setLaunchInstance;
   };
 };
 bridge.__TAURI_INTERNALS__ = {
@@ -529,6 +537,7 @@ bridge.__communityDependencies = {
     historyFailures.set(projectId, count);
   },
   taskCount: () => taskSequence,
+  setInstance: setLaunchInstance,
 };
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing community regression root");

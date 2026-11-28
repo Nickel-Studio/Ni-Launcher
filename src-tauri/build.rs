@@ -9,6 +9,7 @@ fn embed_api_config() {
     for key in [
         "NICKEL_BUILD_SECRETS", "NICKEL_MSA_CLIENT_ID", "NICKEL_MSA_AUTHORITY",
         "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY", "NICKEL_REQUIRE_RELEASE_SECRETS",
+        "NICKEL_LITTLESKIN_CLIENT_ID", "NICKEL_LITTLESKIN_CLIENT_SECRET", "NICKEL_LITTLESKIN_REDIRECT_URI",
     ] {
         println!("cargo:rerun-if-env-changed={key}");
     }
@@ -52,6 +53,9 @@ fn embed_api_config() {
         (Field::MicrosoftAuthority, "microsoft", "authority"),
         (Field::MicrosoftRedirect, "microsoft", "redirectUri"),
         (Field::CurseforgeKey, "curseforge", "apiKey"),
+        (Field::LittleSkinClient, "littleskin", "clientId"),
+        (Field::LittleSkinSecret, "littleskin", "clientSecret"),
+        (Field::LittleSkinRedirect, "littleskin", "redirectUri"),
     ].into_iter().filter_map(|(field, section, name)| {
         projected[section][name].as_str().map(|value| (field, value))
     }).collect();

@@ -45,15 +45,19 @@ fn dialog_filter(kind: &str, filename: &str) -> (&'static str, &'static [&'stati
     }
 }
 
-/// 默认保存目录：mod 用实例 Mod 目录（LiteLoader 为 `mods/<mc>`），其它种类用
-/// 资源根下对应子目录；预创建目录，保证对话框起点真实存在。
+/// Without an instance, use the selected game root itself; otherwise retain resource folders.
 fn default_directory(
     kind: &str,
     root: &Path,
     instance_version_id: &str,
     resource_root: &Path,
 ) -> Result<PathBuf, String> {
-    let directory = if kind == "mod" {
+    if !root.is_absolute() || !resource_root.is_absolute() {
+        return Err("默认保存目录必须为绝对路径".into());
+    }
+    let directory = if instance_version_id.is_empty() {
+        root.to_path_buf()
+    } else if kind == "mod" {
         crate::resources::instance_paths::for_instance(root, instance_version_id, resource_root)?
     } else {
         let folder = crate::modrinth::kind_folder(kind).ok_or("整合包请从版本内页创建新实例")?;
@@ -191,8 +195,8 @@ pub async fn modrinth_save_as(
     if slug_or_id.is_empty() || version_id.is_empty() {
         return Err("缺少项目或版本标识".into());
     }
-    if root.trim().is_empty() || instance_version_id.trim().is_empty() || dir.trim().is_empty() {
-        return Err("缺少实例目录，请先选择目标实例".into());
+    if root.trim().is_empty() || dir.trim().is_empty() {
+        return Err("无法读取默认保存目录，请检查实例总目录设置".into());
     }
     let network = network_settings::snapshot();
     network.transfer(source.as_deref())?;
@@ -260,8 +264,8 @@ pub async fn curseforge_save_as(
     if project_id == 0 || file_id == 0 {
         return Err("CurseForge 项目及文件 ID 必须为正整数".into());
     }
-    if root.trim().is_empty() || instance_version_id.trim().is_empty() || dir.trim().is_empty() {
-        return Err("缺少实例目录，请先选择目标实例".into());
+    if root.trim().is_empty() || dir.trim().is_empty() {
+        return Err("无法读取默认保存目录，请检查实例总目录设置".into());
     }
     let key = crate::secrets::curseforge_api_key(app.clone())?;
     let network = network_settings::snapshot();
@@ -355,6 +359,21 @@ mod tests {
         .unwrap();
         directory
     }
+
+    #[test]
+    fn no_instance_uses_selected_root_without_resource_subfolders() {
+        let root = fixture_root();
+        for selected in [root.join("first"), root.join("second")] {
+            for kind in ["mod", "shader", "resourcepack", "datapack"] {
+                assert_eq!(default_directory(kind, &selected, "", &selected).unwrap(), selected);
+            }
+            assert!(selected.is_dir());
+            assert!(!selected.join("mods").exists());
+        }
+        assert!(default_directory("mod", Path::new(""), "", Path::new("")).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
 
     #[test]
     fn mod_dialog_name_replaces_tilde_and_other_kinds_keep_name() {

@@ -157,7 +157,7 @@ test("dependencies belong to the concrete parent version, not a project-global u
   assert.deepEqual(values[1].dependencies, [dependency("634179")]);
 });
 
-test("declaration deduplication removes self references and repeats but preserves different pinned versions and both APIs", () => {
+test("declaration deduplication removes self references and repeats preserves pinned versions and excludes loader APIs", () => {
   const result = deps.requiredDependencies([
     dependency("Parent"), dependency("parent-slug"), dependency("", "OwnVersion"),
     dependency("fabric-api"), dependency("fabric-api"), dependency("quilted-fabric-api"),
@@ -165,7 +165,6 @@ test("declaration deduplication removes self references and repeats but preserve
     dependency("", "", "manual.jar"), dependency("", "", "manual.jar"),
   ], project("Parent", "parent-slug"), version("OwnVersion"));
   assert.deepEqual(result, [
-    dependency("fabric-api"), dependency("quilted-fabric-api"),
     dependency("Pinned", "ExactA"), dependency("Pinned", "ExactB"), dependency("", "", "manual.jar"),
   ]);
 });
@@ -294,4 +293,57 @@ test("ordinary saves use the existing exact-version save-as command and preserve
   assert.deepEqual(calls.map((call) => [call.command, call.args.versionId ?? call.args.fileId]), [
     ["modrinth_save_as", "Exact"], ["curseforge_save_as", "1001"],
   ]);
+});
+
+ test("resolved version-only loader APIs are hidden on both platforms", () => {
+   for (const [source, ids] of [["modrinth", ["P7dR8mSH", "qvIfYCYJ"]], ["curseforge", ["306612", "634179"]]]) {
+     for (const id of ids) assert.deepEqual(deps.deduplicateResolvedDependencies([{ dependency: dependency("", "api-version"), resolved: { project: project(id, id, source), version: version("api-version", id) } }], project("Parent")), []);
+   }
+ });
+ test("detail cache shares in-flight work, preserves associations and retries only failures", async () => {
+   const { createDependencyCache, groupDependencies } = await server.ssrLoadModule("/src/components/community/dependencyCache.ts");
+   const seen = [];
+   let fail = true;
+   const cache = createDependencyCache(project("Parent"), async (item) => {
+     seen.push(item.projectId);
+     await new Promise((r) => setTimeout(r, 5));
+     if (item.projectId === "Bad" && fail) throw Error("temporary");
+     return { project: project(item.projectId), version: null };
+   });
+   const a = { ...version("a"), dependencies: [dependency("Shared"), dependency("Bad")] };
+   const b = { ...version("b"), dependencies: [dependency("Shared")] };
+   const [first] = await Promise.all([cache.load([a, b]), cache.load([a, b])]);
+   assert.deepEqual(seen.sort(), ["Bad", "Shared"]);
+   assert.equal(first.get("a").length, 2);
+   assert.equal(first.get("b").length, 1);
+   await cache.load([b, a]);
+   assert.equal(seen.length, 2);
+   fail = false;
+   const retried = await cache.load([a, b], true);
+   assert.equal(seen.filter((x) => x === "Shared").length, 1);
+   assert.equal(seen.filter((x) => x === "Bad").length, 2);
+   assert.equal(groupDependencies([a, b], retried).length, 2);
+ });
+
+test("detail cache rejects substituted pinned versions and retries missing metadata", async () => {
+  const { createDependencyCache } = await server.ssrLoadModule("/src/components/community/dependencyCache.ts");
+  let attempts = 0;
+  const cache = createDependencyCache(project("Parent"), async () => ({
+    project: project("Child"),
+    version: version(++attempts === 1 ? "Latest" : "Exact", "Child"),
+  }));
+  const item = { ...version("main"), dependencies: [dependency("Child", "Exact")] };
+  assert.match((await cache.load([item])).get("main")[0].error, /版本与声明不一致/);
+  assert.equal((await cache.load([item], true)).get("main")[0].resolved.version.id, "Exact");
+  assert.equal(attempts, 2);
+
+  let metadataAttempts = 0;
+  const metadata = createDependencyCache(project("Parent"), async () => ({
+    project: project("Parent"),
+    version: { ...version("old"), dependencies: ++metadataAttempts === 1 ? undefined : [] },
+  }));
+  const old = { ...version("old"), dependencies: undefined };
+  assert.match((await metadata.load([old])).get("old")[0].error, /暂不可用/);
+  assert.deepEqual((await metadata.load([old], true)).get("old"), []);
+  assert.equal(metadataAttempts, 2);
 });

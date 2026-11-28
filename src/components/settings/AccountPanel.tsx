@@ -1,3 +1,4 @@
+import { SkinAuthSettings } from "./SkinAuthSettings";
 import { Switch, Tooltip } from "../ui";
 import { SettingRow } from "./SettingRow";
 import { SettingsGroup } from "./SettingsGroup";
@@ -78,6 +79,7 @@ export function AccountPanel({ settings, update }: Props) {
           />
         }
       />
+      <SkinAuthSettings server={settings.littleskinServer} method={settings.skinAuthMethod} onChange={(method) => update({ skinAuthMethod: method ?? "classic" })} />
     </SettingsGroup>
   );
 }

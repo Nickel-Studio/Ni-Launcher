@@ -1,3 +1,4 @@
+import { BackToTopBubble } from "../components/download/BackToTopBubble";
 import {
   useCallback,
   useEffect,
@@ -27,7 +28,10 @@ import {
   type ResourceScrollSnapshot,
 } from "../components/community/dependencies";
 import { useDetailInstance } from "../components/community/searchView";
-import { loadResourceInstance } from "../components/resources/ipc";
+import {
+  loadResourceInstance,
+  resolveInstanceRoot,
+} from "../components/resources/ipc";
 import "../components/community/community.css";
 import {
   MODRINTH_CATEGORIES,
@@ -56,7 +60,7 @@ import { useSettings } from "../lib/settings";
 import { startManagedDownload } from "../components/download/store";
 import { installModpack } from "../components/community/packIpc";
 import { consumeResourceModsTarget, RESOURCE_MODS_EVENT } from "../lib/nav";
-import type { VersionFocus } from "../lib/instances";
+import { getLaunchInstance, type VersionFocus } from "../lib/instances";
 
 /**
  * 「资源」tab = 下载中心：
@@ -90,13 +94,29 @@ function createDetailAdapter(
   const { kind } = target;
   const pack = kind === "modpack";
   const revalidateForSaveAs = async (expected: SaveContext) => {
+    if (!expected.resourceTarget && !getLaunchInstance()) {
+      const root = await resolveInstanceRoot();
+      if (!root)
+        throw new Error("无法读取实例总目录，请在实例与版本中检查目录设置。");
+      if (getLaunchInstance()) throw new Error("当前实例已变化，请重新下载。");
+      return {
+        root: root.dir,
+        dir: root.dir,
+        versionId: "",
+        label: root.label,
+      };
+    }
     const resolved = await loadResourceInstance(
       expected.resourceTarget ?? undefined
     );
+    const selected = current().resourceTarget ?? getLaunchInstance();
     const instance = expected.instance;
     if (
       !instance.dir ||
       !resolved ||
+      !selected ||
+      selected.root !== resolved.root ||
+      selected.versionId !== resolved.versionId ||
       resolved.root !== instance.root ||
       resolved.versionId !== instance.versionId ||
       resolved.dir !== instance.dir
@@ -360,6 +380,21 @@ export default function Resources() {
     return () => window.cancelAnimationFrame(frame);
   }, [detail]);
 
+  const [scrollTarget, setScrollTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!detail && page === VANILLA_ID) {
+      setScrollTarget(null);
+      return;
+    }
+    let node = detail
+      ? detailHosts.current.get(detail.id) ?? null
+      : searchHost.current?.querySelector<HTMLElement>(".ni-pager__page") ??
+        null;
+    while (node && !/(auto|scroll)/.test(getComputedStyle(node).overflowY))
+      node = node.parentElement;
+    setScrollTarget(node);
+  }, [detail, page]);
+
   const groupMemoryRef = useRef(new Map<string, ReadonlySet<string>>());
   const groupMemory = useMemo<GroupMemory>(
     () => ({
@@ -373,6 +408,7 @@ export default function Resources() {
 
   return (
     <>
+      <BackToTopBubble target={scrollTarget} />
       {details.length ? (
         <div className="resources-details">
           {details.map((frame, index) => (

@@ -71,7 +71,7 @@ fn curseforge_id(value: &str) -> Result<u64, String> {
         .ok_or_else(|| "CurseForge 项目或文件编号必须为正整数".into())
 }
 
-async fn metadata(
+async fn fetch_metadata(
     platform: Platform,
     suffix: &str,
     settings: &crate::network_settings::NetworkSettings,
@@ -97,6 +97,29 @@ async fn metadata(
         },
     )
     .await
+}
+
+// Public metadata only. Share both in-flight and successful project/version reads.
+// Failed cells remain empty and are retried; bounded TTL avoids a process-lifetime cache.
+type MetadataCell = std::sync::Arc<tokio::sync::OnceCell<Value>>;
+static METADATA: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, MetadataCell)>>> = std::sync::LazyLock::new(Default::default);
+async fn metadata(
+    platform: Platform,
+    suffix: &str,
+    settings: &crate::network_settings::NetworkSettings,
+    transfer: &minecraft_java_rs_core::net::transfer::TransferContext,
+    key: Option<&crate::secrets::CurseforgeCredential>,
+) -> Result<Value, String> {
+    let cache_key = format!("{}{suffix}", platform.api());
+    let cell = {
+        let mut cache = METADATA.lock().unwrap_or_else(|e| e.into_inner());
+        cache.retain(|_, (created, cell)| created.elapsed().as_secs() < 600 || std::sync::Arc::strong_count(cell) > 1);
+        if cache.len() >= 512 {
+            if let Some(oldest) = cache.iter().filter(|(_, (_, cell))| std::sync::Arc::strong_count(cell) == 1).min_by_key(|(_, (at, _))| *at).map(|(key, _)| key.clone()) { cache.remove(&oldest); }
+        }
+        cache.entry(cache_key).or_insert_with(|| (std::time::Instant::now(), std::sync::Arc::new(tokio::sync::OnceCell::new()))).1.clone()
+    };
+    cell.get_or_try_init(|| fetch_metadata(platform, suffix, settings, transfer, key)).await.cloned()
 }
 
 fn normalized_project(

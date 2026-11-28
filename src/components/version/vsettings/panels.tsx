@@ -1,3 +1,5 @@
+import { SkinAuthSettings } from "../../settings/SkinAuthSettings";
+import { useSettings } from "../../../lib/settings";
 /**
  * 版本设置页的两个右侧独立页：概览（个性化 / 快捷方式 / 高级管理）与设置
  * （启动选项 / 内存分配 / 高级选项）。
@@ -680,7 +682,6 @@ const SERVER_LOGIN_HELP =
 const AUTH_SERVER_HELP = "填写第三方皮肤站的 Yggdrasil 认证地址。";
 const SERVER_REGISTER_HELP =
   "注册账号的网页地址，例如 https://example.com/auth/register。";
-const SERVER_NAME_HELP = "显示在登录页面的服务器名称。";
 const AUTO_JOIN_HELP =
   "在打开 Minecraft 后自动进入某服务器；用英文冒号分隔地址与端口，例如 233.233.233.233:12345。";
 const JVM_HELP =
@@ -699,6 +700,7 @@ const LWJGL_HELP =
   "是否使用 LWJGL Unsafe Agent 修复 LWJGL 3.4.1 的一个性能问题。";
 
 export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
+  const { settings: appSettings } = useSettings();
   const [settings, setSettings] = useState<VersionSettings | null>(null);
   const latest = useRef<VersionSettings | null>(null);
   const revision = useRef(0);
@@ -910,18 +912,27 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
     ? `将使用 ${effectiveJavaPath}`
     : "正在读取实例版本信息并解析 Java";
   const javaOptions = [
-    { value: "global", label: "跟随全局" },
-    { value: "", label: "自动选择" },
+    {
+      value: "global",
+      label: "跟随全局",
+      tooltip: global.javaPath || "使用全局 Java 设置",
+    },
+    { value: "", label: "自动选择", tooltip: JAVA_HELP },
     ...javas.map((java) => ({
       value: java.path,
       label: `${java.version || "未知版本"} · ${java.vendor}`,
+      tooltip: java.path,
     })),
   ];
   if (
     settings.javaPath &&
     !javas.some((java) => java.path === settings.javaPath)
   ) {
-    javaOptions.push({ value: settings.javaPath, label: settings.javaPath });
+    javaOptions.push({
+      value: settings.javaPath,
+      label: settings.javaPath,
+      tooltip: settings.javaPath,
+    });
   }
   const memoryManagementOptions = [
     {
@@ -946,15 +957,6 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
           </Button>
         </p>
       ) : null}
-      {/*
-        保存状态常驻一行固定高度：切换「跟随全局 / 单独设置」时只淡入淡出，
-        不再因为提示条瞬间插入 / 移除而让整页内容上下抖动。
-      */}
-      <div className="vst-save-status" role="status" aria-live="polite">
-        <span className="vst-saving" data-visible={saving ? "true" : "false"}>
-          正在保存...
-        </span>
-      </div>
       <Group title="启动选项">
         <Row
           label="版本隔离"
@@ -986,7 +988,7 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             placeholder="默认"
           />
         </Row>
-        <Row label="Java" help={JAVA_HELP}>
+        <Row label="Java">
           <Select
             value={settings.javaPath ?? "global"}
             ariaLabel="Java 选择"
@@ -1084,15 +1086,18 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
               placeholder="https://…/auth/register"
             />
           </Row>
-          <Row label="服务器名称" help={SERVER_NAME_HELP}>
-            <InheritedText
-              label="服务器名称"
-              value={settings.serverName}
-              globalValue={globalInstanceSettings.serverName ?? ""}
-              onChange={(value) => patch({ serverName: value })}
-              placeholder="显示在登录页面的服务器名称"
-            />
-          </Row>
+          <SkinAuthSettings
+            server={
+              settings.authServer ??
+              globalInstanceSettings.authServer ??
+              appSettings.littleskinServer
+            }
+            method={settings.skinAuthMethod}
+            globalMethod={appSettings.skinAuthMethod}
+            root={root}
+            versionId={versionId}
+            onChange={(method) => patch({ skinAuthMethod: method })}
+          />
         </Collapse>
         <Row label="自动进入服务器" help={AUTO_JOIN_HELP}>
           <InheritedText
@@ -1162,9 +1167,7 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             label="禁止更新 Mod"
             value={modUpdatesSetting(settings)}
             globalValue={modUpdatesSetting(global) ?? false}
-            onChange={(value) =>
-              patch({ disableModUpdates: value })
-            }
+            onChange={(value) => patch({ disableModUpdates: value })}
           />
         </Row>
         <Row

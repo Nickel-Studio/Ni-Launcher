@@ -13,6 +13,12 @@
   padding-bottom: var(--space-6);
   animation: ni-fade-up var(--t) var(--ease-out) both;
 }
+.pd-page:has(.ni-loading--detail) {
+  min-height: calc(100dvh - var(--titlebar-h) - var(--gutter) * 2);
+}
+.pd-downloads:has(> .ni-loading--detail) {
+  flex: 1 1 auto;
+}
 .pd-back__icon {
   transform: rotate(90deg);
 }
@@ -70,7 +76,7 @@
   overflow-wrap: anywhere;
 }
 .pd-error,
-.pd-card__empty {
+.pd-downloads__empty {
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-sm);
@@ -97,7 +103,7 @@
   min-width: 0;
   margin: 0;
 }
-.pd-card__empty {
+.pd-downloads__empty {
   background: var(--fill-2);
   color: var(--text-dim);
 }
@@ -189,12 +195,12 @@
 .pd-group__collapse {
   min-width: 0;
 }
-/* Reserve the version row and its compact dependency disclosure before mounting. */
+/* Match the mounted row: prerequisites now live above the version list. */
 .pd-row-slot {
   min-width: 0;
 }
 .pd-row-slot:not([data-mounted]) {
-  height: calc(var(--pd-row-height) + var(--space-7) + var(--space-1));
+  height: var(--pd-row-height);
 }
 /* 单行版本卡：发布类型图标 + 显示名 + 版本号 + 弹性空隙 + 加载器/大小/时间 + 状态。 */
 .pd-row {
@@ -218,7 +224,7 @@
 }
 .pd-row:disabled {
   opacity: 0.55;
-  cursor: not-allowed;
+  cursor: default;
 }
 /* Nickel 立方徽记：64px 源图行内显示为 32px（2x 清晰）。 */
 .pd-row__release {
@@ -373,51 +379,6 @@
   min-width: 0;
   margin-top: var(--space-1);
 }
-.pd-deps__toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--space-7);
-  padding: var(--space-1) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--fs-xs);
-  text-align: left;
-  transition: background var(--t) var(--ease);
-}
-.pd-deps__toggle:hover {
-  background: var(--fill-2);
-  color: var(--text);
-}
-.pd-deps__toggle svg {
-  flex: 0 0 auto;
-  width: var(--space-3);
-  height: var(--space-3);
-  transition: transform var(--t) var(--ease);
-}
-.pd-deps__toggle[aria-expanded="true"] svg {
-  transform: rotate(180deg);
-}
-.pd-deps__none {
-  display: flex;
-  align-items: center;
-  min-height: var(--space-7);
-  margin: var(--space-1) 0 0;
-  padding: var(--space-1) var(--space-3);
-  color: var(--text-faint);
-  font-size: var(--fs-xs);
-}
-.pd-deps__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
-}
-.pd-deps__hint,
 .pd-deps__meta {
   color: var(--text-faint);
   font-size: var(--fs-xs);
@@ -518,4 +479,18 @@
   .pd-deps__project {
     transition: none;
   }
+}
+
+.pd-section-title {
+  margin: 16px 16px 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pd-deps {
+  margin: 0 12px 12px;
+}
+.pd-deps__project {
+  width: 100%;
+  text-align: left;
 }

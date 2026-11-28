@@ -54,7 +54,10 @@ test("native envelope decoder authenticates fields and rejects malformed input",
   corrupt[corrupt.length - 1] ^= 1;
   assert.throws(() => openEnvelope(corrupt), /Invalid embedded API configuration/);
   assert.throws(() => openEnvelope(envelope([[4, "x"], [4, "y"]])));
-  assert.throws(() => openEnvelope(envelope([[5, "x"]])));
+  assert.throws(() => openEnvelope(envelope([[8, "x"]])));
+  assert.deepEqual(openEnvelope(envelope([[5, "skin-client"], [6, "skin-secret"], [7, "nickel://auth"]])), {
+    littleskin: { clientId: "skin-client", clientSecret: "skin-secret", redirectUri: "nickel://auth" },
+  });
   assert.equal(literalAbsent(Buffer.from("key-fixture", "utf16le"), "key-fixture"), false);
 });
 

@@ -14,6 +14,7 @@ export interface SkinAccount {
   uuid?: string | null;
   email?: string | null;
   server?: string | null;
+  authMethod?: "classic" | "oauth2";
 }
 
 /** 多角色会话中的一个角色。 */
@@ -45,6 +46,7 @@ export type SkinLoginOutcome =
 export interface SkinSession {
   sessionId: string;
   profiles: SkinProfile[];
+  oauthSiteName?: string;
 }
 
 /**

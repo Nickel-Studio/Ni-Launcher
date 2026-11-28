@@ -43,16 +43,16 @@ function durationFor(text: string): number {
 export function showToast(text: string, tone: ToastTone = "info"): void {
   const message = normalizeText(text);
   if (!message) return;
-  messages = messages.filter((item) => item.text !== message);
-  messages = [
-    ...messages,
-    {
-      id: ++sequence,
-      text: message,
-      tone,
-      duration: durationFor(message),
-    },
-  ].slice(-MAX_TOASTS);
+  const next = {
+    id: ++sequence,
+    text: message,
+    tone,
+    duration: durationFor(message),
+  };
+  // A repeat renews its timer without jumping to another position in the stack.
+  messages = messages.some((item) => item.text === message)
+    ? messages.map((item) => (item.text === message ? next : item))
+    : [...messages, next].slice(-MAX_TOASTS);
   emit();
 }
 

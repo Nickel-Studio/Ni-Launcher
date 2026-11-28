@@ -1,0 +1,50 @@
+.skin-auth-settings {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+.skin-auth-settings > .ni-seg {
+  justify-self: start;
+  max-width: 100%;
+}
+.skin-auth-settings__caption {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+/* Reserve room for the 3px focus ring inside the animated clipping boundary. */
+.skin-auth-settings > .ni-collapse {
+  margin-inline: -4px;
+}
+.skin-auth-settings__fields {
+  display: grid;
+  gap: 12px;
+  padding: 14px 4px 4px;
+}
+.skin-auth-settings__fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.skin-auth-settings__fields input {
+  width: 100%;
+  min-width: 0;
+}
+.skin-auth-settings__fields input:disabled {
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+  background: var(--fill-1);
+  cursor: default;
+}
+.skin-auth-settings__fields input[type="password"]::-ms-reveal {
+  display: none;
+}
+.skin-auth-settings__fields > .ni-btn {
+  justify-self: start;
+}
+.skin-auth-settings__fields [role="alert"] {
+  color: var(--danger);
+}
