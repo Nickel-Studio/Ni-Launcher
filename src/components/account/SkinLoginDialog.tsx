@@ -29,10 +29,8 @@ export function SkinLoginDialog({
   onAccount,
   onProfileSelect,
 }: SkinLoginDialogProps) {
-  if (!open) return null;
-
   return (
-    <Modal open onClose={onClose} title="登录皮肤站" width={420}>
+    <Modal open={open} onClose={onClose} title="登录皮肤站" width={420}>
       <LittleSkinAccount
         identity={EMPTY_IDENTITY}
         server={server}

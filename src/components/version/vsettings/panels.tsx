@@ -957,15 +957,6 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
           </Button>
         </p>
       ) : null}
-      {/*
-        保存状态常驻一行固定高度：切换「跟随全局 / 单独设置」时只淡入淡出，
-        不再因为提示条瞬间插入 / 移除而让整页内容上下抖动。
-      */}
-      <div className="vst-save-status" role="status" aria-live="polite">
-        <span className="vst-saving" data-visible={saving ? "true" : "false"}>
-          正在保存...
-        </span>
-      </div>
       <Group title="启动选项">
         <Row
           label="版本隔离"
@@ -1096,10 +1087,15 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             />
           </Row>
           <SkinAuthSettings
-            server={settings.authServer ?? globalInstanceSettings.authServer ?? appSettings.littleskinServer}
+            server={
+              settings.authServer ??
+              globalInstanceSettings.authServer ??
+              appSettings.littleskinServer
+            }
             method={settings.skinAuthMethod}
             globalMethod={appSettings.skinAuthMethod}
-            root={root} versionId={versionId}
+            root={root}
+            versionId={versionId}
             onChange={(method) => patch({ skinAuthMethod: method })}
           />
         </Collapse>
@@ -1171,9 +1167,7 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
             label="禁止更新 Mod"
             value={modUpdatesSetting(settings)}
             globalValue={modUpdatesSetting(global) ?? false}
-            onChange={(value) =>
-              patch({ disableModUpdates: value })
-            }
+            onChange={(value) => patch({ disableModUpdates: value })}
           />
         </Row>
         <Row

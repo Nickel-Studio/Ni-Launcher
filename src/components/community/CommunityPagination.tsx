@@ -4,15 +4,20 @@ export function CommunityPagination({
   page,
   hasMore,
   onPrevious,
+  onFirst,
   onNext,
 }: {
   page: number;
   hasMore: boolean;
   onPrevious: () => void;
+  onFirst: () => void;
   onNext: () => void;
 }) {
   return (
     <nav className="cv-pager" aria-label="检索结果分页">
+      <IconButton label="返回第一页" disabled={page <= 1} onClick={onFirst}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7m7-14-7 7 7 7" /></svg>
+      </IconButton>
       <IconButton label="上一页" disabled={page <= 1} onClick={onPrevious}>
         <svg
           viewBox="0 0 24 24"

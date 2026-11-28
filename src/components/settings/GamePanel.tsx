@@ -147,7 +147,7 @@ export function GamePanel() {
   const { instance } = useLaunchInstance();
   const [settings, setSettings] = useState<GameSettings | null>(null);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [, setSaving] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [javas, setJavas] = useState<JavaInstallation[]>([]);
   const [detecting, setDetecting] = useState(false);
@@ -602,9 +602,6 @@ export function GamePanel() {
           版本独立设置中还有更多高级选项可供调整。
         </p>
       </SettingsGroup>
-      <p className="st-game__status" role="status">
-        {saving ? "正在保存…" : ""}
-      </p>
     </div>
   );
 }

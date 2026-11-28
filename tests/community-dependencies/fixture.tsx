@@ -285,7 +285,14 @@ const histories = new Map<string, ModrinthVersion[]>([
       ),
     ],
   ],
-  ["PinnedMR", [version("LatestMR", "PinnedMR", "9.0.0", "1.21.1")]],
+  [
+    "PinnedMR",
+    [
+      version("LatestMR", "PinnedMR", "9.0.0", "1.21.1"),
+      exactVersions.get("ExactMR1")!,
+      exactVersions.get("ExactMR2")!,
+    ],
+  ],
   [
     "FabricAPI",
     [

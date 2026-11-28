@@ -364,6 +364,7 @@ function jeiVersion(
     gameVersions: ["1.21.1"],
     datePublished: "2026-01-01T00:00:00Z",
     releaseType: "release",
+    dependencies: [],
     files: [
       {
         url: `https://example.invalid/${filename}`,
@@ -520,6 +521,7 @@ function PaginationFixture() {
     <CommunityPagination
       page={page}
       hasMore
+      onFirst={() => setPage(1)}
       onPrevious={() => setPage((value) => Math.max(1, value - 1))}
       onNext={() => setPage((value) => value + 1)}
     />
@@ -812,11 +814,9 @@ async function runResultAndToolbarChecks(): Promise<void> {
     pagination.querySelectorAll<HTMLButtonElement>("button")
   );
   expect(
-    "分页只保留上一页与下一页",
-    pagerButtons.length === 2 &&
-      pagerButtons.every(
-        (button) => button.getAttribute("aria-label") !== "第一页"
-      ),
+    "分页包含返回第一页、上一页与下一页",
+    pagerButtons.length === 3 &&
+      pagerButtons[0].getAttribute("aria-label") === "返回第一页",
     pagerButtons.map((button) => button.getAttribute("aria-label")).join(", ")
   );
   required<HTMLButtonElement>(
@@ -1103,10 +1103,11 @@ async function runDetailChecks(): Promise<void> {
   if (placeholder) {
     const placeholderHeight = placeholder.getBoundingClientRect().height;
     const style = getComputedStyle(placeholder);
-    const reservedHeight = ["--pd-row-height", "--space-7", "--space-1"]
-      .reduce((total, token) => total + parseFloat(style.getPropertyValue(token)), 0);
+    const reservedHeight = parseFloat(
+      style.getPropertyValue("--pd-row-height")
+    );
     expect(
-      "懒挂载占位保留版本行和依赖入口高度",
+      "懒挂载占位只保留版本行高度，不再保留前置折叠入口",
       Math.abs(placeholderHeight - reservedHeight) <= 1,
       `${placeholderHeight}`
     );

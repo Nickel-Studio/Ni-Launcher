@@ -38,7 +38,12 @@ import {
   type VersionGroup,
 } from "./versionFilters";
 import { RequiredDependencies } from "./RequiredDependencies";
-import { prioritizeDependencyVersion, projectIdentity } from "./dependencies";
+import {
+  prioritizeDependencyVersion,
+  projectIdentity,
+  type DependencyEntry,
+} from "./dependencies";
+import { createDependencyCache } from "./dependencyCache";
 import "./projectDetail.css";
 
 export interface VersionQuery {
@@ -141,6 +146,29 @@ export function ProjectDetailPage<K extends ModrinthHit>({
   const pack = kind === "modpack";
   const projectId = projectIdentity(hit);
   const [versions, setVersions] = useState<ModrinthVersion[]>([]);
+  const [dependencyEntries, setDependencyEntries] = useState<
+    Map<string, DependencyEntry[]>
+  >(new Map());
+  const [dependencyRetry, setDependencyRetry] = useState(0);
+  const [dependenciesLoading, setDependenciesLoading] = useState(false);
+  const dependencyCache = useMemo(
+    () => createDependencyCache(hit, adapter.resolveDependency),
+    [projectId, adapter.resolveDependency]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    setDependenciesLoading(true);
+    void dependencyCache.load(versions, dependencyRetry > 0).then((entries) => {
+      if (!cancelled) {
+        setDependencyEntries(entries);
+        setDependenciesLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dependencyCache, versions, dependencyRetry]);
+
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -481,21 +509,6 @@ export function ProjectDetailPage<K extends ModrinthHit>({
           </p>
         ) : null}
       </section>
-      {dependencyContext ? (
-        <aside className="pd-dependency-context" aria-label="前置版本要求">
-          <p>
-            {dependencyContext.parentTitle} ·{" "}
-            {dependencyContext.parentVersion.versionNumber}
-            {dependencyContext.requiredVersion
-              ? ` 要求此项目的 ${
-                  dependencyContext.requiredVersion.versionNumber ||
-                  dependencyContext.requiredVersion.name
-                } 版本。`
-              : " 需要此项目，但未指定前置版本，请核对游戏版本与加载器后选择文件。"}
-          </p>
-          <p>不会自动安装前置；下载仍使用正常的另存为入口。</p>
-        </aside>
-      ) : null}
       <section className="pd-downloads" aria-label="版本下载">
         {filterState.pills.length >= 2 ? (
           <div className="pd-pills" role="group" aria-label="版本筛选">
@@ -571,6 +584,14 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                     刚发布的游戏版本可能暂未收录，稍后再来查看。
                   </p>
                 ) : null}
+                <RequiredDependencies
+                  versions={group.items}
+                  entries={dependencyEntries}
+                  loading={dependenciesLoading}
+                  onRetry={() => setDependencyRetry((n) => n + 1)}
+                  onOpen={onOpenDependency}
+                />
+                <h3 className="pd-section-title">版本列表</h3>
                 <ul className="pd-list">
                   {group.items.map((version) => {
                     const file = primaryFile(version);
@@ -639,6 +660,13 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                                   {formatBytes(file.sizeBytes)}
                                 </span>
                               ) : null}
+                              {(dependencyEntries.get(version.id)?.length ??
+                                0) > 0 ? (
+                                <span>
+                                  {dependencyEntries.get(version.id)!.length}{" "}
+                                  项前置
+                                </span>
+                              ) : null}
                               {relativeTime ? (
                                 <span className="pd-row__time">
                                   {relativeTime}
@@ -660,12 +688,6 @@ export function ProjectDetailPage<K extends ModrinthHit>({
                             </span>
                           </button>
                         </Tooltip>
-                        <RequiredDependencies
-                          project={hit}
-                          version={version}
-                          resolve={adapter.resolveDependency}
-                          onOpen={onOpenDependency}
-                        />
                       </LazyRow>
                     );
                   })}

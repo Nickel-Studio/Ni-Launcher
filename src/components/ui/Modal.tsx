@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./IconButton";
 import { IconClose } from "./icons";
@@ -50,6 +50,19 @@ export function Modal({
   ariaLabel = "对话框",
   className,
 }: ModalProps) {
+  const [retained, setRetained] = useState(open);
+  const present = open || retained;
+  const openRef = useRef(open);
+  openRef.current = open;
+  const snapshot = useRef({ title, description, children, footer });
+  if (open) snapshot.current = { title, description, children, footer };
+  if (!open) ({ title, description, children, footer } = snapshot.current);
+  useLayoutEffect(() => {
+    if (open) { setRetained(true); return; }
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(() => setRetained(false), reduced ? 0 : 180);
+    return () => window.clearTimeout(timer);
+  }, [open]);
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -69,7 +82,7 @@ export function Modal({
     closeRef.current = onClose;
   }, [onClose]);
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!present) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
     const active = document.activeElement;
@@ -87,7 +100,7 @@ export function Modal({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        if (dismissible) closeRef.current();
+        if (dismissible && openRef.current) closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -137,16 +150,18 @@ export function Modal({
         }
       });
     };
-  }, [open, dismissible]);
+  }, [present, dismissible]);
 
-  if (!open) return null;
+  if (!present) return null;
 
   return createPortal(
     <div
       className="ni-modal__backdrop"
+      data-closing={!open || undefined}
+      onClickCapture={(event) => { if (!open) { event.preventDefault(); event.stopPropagation(); } }}
       onMouseDown={(event) => {
         if (
-          dismissible &&
+          open && dismissible &&
           closeOnBackdrop &&
           event.target === event.currentTarget
         )
@@ -155,6 +170,7 @@ export function Modal({
     >
       <div
         ref={dialogRef}
+        inert={!open}
         className={["ni-modal", className].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"

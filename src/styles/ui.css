@@ -1024,3 +1024,11 @@
     transition: none;
   }
 }
+
+.ni-modal__backdrop[data-closing="true"] { animation: ni-modal-backdrop-out 180ms var(--ease-out) both; }
+.ni-modal__backdrop[data-closing="true"] .ni-modal { animation: ni-modal-out 180ms var(--ease-out) both; }
+@keyframes ni-modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ni-modal-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.975); } }
+@media (prefers-reduced-motion: reduce) {
+  .ni-modal__backdrop[data-closing="true"], .ni-modal__backdrop[data-closing="true"] .ni-modal { animation-duration: 1ms; }
+}

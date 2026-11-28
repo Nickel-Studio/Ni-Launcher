@@ -395,21 +395,6 @@ export default function Versions() {
             </Button>
             <div className="ni-eyebrow">Instances</div>
             <h1 className="vs-head__title">实例与版本</h1>
-            <div className="vs-head__meta">
-              <IconFolder aria-hidden />
-              <span className="vs-head__meta-label">当前实例目录</span>
-              {active ? (
-                <Tooltip label={active}>
-                  <span className="vs-head__root">
-                    {rootDisplayName(active, labels, defaultDir)}
-                  </span>
-                </Tooltip>
-              ) : (
-                <span className="vs-head__root vs-head__root--empty">
-                  未选择
-                </span>
-              )}
-            </div>
             {launch ? (
               <Tooltip label={`${launch.versionId} · ${launch.root}`}>
                 <div className="vs-head__launch">

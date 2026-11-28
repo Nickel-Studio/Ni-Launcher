@@ -178,12 +178,16 @@ export function ThemeArtwork({
         className={`ni-theme-artwork ni-theme-artwork--${placement} ${className}`}
         data-motif={layer.motif}
         data-active={layer.active}
-        viewBox={placement === "background" ? "0 0 1200 800" : "0 0 240 64"}
+        viewBox={placement === "background" ? "0 0 1200 800" : "0 0 1000 64"}
         preserveAspectRatio={placement === "background" ? "xMidYMid slice" : "xMidYMid meet"}
         aria-hidden="true"
         focusable="false"
       >
-        {placement === "titlebar" ? <TitlebarMotif motif={layer.motif} /> : <>
+        {placement === "titlebar" ? <>
+          <g transform="translate(10 0) scale(.85 1)"><TitlebarMotif motif={layer.motif} /></g>
+          <g transform="translate(385 8) scale(.7 .8)" opacity=".55"><TitlebarMotif motif={layer.motif} /></g>
+          <g transform="translate(740 -5) scale(1.08 1.1)" opacity=".8"><TitlebarMotif motif={layer.motif} /></g>
+        </> : <>
           <defs>
             <radialGradient id={glow}>
               <stop offset="0" stopColor="currentColor" stopOpacity="0.4" />

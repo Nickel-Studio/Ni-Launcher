@@ -1,3 +1,4 @@
+import { BackToTopBubble } from "../components/download/BackToTopBubble";
 import {
   useCallback,
   useEffect,
@@ -379,6 +380,21 @@ export default function Resources() {
     return () => window.cancelAnimationFrame(frame);
   }, [detail]);
 
+  const [scrollTarget, setScrollTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!detail && page === VANILLA_ID) {
+      setScrollTarget(null);
+      return;
+    }
+    let node = detail
+      ? detailHosts.current.get(detail.id) ?? null
+      : searchHost.current?.querySelector<HTMLElement>(".ni-pager__page") ??
+        null;
+    while (node && !/(auto|scroll)/.test(getComputedStyle(node).overflowY))
+      node = node.parentElement;
+    setScrollTarget(node);
+  }, [detail, page]);
+
   const groupMemoryRef = useRef(new Map<string, ReadonlySet<string>>());
   const groupMemory = useMemo<GroupMemory>(
     () => ({
@@ -392,6 +408,7 @@ export default function Resources() {
 
   return (
     <>
+      <BackToTopBubble target={scrollTarget} />
       {details.length ? (
         <div className="resources-details">
           {details.map((frame, index) => (

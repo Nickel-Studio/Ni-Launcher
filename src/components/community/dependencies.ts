@@ -34,6 +34,22 @@ export function dependencyKey(dependency: ProjectDependency): string {
   ]);
 }
 
+// Loader APIs are not ordinary prerequisites.
+export function isLoaderApi(
+  source: ModrinthHit["source"],
+  id: string
+): boolean {
+  return source === "curseforge"
+    ? ["306612", "634179"].includes(id)
+    : [
+        "P7dR8mSH",
+        "qvIfYCYJ",
+        "fabric-api",
+        "qsl",
+        "quilted-fabric-api",
+      ].includes(id);
+}
+
 // Keep different pinned versions; collapse repeated and unpinned declarations.
 export function requiredDependencies(
   dependencies: readonly ProjectDependency[],
@@ -46,6 +62,7 @@ export function requiredDependencies(
   const required = dependencies.filter(
     (dependency) =>
       dependency.dependencyType === "required" &&
+      !isLoaderApi(project.source, dependency.projectId) &&
       !(dependency.projectId && ownIds.has(dependency.projectId)) &&
       dependency.versionId !== version.id
   );
@@ -83,6 +100,12 @@ export function deduplicateResolvedDependencies(
   );
   const visible = entries.filter((entry) => {
     const resolved = entry.resolved;
+    if (
+      resolved &&
+      (isLoaderApi(resolved.project.source, resolved.project.projectId || "") ||
+        isLoaderApi(resolved.project.source, resolved.project.slug))
+    )
+      return false;
     return (
       !resolved ||
       resolved.project.source !== project.source ||

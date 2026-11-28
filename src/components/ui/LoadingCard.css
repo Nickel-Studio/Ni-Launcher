@@ -54,7 +54,7 @@
   display: block;
   width: 100%;
   height: auto;
-  color: var(--text-dim);
+  color: var(--accent-text, var(--accent));
   overflow: visible;
 }
 .ni-loading__label {
@@ -64,7 +64,7 @@
   font-weight: 500;
   line-height: var(--lh-snug);
   text-align: center;
-  color: var(--text-dim);
+  color: var(--accent-text, var(--accent));
 }
 .ni-loading__ground {
   opacity: 0.3;
