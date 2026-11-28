@@ -1,13 +1,19 @@
+import { useSkinAuthContext, sameSkinSite } from "../lib/skinAuth";
+import { SkinOAuthLogin } from "../components/account/SkinOAuthLogin";
+import { SkinSiteIcon } from "../components/account/SkinSiteIcon";
+
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useSettings } from "../lib/settings";
+import { showToast } from "../lib/toast";
 import { openVersionSettings, setRoute } from "../lib/nav";
 import { useLaunchInstance } from "../lib/instances";
 import {
@@ -56,6 +62,8 @@ import "./Home.css";
 const AVATAR_SIZE = 72;
 
 const EMPTY_IDENTITY: Identity = { name: "", email: "", loggedIn: false };
+// Preserve ordinary-mode selection when navigating through exclusive instances.
+let ordinaryAccountId: string | null = null;
 
 /** 账号写入（accounts_upsert）与激活（accounts_set_active）的结果。 */
 interface PersistResult {
@@ -170,10 +178,22 @@ function useAnimatedSwap(key: string, duration = 170) {
 
 export function Home() {
   const { settings, update } = useSettings();
-  const accountType = settings.accountType;
+  const { context: skinContext, ready: skinContextReady } =
+    useSkinAuthContext();
+  const accountType = skinContext.exclusive
+    ? "littleskin"
+    : settings.accountType;
+  const skinServer = skinContext.site.server;
 
   // ---- 多账号 ----
-  const { accounts, activeId, upsert, remove, setActive } = useAccounts();
+  const {
+    accounts,
+    activeId,
+    loading: accountsLoading,
+    upsert,
+    remove,
+    setActive,
+  } = useAccounts();
 
   // ---- 启动实例（实例与版本页选择，首页只消费） ----
   const { instance } = useLaunchInstance();
@@ -188,8 +208,13 @@ export function Home() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [linkError, setLinkError] = useState("");
-  /** 账号写入 / 激活失败的可执行提示；成功与退出、切换账号时清空。 */
-  const [accountNotice, setAccountNotice] = useState("");
+  useEffect(() => {
+    setSkinDialogOpen(false);
+    setProfileSwitch(null);
+    setPickerOpen(false);
+    setSkinSession(null);
+  }, [skinServer, skinContext.root, skinContext.versionId, skinContext.method]);
+
   /** 账号形态切换中：激活命令完成前禁用启动，避免沿用旧身份启动。 */
   const [accountSwitching, setAccountSwitching] = useState(false);
 
@@ -203,11 +228,78 @@ export function Home() {
 
   const typedAccount = useMemo<Account | null>(
     () =>
-      activeAccount && activeAccount.type === accountType
+      activeAccount &&
+      activeAccount.type === accountType &&
+      (accountType !== "littleskin" ||
+        sameSkinSite(activeAccount.server ?? "", skinServer))
         ? activeAccount
         : null,
-    [activeAccount, accountType]
+    [activeAccount, accountType, skinServer]
   );
+
+  const reconciledScope = useRef("");
+  const accountScope = JSON.stringify([
+    skinContext.exclusive,
+    accountType,
+    skinServer,
+    skinContext.root,
+    skinContext.versionId,
+  ]);
+  const authScope = useRef(accountScope);
+  authScope.current = accountScope;
+  useEffect(() => {
+    if (
+      !skinContextReady ||
+      accountsLoading ||
+      reconciledScope.current === accountScope
+    )
+      return;
+    reconciledScope.current = accountScope;
+    if (
+      skinContext.exclusive &&
+      activeAccount &&
+      !typedAccount &&
+      ordinaryAccountId === null
+    )
+      ordinaryAccountId = activeId;
+    const matches = (account: Account) =>
+      account.type === accountType &&
+      (accountType !== "littleskin" ||
+        sameSkinSite(account.server ?? "", skinServer));
+    const candidate =
+      accountType === "offline"
+        ? ""
+        : typedAccount?.id ??
+          accounts.find(
+            (account) => account.id === ordinaryAccountId && matches(account)
+          )?.id ??
+          accounts.find(matches)?.id ??
+          "";
+    if (candidate !== activeId) {
+      setAccountSwitching(true);
+      void setActive(candidate)
+        .then((ok) => {
+          if (!ok) showToast("账号切换未能保存，请重试。", "error");
+        })
+        .finally(() => setAccountSwitching(false));
+    }
+  }, [
+    accountScope,
+    skinContextReady,
+    accountsLoading,
+    accounts,
+    activeId,
+    activeAccount,
+    typedAccount,
+    accountType,
+    skinServer,
+    skinContext.exclusive,
+    setActive,
+  ]);
+  useEffect(() => {
+    if (skinContextReady && !skinContext.exclusive && typedAccount)
+      ordinaryAccountId = typedAccount.id;
+  }, [skinContextReady, skinContext.exclusive, typedAccount]);
 
   const offlineName = typedAccount?.name ?? settings.offlineUsername ?? "";
 
@@ -267,31 +359,27 @@ export function Home() {
 
   const handleAccountTypeChange = useCallback(
     (value: string) => {
+      if (skinContext.exclusive) return;
       const next = value as AccountType;
       update({ accountType: next });
-      // 切换形态即离开原账号语境，旧的持久化提示不再适用。
-      setAccountNotice("");
       // 离线形态没有后端账号，清掉 active 避免继续沿用上一次的在线身份。
       const nextActive =
         next === "offline"
           ? ""
-          : accounts.find((a) => a.type === next)?.id ?? "";
+          : accounts.find(
+              (a) =>
+                a.type === next &&
+                (next !== "littleskin" ||
+                  sameSkinSite(a.server ?? "", skinServer))
+            )?.id ?? "";
       // 激活命令完成前置为切换中，启动按钮暂时不可用。
       setAccountSwitching(true);
       void setActive(nextActive).finally(() => setAccountSwitching(false));
     },
-    [update, accounts, setActive]
+    [update, accounts, setActive, skinContext.exclusive, skinServer]
   );
 
-  /**
-   * 微软设备码登录成功：后端 msa_device_poll 已把权威账号落库。
-   * upsert 会再次调用 accounts_upsert 同步前端列表，由后端按 id 合并、
-   * 保留 access_token / 密码等敏感字段；这里不再拼同名影子账号。
-   *
-   * 两个命令失败时都不会抛错，而是返回布尔值；本函数必须自行兜住所有失败
-   * 且永不 reject，否则登录组件里的错误提示不可达。即使 upsert 失败也要
-   * 继续激活，避免把已成功登录的账号误报为未登录。
-   */
+  /** Authentication is already complete; Home alone notifies the final persistence result. */
   const applyMicrosoftAccount = useCallback(
     async (account: Account) => {
       const result = await persistAccount({
@@ -302,14 +390,13 @@ export function Home() {
         email: account.email,
         server: undefined,
       });
-      // 写入与激活独立判断；两项都成功时返回空字符串，清除旧提示。
-      setAccountNotice(persistNotice(result, MICROSOFT_PERSIST_MESSAGES));
       setAvatarNonce((n) => n + 1);
+      const notice = persistNotice(result, MICROSOFT_PERSIST_MESSAGES);
+      showToast(notice || "Microsoft 登录成功", notice ? "error" : "success");
     },
     [persistAccount]
   );
 
-  /** 皮肤站多角色：后端返回的权威账号落库并设为当前账号。 */
   const applySkinAccount = useCallback(
     async (account: SkinAccount) => {
       const result = await persistAccount({
@@ -318,11 +405,8 @@ export function Home() {
         name: account.name || "Player",
         uuid: account.uuid ?? undefined,
         email: account.email ?? undefined,
-        server: account.server ?? settings.littleskinServer,
+        server: account.server ?? skinServer,
       });
-      // 持久化失败不阻断登录结果展示，只用可执行提示告知用户如何处理。
-      setAccountNotice(persistNotice(result, SKIN_PERSIST_MESSAGES));
-      // 登录时返回的角色列表只在这一次可用：缓存下来供「切换角色」即时渲染。
       const session = getSkinSession();
       const profiles: SkinProfile[] =
         session?.profiles ??
@@ -331,8 +415,13 @@ export function Home() {
           : []);
       writeCachedProfiles(account.id, profiles);
       setAvatarNonce((n) => n + 1);
+      const notice = persistNotice(result, SKIN_PERSIST_MESSAGES);
+      showToast(
+        notice || `${skinContext.site.name} 登录成功`,
+        notice ? "error" : "success"
+      );
     },
-    [persistAccount, settings.littleskinServer]
+    [persistAccount, skinServer, skinContext.site.name]
   );
 
   /** 皮肤站返回多角色：统一在首页弹出单选弹窗（若登录发生在弹窗里，先关掉那个弹窗）。 */
@@ -342,8 +431,6 @@ export function Home() {
   }, []);
 
   const handleLogout = useCallback(() => {
-    // 退出后旧的「激活状态未能写入」等提示不再适用。
-    setAccountNotice("");
     setSkinSession(null);
     // 激活命令完成前置为切换中，避免「退出后立刻启动」仍沿用旧账号身份。
     setAccountSwitching(true);
@@ -356,17 +443,30 @@ export function Home() {
       // 重复点当前账号不做任何状态重排，避免头像被无谓刷新。
       if (id === activeId) return;
       const target = accounts.find((account) => account.id === id);
-      if (!target) return;
-      // 切换账号后旧账号的持久化提示不应残留。
-      setAccountNotice("");
-      if (target.type !== accountType) update({ accountType: target.type });
+      if (
+        !target ||
+        (skinContext.exclusive &&
+          (target.type !== "littleskin" ||
+            !sameSkinSite(target.server ?? "", skinServer)))
+      )
+        return;
+      if (!skinContext.exclusive && target.type !== accountType)
+        update({ accountType: target.type });
       // 激活命令完成前置为切换中，避免「切账号后立刻启动」沿用旧账号身份。
       setAccountSwitching(true);
       void setActive(id).finally(() => setAccountSwitching(false));
       setSkinSession(null);
       setAvatarNonce((n) => n + 1);
     },
-    [accounts, activeId, accountType, update, setActive]
+    [
+      accounts,
+      activeId,
+      accountType,
+      update,
+      setActive,
+      skinContext.exclusive,
+      skinServer,
+    ]
   );
 
   /** 列表里没有想要的账号：退出当前账号，回到同形态的登录表单。 */
@@ -398,15 +498,11 @@ export function Home() {
    * 若配置的是 Yggdrasil API 根，先回退到站点根（保留子目录）再拼路径。
    */
   const skinSiteUrl = useMemo(() => {
-    const raw = (
-      typedAccount?.server ??
-      settings.littleskinServer ??
-      ""
-    ).trim();
+    const raw = (typedAccount?.server ?? skinServer ?? "").trim();
     const site = raw.replace(/\/+$/, "") || "https://littleskin.cn";
     const root = /^https?:\/\//i.test(site) ? site : `https://${site}`;
     return `${stripYggdrasilRoot(root)}/user/player`;
-  }, [typedAccount?.server, settings.littleskinServer]);
+  }, [typedAccount?.server, skinServer]);
 
   const handleOpenSkinSite = useCallback(async () => {
     setLinkError("");
@@ -420,10 +516,16 @@ export function Home() {
   /** 切换角色：用后端待选会话绑定令牌，不会新建重复账号。 */
   const handleSwitchProfile = useCallback(
     async (profile: SkinProfile, sessionId: string) => {
+      const current = authScope.current;
       const updated = await invoke<SkinAccount>("yggdrasil_select_profile", {
         sessionId,
         profileId: profile.id,
       });
+      if (
+        current !== authScope.current ||
+        !sameSkinSite(updated.server ?? "", skinServer)
+      )
+        return;
       const result = await persistAccount({
         id: updated.id,
         type: "littleskin",
@@ -432,15 +534,18 @@ export function Home() {
         email: updated.email ?? typedAccount?.email ?? undefined,
         server: updated.server ?? typedAccount?.server ?? undefined,
       });
-      setAccountNotice(persistNotice(result, SKIN_PERSIST_MESSAGES));
+      const notice = persistNotice(result, SKIN_PERSIST_MESSAGES);
+      if (notice) showToast(notice, "error");
       setAvatarNonce((n) => n + 1);
     },
-    [typedAccount, persistAccount]
+    [typedAccount, persistAccount, skinServer]
   );
 
   const canLaunch =
+    skinContextReady &&
     instance !== null &&
     launchUsername.trim() !== "" &&
+    (accountType === "offline" || typedAccount !== null) &&
     !launcher.running &&
     !accountSwitching;
 
@@ -480,17 +585,25 @@ export function Home() {
     return launcher.exportErrorReport(reportTarget);
   }, [reportTarget, launcher.exportErrorReport]);
 
-  const accountForm = (
-    <AccountPanel
-      accountType={accountType}
-      identity={effectiveIdentity}
-      littleskinServer={settings.littleskinServer ?? ""}
-      onMicrosoftAccount={applyMicrosoftAccount}
-      onSkinAccount={applySkinAccount}
-      onLogout={handleLogout}
-      onProfileSelect={handleProfileSelect}
-    />
-  );
+  const accountForm =
+    accountType === "littleskin" && skinContext.method === "oauth2" ? (
+      <SkinOAuthLogin
+        context={skinContext}
+        onAccount={applySkinAccount}
+        onProfileSelect={handleProfileSelect}
+        disabled={!skinContextReady}
+      />
+    ) : (
+      <AccountPanel
+        accountType={accountType}
+        identity={effectiveIdentity}
+        littleskinServer={skinServer ?? ""}
+        onMicrosoftAccount={applyMicrosoftAccount}
+        onSkinAccount={applySkinAccount}
+        onLogout={handleLogout}
+        onProfileSelect={handleProfileSelect}
+      />
+    );
 
   // 角色区 / 表单 —— 账号形态或登录态变化时淡出→淡入。
   const swapKey = `${accountType}:${effectiveIdentity.loggedIn ? "in" : "out"}`;
@@ -521,7 +634,7 @@ export function Home() {
           size={AVATAR_SIZE}
           source={accountType}
           uuid={typedAccount?.uuid}
-          server={typedAccount?.server ?? settings.littleskinServer}
+          server={typedAccount?.server ?? skinServer}
           reloadKey={avatarNonce}
         />
         {!isOffline ? (
@@ -565,11 +678,18 @@ export function Home() {
           className="home__top home__stage home__stage--1"
           inert={launcher.starting}
         >
-          <AccountTypeTabs
-            className="home__accounts"
-            value={accountType}
-            onChange={handleAccountTypeChange}
-          />
+          {skinContext.exclusive ? (
+            <div className="home__skin-title" title={skinServer}>
+              <SkinSiteIcon site={skinContext.site} />
+              {skinContext.site.name} 登录
+            </div>
+          ) : (
+            <AccountTypeTabs
+              className="home__accounts"
+              value={accountType}
+              onChange={handleAccountTypeChange}
+            />
+          )}
         </div>
 
         {/* 中部：角色区 / 未登录表单 */}
@@ -611,13 +731,6 @@ export function Home() {
             </div>
           </div>
         </div>
-
-        {/* 登录后的本地持久化提示：放在账号区之外，未登录/已登录都可达。 */}
-        {accountNotice ? (
-          <InlineNotice tone="warning" icon={<IconAlert />} role="status">
-            {accountNotice}
-          </InlineNotice>
-        ) : null}
 
         {/* 启动进度顶替角色区，底部操作保持原有占位。 */}
         <div className="home__launch home__stage home__stage--3">
@@ -664,20 +777,15 @@ export function Home() {
             </div>
           </>
 
-          {launchError ? (
-            <LaunchErrorDialog
-              key={`${reportTarget?.gameDir ?? ""}:${
-                reportTarget?.versionId ?? ""
-              }:${launchError.reason}`}
-              open
-              title={launchError.title}
-              reason={launchError.reason}
-              message={launchError.message}
-              onClose={launcher.clearError}
-              onOpenLogs={reportTarget ? handleOpenLogs : undefined}
-              onExportReport={reportTarget ? handleExportReport : undefined}
-            />
-          ) : null}
+          <LaunchErrorDialog
+            open={Boolean(launchError)}
+            title={launchError?.title ?? "启动失败"}
+            reason={launchError?.reason ?? ""}
+            message={launchError?.message ?? ""}
+            onClose={launcher.clearError}
+            onOpenLogs={reportTarget ? handleOpenLogs : undefined}
+            onExportReport={reportTarget ? handleExportReport : undefined}
+          />
         </div>
       </Card>
 
@@ -688,7 +796,15 @@ export function Home() {
       <AccountSwitcherModal
         open={switcherOpen}
         onClose={() => setSwitcherOpen(false)}
-        accounts={accounts}
+        accounts={
+          skinContext.exclusive
+            ? accounts.filter(
+                (account) =>
+                  account.type === "littleskin" &&
+                  sameSkinSite(account.server ?? "", skinServer)
+              )
+            : accounts
+        }
         activeId={activeId}
         onSelect={handleSwitchAccount}
         onRemove={(id) => void remove(id)}
@@ -706,29 +822,28 @@ export function Home() {
       {/* 皮肤站登录弹窗：仅在没有可用会话时出现 */}
       <SkinLoginDialog
         open={skinDialogOpen}
-        server={settings.littleskinServer ?? ""}
+        server={skinServer ?? ""}
         onClose={() => setSkinDialogOpen(false)}
         onAccount={applySkinAccount}
         onProfileSelect={handleProfileSelect}
       />
 
       {/* 多角色本地切换：会话仍在时无需重新输入密码 */}
-      {profileSwitch ? (
-        <SkinProfileDialog
-          open
-          sessionId={profileSwitch.sessionId}
-          profiles={profileSwitch.profiles}
-          server={settings.littleskinServer ?? ""}
-          onResolved={(account) => {
-            void applySkinAccount(account);
-            setProfileSwitch(null);
-          }}
-          onCancelled={() => {
-            setProfileSwitch(null);
-            setSkinSession(null);
-          }}
-        />
-      ) : null}
+      <SkinProfileDialog
+        open={profileSwitch !== null}
+        sessionId={profileSwitch?.sessionId ?? ""}
+        profiles={profileSwitch?.profiles ?? []}
+        server={skinServer ?? ""}
+        oauthSiteName={profileSwitch?.oauthSiteName}
+        onResolved={async (account) => {
+          await applySkinAccount(account);
+          setProfileSwitch(null);
+        }}
+        onCancelled={() => {
+          setProfileSwitch(null);
+          setSkinSession(null);
+        }}
+      />
     </div>
   );
 }

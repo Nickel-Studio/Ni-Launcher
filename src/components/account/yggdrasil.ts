@@ -45,6 +45,7 @@ export type SkinLoginOutcome =
 export interface SkinSession {
   sessionId: string;
   profiles: SkinProfile[];
+  oauthSiteName?: string;
 }
 
 /**

@@ -1,3 +1,5 @@
+import { SkinAuthSettings } from "../../settings/SkinAuthSettings";
+import { useSettings } from "../../../lib/settings";
 /**
  * 版本设置页的两个右侧独立页：概览（个性化 / 快捷方式 / 高级管理）与设置
  * （启动选项 / 内存分配 / 高级选项）。
@@ -680,7 +682,6 @@ const SERVER_LOGIN_HELP =
 const AUTH_SERVER_HELP = "填写第三方皮肤站的 Yggdrasil 认证地址。";
 const SERVER_REGISTER_HELP =
   "注册账号的网页地址，例如 https://example.com/auth/register。";
-const SERVER_NAME_HELP = "显示在登录页面的服务器名称。";
 const AUTO_JOIN_HELP =
   "在打开 Minecraft 后自动进入某服务器；用英文冒号分隔地址与端口，例如 233.233.233.233:12345。";
 const JVM_HELP =
@@ -699,6 +700,7 @@ const LWJGL_HELP =
   "是否使用 LWJGL Unsafe Agent 修复 LWJGL 3.4.1 的一个性能问题。";
 
 export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
+  const { settings: appSettings } = useSettings();
   const [settings, setSettings] = useState<VersionSettings | null>(null);
   const latest = useRef<VersionSettings | null>(null);
   const revision = useRef(0);
@@ -1084,15 +1086,13 @@ export function SettingsPanel({ root, versionId, javas }: SettingsPanelProps) {
               placeholder="https://…/auth/register"
             />
           </Row>
-          <Row label="服务器名称" help={SERVER_NAME_HELP}>
-            <InheritedText
-              label="服务器名称"
-              value={settings.serverName}
-              globalValue={globalInstanceSettings.serverName ?? ""}
-              onChange={(value) => patch({ serverName: value })}
-              placeholder="显示在登录页面的服务器名称"
-            />
-          </Row>
+          <SkinAuthSettings
+            server={settings.authServer ?? globalInstanceSettings.authServer ?? appSettings.littleskinServer}
+            method={settings.skinAuthMethod}
+            globalMethod={appSettings.skinAuthMethod}
+            root={root} versionId={versionId}
+            onChange={(method) => patch({ skinAuthMethod: method })}
+          />
         </Collapse>
         <Row label="自动进入服务器" help={AUTO_JOIN_HELP}>
           <InheritedText

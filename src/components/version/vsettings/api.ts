@@ -71,6 +71,7 @@ export interface VersionSettings extends Record<string, unknown> {
   offlineSkinSlim: boolean | null;
   serverLogin: ServerLogin | null;
   authServer: string | null;
+  skinAuthMethod: "classic" | "oauth2" | null;
   serverRegistration: string | null;
   serverName: string | null;
   serverAddress: string | null;
@@ -189,6 +190,7 @@ export const DEFAULT_SETTINGS: VersionSettings = {
   offlineSkinSlim: null,
   serverLogin: null,
   authServer: null,
+  skinAuthMethod: null,
   serverRegistration: null,
   serverName: null,
   serverAddress: null,
@@ -359,6 +361,7 @@ export function normalizeSettings(raw: unknown): VersionSettings {
         ? record.serverLogin
         : null,
     authServer: settingString(record.authServer),
+    skinAuthMethod: record.skinAuthMethod === "oauth2" || record.skinAuthMethod === "classic" ? record.skinAuthMethod : null,
     serverRegistration: settingString(record.serverRegistration),
     serverName: settingString(record.serverName),
     serverAddress: settingString(record.serverAddress),
@@ -414,6 +417,7 @@ export async function saveVersionSettings(
     .catch(() => undefined)
     .then(async () => {
       await invoke("version_settings_set", { dir, versionId, json });
+      window.dispatchEvent(new Event("skin-auth-settings-changed"));
     });
   settingsQueues.set(key, pending);
   try {

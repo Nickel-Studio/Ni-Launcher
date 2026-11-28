@@ -113,7 +113,7 @@ async fn fetch_site_avatar(site: &str, name: &str) -> Option<(Vec<u8>, String)> 
 }
 
 async fn fetch_littleskin(site: &str, name: &str, uuid: Option<String>) -> Option<FetchedSkin> {
-    let api = store::yggdrasil_base(site);
+    let api = crate::skin_auth::skin_site_describe(site.to_owned(), None).await.api;
     let id = match uuid
         .map(|value| store::undash_uuid(&value))
         .filter(|value| !value.is_empty())
@@ -130,9 +130,6 @@ async fn fetch_littleskin(site: &str, name: &str, uuid: Option<String>) -> Optio
             });
         }
     }
-    // 头像接口挂在站点根，不在 Yggdrasil 路径下：`site_base` 只剥掉已知的
-    // `/api/yggdrasil` / `/yggdrasil` 后缀并保留站点子目录，避免请求
-    // `.../api/yggdrasil/avatar/player/...` 这类无效地址。
     let site_root = store::site_base(site);
     fetch_site_avatar(&site_root, name)
         .await

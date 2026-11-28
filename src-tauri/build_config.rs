@@ -70,6 +70,11 @@ fn project_value(value: &Value) -> Value {
     if let Some(key) = field(&value["curseforge"], "apiKey") {
         result.insert("curseforge".into(), serde_json::json!({ "apiKey": key }));
     }
+    let mut skin = Map::new();
+    for key in ["clientId", "clientSecret", "redirectUri"] {
+        if let Some(value) = field(&value["littleskin"], key) { skin.insert(key.into(), Value::String(value)); }
+    }
+    if !skin.is_empty() { result.insert("littleskin".into(), Value::Object(skin)); }
     Value::Object(result)
 }
 
@@ -93,6 +98,9 @@ pub fn with_environment(mut value: Value, lookup: impl Fn(&str) -> Option<String
         ("NICKEL_MSA_AUTHORITY", "microsoft", "authority"),
         ("NICKEL_MSA_REDIRECT_URI", "microsoft", "redirectUri"),
         ("NICKEL_CURSEFORGE_API_KEY", "curseforge", "apiKey"),
+        ("NICKEL_LITTLESKIN_CLIENT_ID", "littleskin", "clientId"),
+        ("NICKEL_LITTLESKIN_CLIENT_SECRET", "littleskin", "clientSecret"),
+        ("NICKEL_LITTLESKIN_REDIRECT_URI", "littleskin", "redirectUri"),
     ] {
         if let Some(text) = lookup(env_key).filter(|text| !text.trim().is_empty()) {
             if !value[section].is_object() {

@@ -756,3 +756,22 @@ mod tests {
         );
     }
 }
+
+pub(crate) fn littleskin_config(app: &AppHandle) -> Option<crate::skin_auth::ClientConfig> {
+    for path in candidate_paths(app) {
+        if let Some(text) = read_config_text(&path) {
+            if let Ok(value) = project_runtime_config(&text) {
+                let section = &value["littleskin"];
+                if let (Some(id), Some(secret), Some(redirect)) = (section["clientId"].as_str(), section["clientSecret"].as_str(), section["redirectUri"].as_str()) {
+                    if redirect == crate::skin_auth::CALLBACK { return Some(crate::skin_auth::ClientConfig { client_id: id.into(), client_secret: secret.into() }); }
+                }
+            }
+        }
+    }
+    let redirect = embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinRedirect).ok()??;
+    if redirect.as_str() != crate::skin_auth::CALLBACK { return None; }
+    Some(crate::skin_auth::ClientConfig {
+        client_id: embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinClient).ok()??.to_string(),
+        client_secret: embedded_config::open(EMBEDDED_CONFIG, Field::LittleSkinSecret).ok()??.to_string(),
+    })
+}

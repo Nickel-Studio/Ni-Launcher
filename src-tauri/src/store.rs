@@ -114,6 +114,10 @@ pub struct StoredAccount {
     /// 无法枚举 / 改绑，服务端要求重新 `authenticate`。明文不落盘、不回传前端。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<SealedSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<SealedSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_api: Option<String>,
 }
 
 impl std::fmt::Debug for StoredAccount {
@@ -154,6 +158,8 @@ impl Default for StoredAccount {
             refresh_token: None,
             expires_at: None,
             password: None,
+            oauth: None,
+            auth_api: None,
         }
     }
 }
@@ -593,12 +599,15 @@ mod tests {
             refresh_token: Some("REFRESH-TOKEN-VALUE".into()),
             expires_at: Some(123),
             password: Some(SealedSecret::new("v1:CIPHER-VALUE")),
+            oauth: Some(SealedSecret::new("v1:OAUTH-CIPHER")),
+            auth_api: None,
         };
         let public = stored.to_public();
         let value = serde_json::to_value(&public).unwrap();
         assert!(value.get("accessToken").is_none());
         assert!(value.get("clientToken").is_none());
         assert!(value.get("refreshToken").is_none());
+        assert!(value.get("oauth").is_none());
         assert!(value.get("password").is_none(), "密码密文不得回传前端");
         assert_eq!(
             value.get("type").and_then(|v| v.as_str()),

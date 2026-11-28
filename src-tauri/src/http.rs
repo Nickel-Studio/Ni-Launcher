@@ -131,7 +131,7 @@ pub fn urlencode(s: &str) -> String {
     out
 }
 
-fn encode_form(fields: &[(&str, &str)]) -> String {
+pub(crate) fn encode_form(fields: &[(&str, &str)]) -> String {
     fields
         .iter()
         .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))

@@ -29,6 +29,7 @@ const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("highPerformanceGpu", "高性能 GPU"),
     ("processPriority", "进程优先级"),
     ("serverLogin", "服务器登录方式"),
+    ("skinAuthMethod", "皮肤站认证方式"),
     ("serverName", "服务器名称"),
     ("serverRegistration", "服务器注册地址"),
     ("authServer", "认证服务器"),
@@ -157,6 +158,7 @@ fn valid_field(key: &str, value: &Value) -> bool {
             .is_some_and(|value| (512..=65_536).contains(&value)),
         "memoryManagement" => valid_choice(value, MEMORY_MANAGEMENT_VALUES),
         "processPriority" => valid_choice(value, &["low", "normal", "high"]),
+        "skinAuthMethod" => valid_choice(value, &["classic", "oauth2"]),
         "serverLogin" => valid_choice(value, &["any", "offline", "microsoft", "thirdParty"]),
         "serverName" => value.as_str().is_some_and(|value| {
             value.len() <= 256 && safe_text(value)

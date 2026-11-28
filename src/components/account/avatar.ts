@@ -20,15 +20,17 @@ export function mcHeadsUrl(name: string, size = 160): string {
 /* --------------------------------------------------------------- 本地缓存 */
 const CACHE_PREFIX = "nickel.avatar.";
 
-function cacheKey(name: string): string {
-  const key = (name || "").trim().toLowerCase();
-  return `${CACHE_PREFIX}${key || "__default__"}`;
+function cacheKey(name: string, scope?: string): string {
+  const key = (name || "").trim().toLowerCase() || "__default__";
+  return `${CACHE_PREFIX}${
+    scope === undefined ? key : JSON.stringify([scope, key])
+  }`;
 }
 
 /** 读取本地缓存的头像 dataURL（无则返回 null）。 */
-export function readAvatarCache(name: string): string | null {
+export function readAvatarCache(name: string, scope?: string): string | null {
   try {
-    const value = window.localStorage.getItem(cacheKey(name));
+    const value = window.localStorage.getItem(cacheKey(name, scope));
     return value && value.startsWith("data:") ? value : null;
   } catch {
     return null;
@@ -36,19 +38,23 @@ export function readAvatarCache(name: string): string | null {
 }
 
 /** 写入本地缓存的头像 dataURL。 */
-export function writeAvatarCache(name: string, dataUrl: string): void {
+export function writeAvatarCache(
+  name: string,
+  dataUrl: string,
+  scope?: string
+): void {
   if (!dataUrl || !dataUrl.startsWith("data:")) return;
   try {
-    window.localStorage.setItem(cacheKey(name), dataUrl);
+    window.localStorage.setItem(cacheKey(name, scope), dataUrl);
   } catch {
     /* 存储禁用 / 超额：忽略，不影响主流程 */
   }
 }
 
 /** 移除某个名字的本地头像缓存。 */
-export function clearAvatarCache(name: string): void {
+export function clearAvatarCache(name: string, scope?: string): void {
   try {
-    window.localStorage.removeItem(cacheKey(name));
+    window.localStorage.removeItem(cacheKey(name, scope));
   } catch {
     /* ignore */
   }

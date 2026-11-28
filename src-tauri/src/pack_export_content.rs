@@ -113,7 +113,8 @@ pub(super) fn sensitive_path(path: &str) -> bool {
             )
             || matches!(
                 name.as_str(),
-                "accounts.json"
+                "skin-oauth-clients.json"
+                    | "accounts.json"
                     | "launcher_accounts.json"
                     | "launcher_profiles.json"
                     | "usercache.json"

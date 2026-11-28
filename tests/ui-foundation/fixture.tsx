@@ -120,7 +120,30 @@ window.__TAURI_INTERNALS__ = {
     if (command === "settings_get") {
       return window.localStorage.getItem("nickel.settings") ?? "{}";
     }
-    if (command === "settings_set") return null;
+    if (command === "settings_set" || command === "skin_oauth_cancel")
+      return null;
+    if (command === "skin_auth_context")
+      return {
+        exclusive: false,
+        method: "classic",
+        site: {
+          server: "https://littleskin.cn",
+          api: "https://littleskin.cn/api/yggdrasil",
+          name: "LittleSkin",
+          homepage: "https://littleskin.cn",
+          register: "",
+        },
+        root: args.root,
+        versionId: args.versionId,
+      };
+    if (command === "skin_site_describe")
+      return {
+        server: args.server,
+        api: `${args.server}/api/yggdrasil`,
+        name: "LittleSkin",
+        homepage: args.server,
+        register: "",
+      };
     if (command === "accounts_list") {
       const raw = window.localStorage.getItem("nickel.accounts");
       return raw ? JSON.parse(raw) : [];

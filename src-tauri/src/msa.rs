@@ -217,6 +217,8 @@ pub async fn msa_device_poll(
         refresh_token,
         expires_at: Some(store::now_secs() + 86_000),
         password: None,
+        oauth: None,
+        auth_api: None,
     }
     .normalize();
 

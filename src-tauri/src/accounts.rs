@@ -36,6 +36,8 @@ pub fn accounts_upsert(app: AppHandle, account: StoredAccount) -> Result<Vec<Acc
             incoming.expires_at = existing.expires_at.clone();
         }
         // 密码密文只由登录 / 选角流程写入；前端表单不会携带它，不能在此丢失。
+        if incoming.oauth.is_none() { incoming.oauth = existing.oauth.clone(); }
+        if incoming.auth_api.is_none() { incoming.auth_api = existing.auth_api.clone(); }
         if incoming.password.is_none() {
             incoming.password = existing.password.clone();
         }

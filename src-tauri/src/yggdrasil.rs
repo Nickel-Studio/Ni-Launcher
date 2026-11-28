@@ -242,6 +242,8 @@ fn build_account(
         refresh_token: None,
         expires_at: None,
         password,
+        oauth: None,
+        auth_api: None,
     }
     .normalize()
 }
@@ -361,6 +363,7 @@ pub async fn yggdrasil_select_profile(
     session_id: String,
     profile_id: String,
 ) -> Result<Account, String> {
+    if session_id.starts_with("oauth_") { return crate::skin_oauth::select(app, session_id, profile_id).await; }
     // 会话表锁必须限制在这个块内：后面要 await 刷新，MutexGuard 不能跨 await。
     let (profile, pending) = {
         let mut map = pending_lock();
@@ -437,6 +440,7 @@ pub async fn yggdrasil_select_profile(
 /// 下次启动会走刷新 / 重新登录兜底。
 #[tauri::command]
 pub async fn yggdrasil_cancel(app: AppHandle, session_id: String) -> Result<(), String> {
+    if session_id.starts_with("oauth_") { crate::skin_oauth::skin_oauth_cancel(Some(session_id)); return Ok(()); }
     let pending = {
         let mut map = pending_lock();
         purge_expired(&mut map, Instant::now());
@@ -552,6 +556,7 @@ pub async fn yggdrasil_refresh(app: AppHandle, id: String) -> Result<Account, St
         return Err("缺少账号 id".to_string());
     }
     let account = store::find_account(&app, &id).ok_or_else(|| "账号不存在".to_string())?;
+    if account.oauth.is_some() { return crate::skin_oauth::refresh(app, account).await; }
     let (resp, client_token) =
         refresh_tokens(&account, Some(selected_profile_json(&account))).await?;
     apply_refresh(&app, &account, &resp, client_token, None)
@@ -568,6 +573,7 @@ pub async fn yggdrasil_profiles(app: AppHandle, id: String) -> Result<ProfileLis
         return Err("缺少账号 id".to_string());
     }
     let account = store::find_account(&app, &id).ok_or_else(|| "账号不存在".to_string())?;
+    if account.oauth.is_some() { return crate::skin_oauth::list_profiles(app, account).await; }
     // 已落盘账号的地址非法时拒绝重新认证，绝不把密码发往默认站点。
     let site = store::validate_stored_server(account.server.clone())?;
 

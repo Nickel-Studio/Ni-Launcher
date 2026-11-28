@@ -8,11 +8,13 @@ const magic = Buffer.from("NICKCFG1");
 export const TEST_KEY = "NICKEL_TEST_CURSEFORGE_KEY";
 export const BUILD_ENVIRONMENT = [
   "NICKEL_BUILD_SECRETS", "NICKEL_MSA_CLIENT_ID", "NICKEL_MSA_AUTHORITY",
-  "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY", "NICKEL_REQUIRE_RELEASE_SECRETS",
+  "NICKEL_MSA_REDIRECT_URI", "NICKEL_CURSEFORGE_API_KEY",
+  "NICKEL_LITTLESKIN_CLIENT_ID", "NICKEL_LITTLESKIN_CLIENT_SECRET", "NICKEL_LITTLESKIN_REDIRECT_URI", "NICKEL_REQUIRE_RELEASE_SECRETS",
 ];
 const fields = [
   ["microsoft", "clientId"], ["microsoft", "authority"],
   ["microsoft", "redirectUri"], ["curseforge", "apiKey"],
+  ["littleskin", "clientId"], ["littleskin", "clientSecret"], ["littleskin", "redirectUri"],
 ];
 const valid = (value) => typeof value === "string" && value.trim().length > 0 &&
   Buffer.byteLength(value.trim()) <= 8192 && !/\p{Cc}/u.test(value.trim());

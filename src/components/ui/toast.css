@@ -8,8 +8,37 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
+  max-width: calc(100vw - var(--gutter));
   pointer-events: none;
+}
+
+.ni-toast-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  padding-top: 0;
+  max-width: 100%;
+  transition: grid-template-rows var(--toast-collapse-duration) var(--ease),
+    padding-top var(--toast-collapse-duration) var(--ease);
+}
+
+.ni-toast-slot[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  padding-top: var(--space-2);
+}
+
+.ni-toast-slot[data-leaving="true"] {
+  /* Withdraw the message before closing its space in the stack. */
+  transition-delay: var(--toast-exit-duration);
+}
+
+.ni-toast-slot__clip {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ni-toast-slot[data-expanded="true"] > .ni-toast-slot__clip {
+  overflow: visible;
 }
 
 .ni-toast {
@@ -25,8 +54,18 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-snug);
   box-shadow: inset 3px 0 0 var(--accent), var(--shadow-2);
-  animation: ni-toast-in var(--t-slow) var(--ease-out) both;
-  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+  opacity: 0;
+  transform: translateX(calc(-100% - var(--space-4)));
+  transition: opacity var(--toast-exit-duration) var(--ease),
+    transform var(--toast-exit-duration) var(--ease);
+}
+
+.ni-toast-slot[data-expanded="true"] .ni-toast {
+  opacity: 1;
+  transform: none;
+  transition-duration: var(--t-slow);
+  transition-timing-function: var(--ease-out);
+  transition-delay: var(--toast-collapse-duration);
 }
 
 .ni-toast[data-tone="success"] {
@@ -37,11 +76,6 @@
 .ni-toast[data-tone="error"] {
   background: var(--danger-soft);
   box-shadow: inset 3px 0 0 var(--danger), var(--shadow-2);
-}
-
-.ni-toast[data-leaving="true"] {
-  opacity: 0;
-  transform: translateX(calc(var(--space-6) * -1));
 }
 
 .ni-toast__icon {
@@ -74,20 +108,10 @@
   overflow-wrap: anywhere;
 }
 
-@keyframes ni-toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(calc(var(--space-8) * -1 - var(--space-6)));
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ni-toast {
-    animation: none;
+  .ni-toast-slot,
+  .ni-toast-slot[data-leaving="true"],
+  .ni-toast-slot[data-expanded] .ni-toast {
     transition: none;
   }
 }

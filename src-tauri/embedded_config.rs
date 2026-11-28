@@ -12,7 +12,7 @@ const _: () = {
 };
 
 const MAGIC: &[u8; 8] = b"NICKCFG1";
-const FIELD_COUNT: usize = 4;
+const FIELD_COUNT: usize = 7;
 const KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 12;
 const TAG_BYTES: usize = 16;
@@ -28,6 +28,9 @@ pub enum Field {
     MicrosoftAuthority = 2,
     MicrosoftRedirect = 3,
     CurseforgeKey = 4,
+    LittleSkinClient = 5,
+    LittleSkinSecret = 6,
+    LittleSkinRedirect = 7,
 }
 
 impl Field {
@@ -37,6 +40,9 @@ impl Field {
             2 => Some(Self::MicrosoftAuthority),
             3 => Some(Self::MicrosoftRedirect),
             4 => Some(Self::CurseforgeKey),
+            5 => Some(Self::LittleSkinClient),
+            6 => Some(Self::LittleSkinSecret),
+            7 => Some(Self::LittleSkinRedirect),
             _ => None,
         }
     }
@@ -184,6 +190,9 @@ pub fn snapshot(bytes: &[u8]) -> Result<serde_json::Value, &'static str> {
             Field::MicrosoftAuthority => ("microsoft", "authority"),
             Field::MicrosoftRedirect => ("microsoft", "redirectUri"),
             Field::CurseforgeKey => ("curseforge", "apiKey"),
+            Field::LittleSkinClient => ("littleskin", "clientId"),
+            Field::LittleSkinSecret => ("littleskin", "clientSecret"),
+            Field::LittleSkinRedirect => ("littleskin", "redirectUri"),
         };
         let value = open(bytes, record.field)?.ok_or("Invalid embedded API configuration")?;
         if output.get(section).is_none() {
@@ -249,7 +258,7 @@ mod tests {
         trailing.push(0);
         assert!(open(&trailing, Field::CurseforgeKey).is_err());
         let mut unknown = bytes.clone();
-        unknown[HEADER_BYTES] = 5;
+        unknown[HEADER_BYTES] = 255;
         assert!(open(&unknown, Field::CurseforgeKey).is_err());
         let mut swapped = bytes.clone();
         swapped[HEADER_BYTES] = Field::MicrosoftClient as u8;
