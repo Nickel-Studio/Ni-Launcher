@@ -35,6 +35,30 @@ pub fn with_idle<T>(directory: &Path, action: impl FnOnce() -> Result<T, String>
 mod tests {
     use super::*;
     #[test]
+    fn isolated_instances_can_coexist_without_unlocking_shared_paths() {
+        let root = std::env::temp_dir().join(format!("nickel-multi-{}", crate::store::random_token()));
+        let first = root.join("versions").join("first");
+        let second = root.join("versions").join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let a = begin(&first).unwrap();
+        let b = begin(&second).unwrap();
+        assert!(begin(&first).is_err());
+        assert!(begin(&root).is_err());
+        assert!(with_idle(&root, || Ok(())).is_err());
+        drop(a);
+        assert!(with_idle(&first, || Ok(())).is_ok());
+        assert!(with_idle(&second, || Ok(())).is_err());
+        assert!(with_idle(&root, || Ok(())).is_err());
+        drop(b);
+        let shared = begin(&root).unwrap();
+        assert!(begin(&first).is_err());
+        assert!(begin(&second).is_err());
+        drop(shared);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn running_child_blocks_root_until_exit() {
         let root = std::env::temp_dir().join(format!("nickel-running-{}", crate::store::random_token()));
         let child = root.join("versions").join("test");

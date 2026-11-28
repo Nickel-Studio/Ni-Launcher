@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright, expect
+from transition_checks import run_transition_checks
 
 START = "\u542f\u52a8\u6e38\u620f"
 CANCEL = "\u53d6\u6d88\u542f\u52a8"
@@ -187,7 +188,7 @@ def main():
             event(page, {"type": "speed", "bps": 1048576})
             expect(page.get_by_role("progressbar")).to_have_attribute("aria-valuenow", "50")
             page.get_by_role("button", name=CANCEL, exact=True).click()
-            expect(page.locator(".launch-panel__cancel")).to_be_disabled()
+            expect(page.locator(".launch-button")).to_be_disabled()
             check("animation: cancel issued once", len(calls(page, "launch_cancel")) == 1)
             event(page, {"type": "cancelled"})
             page.wait_for_timeout(300)
@@ -221,8 +222,7 @@ def main():
             check("hook: numeric progress", state(page)["percent"] == 30)
             event(page, {"type": "started"})
             check("hook: started closes preparation", state(page)["running"] and not state(page)["starting"] and state(page)["progress"] is None)
-            page.evaluate("window.__launchFixture.launch()")
-            check("hook: running launch is blocked", len(calls(page, "launch_game")) == 1)
+
             event(page, {"type": "progress", "downloaded": 99, "total": 100})
             event(page, {"type": "stage", "message": "Late stage"})
             event(page, {"type": "speed", "bps": 99})
@@ -392,7 +392,7 @@ def main():
             check("dialog: all footer controls disabled while saving", page.locator(".ni-modal__foot button:not(:disabled)").count() == 0)
             check("dialog: close icon unavailable while saving", page.get_by_role("dialog").get_by_role("button", name="\u5173\u95ed", exact=True).count() == 0)
             page.keyboard.press("Escape")
-            page.locator(".ni-modal__backdrop").click(position={"x": 2, "y": 2})
+            page.locator(".ni-modal__backdrop").click(position={"x": 40, "y": 40})
             expect(page.get_by_role("dialog")).to_be_visible()
             check("dialog: busy dismissal does not call close", snapshot(page)["closeCount"] == 0)
             page.evaluate("window.__launchFixture.release('report')")
@@ -461,6 +461,8 @@ def main():
             check("home: next launch targets new selection", calls(page, "launch_game")[-1]["payload"]["gameDir"] == "C:/launch-acceptance/different-instance")
 
         run_case("home-failed-instance-report-snapshot", {"mode": "home", "responses": {"launch_error_report_export": [{"value": "C:/launch-acceptance/report.zip"}]}}, failed_target)
+        if not args.smoke:
+            run_transition_checks(run_case, check, event, calls, state)
         browser_version = browser.version
         browser.close()
 

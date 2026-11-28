@@ -1,48 +1,23 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, LoadingCard, Modal } from "../ui";
 import { InlineNotice } from "../ui/InlineNotice";
 import { classifyFailure } from "../../lib/failure";
-import { ProgressBar } from "./ProgressBar";
-import type { LaunchDiagnostic, LaunchProgress } from "./useLauncher";
+import { ProgressBar, type ProgressBarProps } from "./ProgressBar";
+import type { LaunchDiagnostic } from "./useLauncher";
 import "./launch.css";
 
-export interface LaunchPanelProps {
+export interface LaunchPanelProps extends ProgressBarProps {
   instanceName: string;
-  stage: string;
-  progress: LaunchProgress | null;
-  percent: number | null;
-  speedBps: number | null;
-  onCancel: () => void;
-  cancelRequested?: boolean;
 }
 
-export function LaunchPanel({
-  instanceName,
-  stage,
-  progress,
-  percent,
-  speedBps,
-  onCancel,
-  cancelRequested = false,
-}: LaunchPanelProps) {
+export function LaunchPanel({ instanceName, ...progress }: LaunchPanelProps) {
   return (
-    <div className="launch-panel" role="status" aria-live="polite">
+    <div className="launch-panel">
       <LoadingCard size="inline" label="正在启动游戏" />
-      <p className="launch-panel__name">{instanceName}</p>
-      <ProgressBar
-        percent={percent}
-        stage={stage || "准备中..."}
-        progress={progress}
-        speedBps={speedBps}
-      />
-      <Button
-        variant="ghost"
-        className="launch-panel__cancel"
-        disabled={cancelRequested}
-        onClick={onCancel}
-      >
-        {cancelRequested ? "正在取消..." : "取消启动"}
-      </Button>
+      <p className="launch-panel__name" title={instanceName}>
+        {instanceName}
+      </p>
+      <ProgressBar {...progress} />
     </div>
   );
 }
@@ -52,6 +27,7 @@ export const ERROR_REPORT_GUIDANCE =
 
 export interface LaunchErrorDialogProps {
   open: boolean;
+  reportKey?: string | null;
   title: string;
   reason?: string;
   message: string;
@@ -62,6 +38,7 @@ export interface LaunchErrorDialogProps {
 
 export function LaunchErrorDialog({
   open,
+  reportKey,
   title,
   reason,
   message,
@@ -73,6 +50,10 @@ export function LaunchErrorDialog({
   const [exportError, setExportError] = useState("");
   const [exported, setExported] = useState(false);
   const pending = useRef(false);
+  useEffect(() => {
+    setExportError("");
+    setExported(false);
+  }, [reportKey]);
   const exportReport = async () => {
     if (!onExportReport || pending.current) return;
     pending.current = true;

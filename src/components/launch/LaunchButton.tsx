@@ -1,40 +1,69 @@
 import { IconPlay } from "../account/icons";
+import { IconClose } from "../ui/icons";
 import "./launch.css";
 
 export interface LaunchButtonProps {
-  running: boolean;
+  starting: boolean;
+  cancelRequested: boolean;
   disabled?: boolean;
   onClick: () => void;
-  /** 主行文案 */
-  label?: string;
-  /** 副行文案：当前选中版本名 */
+  onCancel: () => void;
   subLabel?: string;
 }
 
-/**
- * 大号启动按钮（去线框化：accent 实心大圆角块，无描边）。
- * 主行「启动游戏」+ 副行当前版本名。
- */
+const BUTTON_STATES = {
+  idle: { label: "启动游戏", icon: <IconPlay /> },
+  cancel: { label: "取消启动", icon: <IconClose /> },
+  cancelling: {
+    label: "正在取消...",
+    icon: <span className="launch-button__spinner" />,
+  },
+};
+
 export function LaunchButton({
-  running,
+  starting,
+  cancelRequested,
   disabled = false,
   onClick,
-  label = "启动游戏",
+  onCancel,
   subLabel,
 }: LaunchButtonProps) {
+  const state = starting ? (cancelRequested ? "cancelling" : "cancel") : "idle";
+
   return (
     <button
       type="button"
       className="launch-button"
-      data-running={running}
-      disabled={disabled || running}
-      onClick={onClick}
+      data-state={state}
+      disabled={starting ? cancelRequested : disabled}
+      onClick={starting ? onCancel : onClick}
+      aria-label={BUTTON_STATES[state].label}
+      aria-busy={cancelRequested}
+      title={subLabel}
     >
       <span className="launch-button__icon" aria-hidden="true">
-        {running ? <span className="launch-button__spinner" /> : <IconPlay />}
+        {Object.entries(BUTTON_STATES).map(([key, value]) => (
+          <span
+            key={key}
+            className="launch-button__glyph"
+            data-visible={state === key}
+          >
+            {value.icon}
+          </span>
+        ))}
       </span>
-      <span className="launch-button__text">
-        <span className="launch-button__main">{label}</span>
+      <span className="launch-button__text" aria-hidden="true">
+        <span className="launch-button__main">
+          {Object.entries(BUTTON_STATES).map(([key, value]) => (
+            <span
+              key={key}
+              className="launch-button__label"
+              data-visible={state === key}
+            >
+              {value.label}
+            </span>
+          ))}
+        </span>
         {subLabel ? (
           <span className="launch-button__sub">{subLabel}</span>
         ) : null}

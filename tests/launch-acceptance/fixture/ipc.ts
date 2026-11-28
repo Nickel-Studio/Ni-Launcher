@@ -91,6 +91,23 @@ export function installBackend(setup: Setup) {
             break;
           case "settings_set":
             break;
+          case "skin_oauth_cancel":
+            break;
+          case "skin_auth_context":
+            value = {
+              exclusive: false,
+              method: "classic",
+              root: payload.root,
+              versionId: payload.versionId,
+              site: {
+                server: "",
+                api: "",
+                name: "Fixture",
+                homepage: "",
+                register: "",
+              },
+            };
+            break;
           case "accounts_list":
             value = setup.accountType === "microsoft" ? [account] : [];
             break;

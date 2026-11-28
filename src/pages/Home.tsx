@@ -58,6 +58,7 @@ import {
   launchErrorInfo,
 } from "../components/launch/LaunchPanel";
 import { useLauncher } from "../components/launch/useLauncher";
+import { RetainedLaunchContent } from "../components/launch/LaunchTransition";
 import "./Home.css";
 
 const AVATAR_SIZE = 72;
@@ -584,7 +585,7 @@ export function Home() {
     instance !== null &&
     launchUsername.trim() !== "" &&
     (accountType === "offline" || typedAccount !== null) &&
-    !launcher.running &&
+    !launcher.starting &&
     !savingAccount &&
     !accountSwitching;
 
@@ -596,6 +597,7 @@ export function Home() {
     void launcher.launch({
       versionId: instance.versionId,
       gameDir: instance.root,
+      displayName: instance.displayName || instance.versionId,
       username: launchUsername.trim(),
       memoryMb: settings.memoryMb ?? 4096,
       source: settings.fileDownloadSource,
@@ -770,21 +772,21 @@ export function Home() {
               inert={!launcher.starting}
               aria-hidden={!launcher.starting}
             >
-              {launcher.starting ? (
+              <RetainedLaunchContent visible={launcher.starting}>
                 <LaunchPanel
                   instanceName={
-                    instance
-                      ? instance.displayName || instance.versionId
-                      : "未选择实例"
+                    launcher.activeTarget?.displayName ||
+                    launcher.activeTarget?.versionId ||
+                    "未选择实例"
                   }
+                  phase={launcher.phase}
                   stage={launcher.stage}
                   progress={launcher.progress}
                   percent={launcher.percent}
                   speedBps={launcher.speedBps}
                   cancelRequested={launcher.cancelRequested}
-                  onCancel={launcher.cancel}
                 />
-              ) : null}
+              </RetainedLaunchContent>
             </div>
           </div>
         </div>
@@ -793,22 +795,16 @@ export function Home() {
         <div className="home__launch home__stage home__stage--3">
           <>
             <LaunchButton
-              running={launcher.running}
+              starting={launcher.starting}
+              cancelRequested={launcher.cancelRequested}
               disabled={!canLaunch}
               onClick={handleLaunch}
-              label={
-                launcher.starting
-                  ? launcher.cancelRequested
-                    ? "正在取消..."
-                    : "正在启动..."
-                  : launcher.running
-                  ? "游戏运行中"
-                  : "启动游戏"
-              }
+              onCancel={launcher.cancel}
               subLabel={
-                instance
-                  ? instance.displayName || instance.versionId
-                  : "未选择实例"
+                launcher.starting
+                  ? launcher.activeTarget?.displayName ||
+                    launcher.activeTarget?.versionId
+                  : instance?.displayName || instance?.versionId || "未选择实例"
               }
             />
 
@@ -835,6 +831,7 @@ export function Home() {
           </>
 
           <LaunchErrorDialog
+            reportKey={launcher.failureId}
             open={Boolean(launchError)}
             title={launchError?.title ?? "启动失败"}
             reason={launchError?.reason ?? ""}

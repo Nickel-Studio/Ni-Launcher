@@ -13,12 +13,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri, type SourcePolicy } from "../../lib/settings";
 
-/** 后端 `launcher-event` 的原始 payload（字段做宽松兜底）。 */
 type RawPayload = Record<string, unknown>;
 
 function eventNumber(payload: RawPayload, key: string): number | undefined {
   const value = payload[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function eventString(payload: RawPayload, key: string): string | undefined {
@@ -26,12 +27,13 @@ function eventString(payload: RawPayload, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+export type LaunchPhase = "preparing" | "checking" | "downloading";
+
 export interface LaunchProgress {
-  /** 已下载字节 */
+  /** Completed files, not transferred bytes. */
   downloaded: number;
-  /** 总字节（可能为 0，表示未知） */
+  /** Total files; zero means unknown. */
   total: number;
-  /** 当前文件类别 / 阶段描述 */
   stage: string;
 }
 
@@ -42,12 +44,17 @@ export interface LaunchDiagnostic {
   message: string;
 }
 
+type LaunchTarget = Pick<LaunchArgs, "versionId" | "gameDir" | "displayName">;
+
 export interface LauncherState {
   running: boolean;
   starting: boolean;
   cancelRequested: boolean;
   exitCode: number | null;
-  reportTarget: Pick<LaunchArgs, "versionId" | "gameDir"> | null;
+  activeTarget: LaunchTarget | null;
+  reportTarget: LaunchTarget | null;
+  failureId: string | null;
+  phase: LaunchPhase;
   progress: LaunchProgress | null;
   percent: number | null;
   speedBps: number | null;
@@ -60,6 +67,7 @@ export interface LauncherState {
 export interface LaunchArgs {
   versionId: string;
   gameDir: string;
+  displayName?: string;
   username: string;
   memoryMb: number;
   source: SourcePolicy;
@@ -69,44 +77,93 @@ export interface UseLauncher extends LauncherState {
   launch: (args: LaunchArgs) => Promise<void>;
   cancel: () => void;
   clearError: () => void;
-  openLogs: (args: Pick<LaunchArgs, "versionId" | "gameDir">) => Promise<void>;
-  exportErrorReport: (
-    args: Pick<LaunchArgs, "versionId" | "gameDir">
-  ) => Promise<string | null>;
+  openLogs: (args: LaunchTarget) => Promise<void>;
+  exportErrorReport: (args: LaunchTarget) => Promise<string | null>;
 }
 
-/**
- * 启动流程状态机：封装 `launch_game` 调用 + `launcher-event` 订阅。
- *
- * 界面只消费准备阶段的进度与失败信息：运行日志由后端落盘，
- * 前端不再保留第二份日志缓冲，避免出现与磁盘不一致的重复记录。
- * 只处理当前线格式中有启动身份的事件，缺字段不崩溃。
- */
+interface LaunchFailure {
+  launchId: string;
+  target: LaunchTarget | null;
+  error: string;
+  diagnostic: LaunchDiagnostic | null;
+}
+
+interface Session {
+  target: LaunchTarget | null;
+  closed: boolean;
+}
+
+type ControllerState = Omit<
+  LauncherState,
+  "percent" | "error" | "diagnostic" | "failureId"
+> & {
+  failures: LaunchFailure[];
+};
+
+const EMPTY_PROGRESS = {
+  phase: "preparing" as const,
+  progress: null,
+  speedBps: null,
+  stage: "",
+};
+
+function progressLabel(kind: string, checking: boolean): string {
+  const category = checking ? kind.slice("校验:".length) : kind;
+  const names: Record<string, string> = {
+    assets: "游戏资源",
+    libraries: "依赖库",
+    java: "Java",
+    client: "游戏主文件",
+    minecraft: "游戏主文件",
+  };
+  return `${checking ? "正在校验" : "正在下载"}${
+    names[category.toLowerCase()] || category || "游戏文件"
+  }`;
+}
+
 function useLaunchController(): UseLauncher {
-  const [state, setState] = useState<Omit<LauncherState, "percent">>({
+  const [state, setState] = useState<ControllerState>({
     running: false,
     starting: false,
     cancelRequested: false,
     exitCode: null,
+    activeTarget: null,
     reportTarget: null,
-    progress: null,
-    speedBps: null,
-    stage: "",
-    error: "",
+    ...EMPTY_PROGRESS,
     warning: "",
-    diagnostic: null,
+    failures: [],
   });
   const mounted = useRef(true);
   const subscription = useRef<Promise<boolean> | null>(null);
-  // Synchronous ownership prevents duplicate calls before disabled controls commit.
+  // Only preparation owns the primary button; spawned games keep independent identities.
+  const sessions = useRef(new Map<string, Session>());
   const lifecycle = useRef({
-    active: false,
     preparing: false,
     cancelling: false,
     issued: false,
     generation: 0,
     launchId: "",
   });
+
+  const hasActiveSessions = () =>
+    [...sessions.current.values()].some((session) => !session.closed);
+
+  const recordFailure = useCallback((failure: LaunchFailure) => {
+    setState((prev) => {
+      const index = prev.failures.findIndex(
+        (item) => item.launchId === failure.launchId
+      );
+      const failures = [...prev.failures];
+      if (index < 0) failures.push(failure);
+      else
+        failures[index] = {
+          ...failure,
+          error: failure.error || failures[index].error,
+          diagnostic: failure.diagnostic || failures[index].diagnostic,
+        };
+      return { ...prev, failures };
+    });
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -121,168 +178,184 @@ function useLaunchController(): UseLauncher {
       const kind = eventString(payload, "type");
       const launchId = eventString(payload, "launchId");
       if (!launchId) return;
-      if (lifecycle.current.launchId && lifecycle.current.launchId !== launchId)
-        return;
       if (!lifecycle.current.launchId) {
         if (kind !== "preparing" && kind !== "started") return;
         lifecycle.current.launchId = launchId;
-        lifecycle.current.active = true;
         lifecycle.current.preparing = true;
         lifecycle.current.issued = true;
+        sessions.current.set(launchId, { target: null, closed: false });
       }
+      const session = sessions.current.get(launchId);
+      if (!session) return;
+      const current = lifecycle.current.launchId === launchId;
+      const preparing =
+        current && lifecycle.current.preparing && !session.closed;
+      const finishPreparation = () => {
+        if (!current) return;
+        lifecycle.current.preparing = false;
+        lifecycle.current.cancelling = false;
+        lifecycle.current.issued = false;
+      };
+      const settledState = () => ({
+        starting: false,
+        cancelRequested: false,
+        activeTarget: null,
+        ...EMPTY_PROGRESS,
+      });
 
       switch (kind) {
         case "preparing": {
+          if (!preparing) break;
           const versionId = eventString(payload, "versionId");
           const gameDir = eventString(payload, "gameDir");
-          lifecycle.current.active = true;
-          lifecycle.current.preparing = true;
-          lifecycle.current.cancelling = false;
+          if (versionId && gameDir)
+            session.target = { ...session.target, versionId, gameDir };
           setState((prev) => ({
             ...prev,
             running: true,
             starting: true,
-            cancelRequested: false,
-            error: "",
-            warning: "",
-            diagnostic: null,
-            progress: null,
-            speedBps: null,
+            cancelRequested: lifecycle.current.cancelling,
+            activeTarget: session.target,
+            reportTarget: session.target,
+            ...EMPTY_PROGRESS,
             exitCode: null,
             stage: "准备中...",
-            reportTarget:
-              versionId && gameDir ? { versionId, gameDir } : prev.reportTarget,
           }));
           break;
         }
         case "progress": {
-          if (!lifecycle.current.preparing) break;
-          const downloaded =
-            eventNumber(payload, "downloaded") ?? 0;
-          const total =
-            eventNumber(payload, "total") ?? 0;
-          const stage =
-            eventString(payload, "fileType") ?? "";
+          if (!preparing) break;
+          const downloaded = Math.max(
+            0,
+            Math.floor(eventNumber(payload, "downloaded") ?? 0)
+          );
+          const total = Math.max(
+            0,
+            Math.floor(eventNumber(payload, "total") ?? 0)
+          );
+          const stage = eventString(payload, "fileType") ?? "";
+          const checking = stage.startsWith("校验:");
+          const phase = checking ? "checking" : "downloading";
+          setState((prev) => ({
+            ...prev,
+            phase,
+            stage: progressLabel(stage, checking),
+            progress: { downloaded, total, stage },
+            speedBps:
+              phase === "downloading" && prev.phase === phase
+                ? prev.speedBps
+                : null,
+          }));
+          break;
+        }
+        case "speed": {
+          if (!preparing) break;
+          const bps = eventNumber(payload, "bps");
+          if (bps === undefined || bps < 0) break;
+          setState((prev) => ({
+            ...prev,
+            phase: "downloading",
+            progress: prev.phase === "downloading" ? prev.progress : null,
+            stage:
+              prev.phase === "downloading" ? prev.stage : "正在下载游戏文件",
+            speedBps: bps,
+          }));
+          break;
+        }
+        case "estimated": {
+          if (!preparing) break;
+          const seconds = eventNumber(payload, "seconds");
+          if (seconds === undefined || seconds < 0) break;
           setState((prev) =>
-            prev.starting
-              ? { ...prev, progress: { downloaded, total, stage } }
+            prev.phase === "downloading"
+              ? { ...prev, stage: `正在下载，预计剩余 ${Math.ceil(seconds)}s` }
               : prev
           );
           break;
         }
-        case "speed": {
-          if (!lifecycle.current.preparing) break;
-          const bps =
-            eventNumber(payload, "bps") ?? null;
-          setState((prev) =>
-            prev.starting ? { ...prev, speedBps: bps } : prev
-          );
-          break;
-        }
         case "stage": {
-          if (!lifecycle.current.preparing) break;
-          const message =
-            eventString(payload, "message") ?? "";
-          setState((prev) =>
-            prev.starting ? { ...prev, stage: message } : prev
-          );
+          if (!preparing) break;
+          setState((prev) => ({
+            ...prev,
+            ...EMPTY_PROGRESS,
+            stage: eventString(payload, "message") || "准备中...",
+          }));
           break;
         }
         case "started": {
-          if (!lifecycle.current.active) break;
-          lifecycle.current.preparing = false;
-          lifecycle.current.cancelling = false;
-          setState((prev) => ({
-            ...prev,
-            running: true,
-            starting: false,
-            cancelRequested: false,
-            stage: "",
-            progress: null,
-            speedBps: null,
-          }));
+          if (!preparing) break;
+          finishPreparation();
+          setState((prev) => ({ ...prev, ...settledState(), running: true }));
           break;
         }
         case "cancelled": {
-          if (!lifecycle.current.preparing) break;
-          lifecycle.current.active = false;
-          lifecycle.current.preparing = false;
-          lifecycle.current.cancelling = false;
-          lifecycle.current.issued = false;
+          if (!preparing) break;
+          session.closed = true;
+          finishPreparation();
           setState((prev) => ({
             ...prev,
-            running: false,
-            starting: false,
-            cancelRequested: false,
+            ...settledState(),
+            running: hasActiveSessions(),
             exitCode: null,
-            progress: null,
-            speedBps: null,
-            stage: "",
-            error: "",
-            diagnostic: null,
           }));
+          sessions.current.delete(launchId);
           break;
         }
         case "close": {
-          lifecycle.current.active = false;
-          lifecycle.current.preparing = false;
-          lifecycle.current.cancelling = false;
-          lifecycle.current.issued = false;
-          const code = eventNumber(payload, "code");
+          if (session.closed) break;
+          session.closed = true;
+          finishPreparation();
+          const code = eventNumber(payload, "code") ?? null;
           setState((prev) => ({
             ...prev,
-            running: false,
-            starting: false,
-            cancelRequested: false,
-            exitCode: code ?? null,
-            progress: null,
-            speedBps: null,
-            stage: "",
+            ...(current ? settledState() : {}),
+            running: hasActiveSessions(),
+            exitCode: code,
           }));
+          // Failed exits retain their target until the following diagnostic arrives.
+          if (code === 0) sessions.current.delete(launchId);
           break;
         }
         case "diagnostic": {
           const title = eventString(payload, "title") ?? "启动诊断";
-          const message =
-            eventString(payload, "message") ??
-            "未能确定具体原因。";
-          const summary = eventString(payload, "summary") ?? title;
-          const category =
-            eventString(payload, "category") ?? "unknown";
-          setState((prev) => ({
-            ...prev,
-            diagnostic: { category, title, summary, message },
-          }));
+          recordFailure({
+            launchId,
+            target: session.target,
+            error: "",
+            diagnostic: {
+              title,
+              message: eventString(payload, "message") ?? "未能确定具体原因。",
+              summary: eventString(payload, "summary") ?? title,
+              category: eventString(payload, "category") ?? "unknown",
+            },
+          });
+          if (session.closed) sessions.current.delete(launchId);
           break;
         }
         case "warning": {
-          const message =
-            eventString(payload, "message") ??
-            "启动项未生效";
-          setState((prev) => ({ ...prev, warning: message }));
+          if (!session.closed)
+            setState((prev) => ({
+              ...prev,
+              warning: eventString(payload, "message") ?? "启动项未生效",
+            }));
           break;
         }
         case "error": {
-          lifecycle.current.active = false;
-          lifecycle.current.preparing = false;
-          lifecycle.current.cancelling = false;
-          lifecycle.current.issued = false;
-          const message =
-            eventString(payload, "message") ?? "未知错误";
+          session.closed = true;
+          finishPreparation();
           setState((prev) => ({
             ...prev,
-            error: message,
-            running: false,
-            starting: false,
-            cancelRequested: false,
-            progress: null,
-            speedBps: null,
-            stage: "",
+            ...(current ? settledState() : {}),
+            running: hasActiveSessions(),
           }));
+          recordFailure({
+            launchId,
+            target: session.target,
+            error: eventString(payload, "message") ?? "未知错误",
+            diagnostic: null,
+          });
           break;
         }
-        default:
-          break;
       }
     });
     const ready = unlistenPromise.then(
@@ -296,79 +369,92 @@ function useLaunchController(): UseLauncher {
       if (subscription.current === ready) subscription.current = null;
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
-  }, []);
+  }, [recordFailure]);
 
-  const launch = useCallback(async (args: LaunchArgs) => {
-    if (!mounted.current || lifecycle.current.active) return;
-    const generation = ++lifecycle.current.generation;
-    const launchId = crypto.randomUUID();
-    lifecycle.current.launchId = launchId;
-    lifecycle.current.active = true;
-    lifecycle.current.preparing = true;
-    lifecycle.current.cancelling = false;
-    lifecycle.current.issued = false;
-    setState((prev) => ({
-      ...prev,
-      error: "",
-      warning: "",
-      diagnostic: null,
-      progress: null,
-      speedBps: null,
-      exitCode: null,
-      reportTarget: { versionId: args.versionId, gameDir: args.gameDir },
-      stage: "准备中...",
-      running: true,
-      starting: true,
-      cancelRequested: false,
-    }));
-    try {
-      const listener = subscription.current;
-      if (!listener || !(await listener))
-        throw new Error("启动状态订阅未能建立，请稍后重试或重新打开启动器。");
-      if (!mounted.current || lifecycle.current.generation !== generation)
-        return;
-      if (lifecycle.current.cancelling) {
-        lifecycle.current.active = false;
-        lifecycle.current.preparing = false;
-        lifecycle.current.cancelling = false;
-        setState((prev) => ({
-          ...prev,
-          running: false,
-          starting: false,
-          cancelRequested: false,
-          stage: "",
-        }));
-        return;
-      }
-      lifecycle.current.issued = true;
-      await invoke("launch_game", {
-        launchId,
+  const launch = useCallback(
+    async (args: LaunchArgs) => {
+      if (!mounted.current || lifecycle.current.preparing) return;
+      const generation = ++lifecycle.current.generation;
+      const launchId = crypto.randomUUID();
+      const target = {
         versionId: args.versionId,
         gameDir: args.gameDir,
-        username: args.username,
-        memoryMb: args.memoryMb,
-        source: args.source,
-      });
-    } catch (error) {
-      if (!mounted.current || lifecycle.current.generation !== generation)
-        return;
-      lifecycle.current.active = false;
-      lifecycle.current.preparing = false;
-      lifecycle.current.cancelling = false;
-      lifecycle.current.issued = false;
-      const message = error instanceof Error ? error.message : String(error);
+        displayName: args.displayName,
+      };
+      lifecycle.current = {
+        launchId,
+        generation,
+        preparing: true,
+        cancelling: false,
+        issued: false,
+      };
+      sessions.current.set(launchId, { target, closed: false });
       setState((prev) => ({
         ...prev,
-        error: message,
-        running: false,
-        starting: false,
+        ...EMPTY_PROGRESS,
+        warning: "",
+        exitCode: null,
+        activeTarget: target,
+        reportTarget: target,
+        stage: "准备中...",
+        running: true,
+        starting: true,
         cancelRequested: false,
-        progress: null,
-        speedBps: null,
-        stage: "",
       }));
-    }
-  }, []);
+      try {
+        const listener = subscription.current;
+        if (!listener || !(await listener))
+          throw new Error("启动状态订阅未能建立，请稍后重试或重新打开启动器。");
+        if (!mounted.current || lifecycle.current.generation !== generation)
+          return;
+        if (lifecycle.current.cancelling) {
+          sessions.current.delete(launchId);
+          lifecycle.current.preparing = false;
+          lifecycle.current.cancelling = false;
+          setState((prev) => ({
+            ...prev,
+            ...EMPTY_PROGRESS,
+            activeTarget: null,
+            running: hasActiveSessions(),
+            starting: false,
+            cancelRequested: false,
+          }));
+          return;
+        }
+        lifecycle.current.issued = true;
+        await invoke("launch_game", {
+          launchId,
+          versionId: args.versionId,
+          gameDir: args.gameDir,
+          username: args.username,
+          memoryMb: args.memoryMb,
+          source: args.source,
+        });
+      } catch (error) {
+        if (!mounted.current || lifecycle.current.generation !== generation)
+          return;
+        sessions.current.delete(launchId);
+        lifecycle.current.preparing = false;
+        lifecycle.current.cancelling = false;
+        lifecycle.current.issued = false;
+        setState((prev) => ({
+          ...prev,
+          ...EMPTY_PROGRESS,
+          activeTarget: null,
+          running: hasActiveSessions(),
+          starting: false,
+          cancelRequested: false,
+        }));
+        recordFailure({
+          launchId,
+          target,
+          error: error instanceof Error ? error.message : String(error),
+          diagnostic: null,
+        });
+      }
+    },
+    [recordFailure]
+  );
 
   const cancel = useCallback(() => {
     if (
@@ -395,39 +481,43 @@ function useLaunchController(): UseLauncher {
     });
   }, []);
 
+  // Background failures wait until preparation ends so they cannot cover its cancel control.
+  const failure = state.starting ? undefined : state.failures[0];
+  const error = failure?.error ?? "";
+  const diagnostic = failure?.diagnostic ?? null;
+  const failureId = failure?.launchId ?? null;
   const clearError = useCallback(() => {
-    setState((prev) => ({ ...prev, error: "", diagnostic: null }));
+    if (!failureId) return;
+    if (sessions.current.get(failureId)?.closed)
+      sessions.current.delete(failureId);
+    setState((prev) => ({
+      ...prev,
+      failures: prev.failures.filter((item) => item.launchId !== failureId),
+    }));
+  }, [failureId]);
+
+  const openLogs = useCallback(async (args: LaunchTarget) => {
+    try {
+      await invoke("launch_log_open", {
+        dir: args.gameDir,
+        versionId: args.versionId,
+      });
+    } catch {
+      // Opening a directory must not replace the original failure diagnostic.
+    }
   }, []);
 
-  const openLogs = useCallback(
-    async (args: Pick<LaunchArgs, "versionId" | "gameDir">) => {
-      try {
-        await invoke("launch_log_open", {
-          dir: args.gameDir,
-          versionId: args.versionId,
-        });
-      } catch {
-        // Opening a directory must not replace the original failure diagnostic.
-      }
-    },
-    []
-  );
-
   const exportErrorReport = useCallback(
-    (args: Pick<LaunchArgs, "versionId" | "gameDir">) =>
+    (args: LaunchTarget) =>
       invoke<string | null>("launch_error_report_export", {
         dir: args.gameDir,
         versionId: args.versionId,
-        failure: [
-          state.diagnostic?.summary,
-          state.diagnostic?.message,
-          state.error,
-        ]
+        failure: [diagnostic?.summary, diagnostic?.message, error]
           .filter(Boolean)
           .join("\n")
           .slice(0, 8000),
       }),
-    [state.diagnostic, state.error]
+    [diagnostic, error]
   );
 
   const percent = useMemo<number | null>(() => {
@@ -441,8 +531,13 @@ function useLaunchController(): UseLauncher {
     );
   }, [state.progress]);
 
+  const { failures: _failures, ...visibleState } = state;
   return {
-    ...state,
+    ...visibleState,
+    error,
+    diagnostic,
+    reportTarget: failure?.target ?? state.reportTarget,
+    failureId: failure?.launchId ?? null,
     percent,
     launch,
     cancel,

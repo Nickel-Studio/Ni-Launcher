@@ -342,6 +342,17 @@
   padding: 0;
   animation: none;
 }
+@media (max-height: 680px) {
+  .home__launch-progress .ni-loading {
+    --ni-art-width: 84px;
+  }
+  .home__launch-progress .launch-panel {
+    gap: var(--space-1);
+  }
+  .home__launch-progress .progress__row {
+    padding-block: 2px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .home__account,
   .home__launch-progress {

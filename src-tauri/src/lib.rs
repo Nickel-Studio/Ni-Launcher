@@ -104,6 +104,9 @@ pub enum FrontendEvent {
     Speed {
         bps: f64,
     },
+    Estimated {
+        seconds: f64,
+    },
     Stage {
         message: String,
     },
@@ -142,9 +145,7 @@ impl From<&LaunchEvent> for FrontendEvent {
                 file_type: kind.clone(),
             },
             LaunchEvent::Speed(bps) => FrontendEvent::Speed { bps: *bps },
-            LaunchEvent::Estimated(secs) => FrontendEvent::Stage {
-                message: format!("预计剩余 {secs:.0}s"),
-            },
+            LaunchEvent::Estimated(secs) => FrontendEvent::Estimated { seconds: *secs },
             LaunchEvent::Check {
                 current,
                 total,
@@ -200,6 +201,7 @@ fn redact_frontend_event(event: &mut FrontendEvent) {
         }
         FrontendEvent::Preparing { .. }
         | FrontendEvent::Speed { .. }
+        | FrontendEvent::Estimated { .. }
         | FrontendEvent::Close { .. }
         | FrontendEvent::Started
         | FrontendEvent::Cancelled => {}
@@ -626,14 +628,18 @@ async fn run_launch_scoped(
     instances::reject_links(&base)?;
     std::fs::create_dir_all(&base).map_err(|e| format!("创建游戏目录失败：{e}"))?;
     let base = std::fs::canonicalize(base).map_err(|e| format!("解析游戏目录失败：{e}"))?;
-    let running = app_tasks::with_idle_directory(&base, || launch_state::begin(&base))?;
+
     let global: serde_json::Value =
         serde_json::from_str(&game::game_settings_get(app.clone())?).unwrap_or_default();
     let local = runtime_settings::read_local(&base, &p.version);
     let isolation = runtime_settings::resolve_isolation(&global, &local);
     let directory = runtime_settings::game_directory(&base, &p.version, isolation);
-    instances::reject_links(&directory)?;
-    std::fs::create_dir_all(&directory).map_err(|e| format!("创建游戏工作目录失败：{e}"))?;
+    // Isolated instances can coexist; shared working directories remain exclusive.
+    let running = app_tasks::with_idle_directory(&base, || {
+        instances::reject_links(&directory)?;
+        std::fs::create_dir_all(&directory).map_err(|e| format!("创建游戏工作目录失败：{e}"))?;
+        launch_state::begin(&directory)
+    })?;
     error_report::begin_session(&directory)?;
     let log_path = runtime_settings::start_launch_log(&directory);
     let (total_memory, available_memory) = runtime_settings::physical_memory_mb();
@@ -847,7 +853,13 @@ async fn run_launch_scoped(
             );
         }
     }
-    // 进程已生成：准备阶段结束，前端收起启动中面板；此后的取消按钮不再可用。
+    // Release preparation ownership before the UI can request another launch.
+    {
+        let mut current = launch_control_lock();
+        if current.as_ref().is_some_and(|control| control.launch_id == launch_id) {
+            *current = None;
+        }
+    }
     emit_launch_event(&app, &launch_id, FrontendEvent::Started);
     let diagnostic_version = version_context.minecraft_version.clone();
     let diagnostic_loader = version_context.loader.clone().unwrap_or_default();
@@ -1462,6 +1474,7 @@ mod tests {
                 file_type: "assets".into(),
             },
             FrontendEvent::Speed { bps: 1024.0 },
+            FrontendEvent::Estimated { seconds: 12.0 },
             FrontendEvent::Stage {
                 message: "preparing".into(),
             },
@@ -1564,6 +1577,15 @@ mod tests {
             value.get("message").and_then(|v| v.as_str()),
             Some("GPU 偏好未生效，游戏继续启动")
         );
+    }
+
+    #[test]
+    fn download_estimate_does_not_reset_the_progress_stage() {
+        let event = FrontendEvent::from(&LaunchEvent::Estimated(12.5));
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["type"], "estimated");
+        assert_eq!(value["seconds"], 12.5);
+        assert!(value.get("message").is_none());
     }
 
     #[test]
