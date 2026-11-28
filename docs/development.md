@@ -135,7 +135,7 @@ Detached Release 验证器复制实际 build/runtime 密码特性，并验证白
 
 GitHub Secrets 必须配置 `NICKEL_MSA_CLIENT_ID` 和 `NICKEL_CURSEFORGE_API_KEY`；可选 Variables 为 `NICKEL_MSA_AUTHORITY`、`NICKEL_MSA_REDIRECT_URI`。如需在发行版内置 LittleSkin OAuth2，还需配置 `NICKEL_LITTLESKIN_CLIENT_ID`、`NICKEL_LITTLESKIN_CLIENT_SECRET` 和 `NICKEL_LITTLESKIN_REDIRECT_URI`，或写入构建配置文件。构建使用独立 `src-tauri/target/release-build`，禁止缓存含可恢复配置的 target 输出。只上传经过 `prepare_release.py` 审计的目录，不上传构建缓存、秘密源文件或运行数据。
 
-发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。
+发布前保持 `package.json`、`src-tauri/Cargo.toml`、根包的 `Cargo.lock` 条目与 `tauri.conf.json` 版本一致，标签使用 `v<版本>`。构建固定使用锁文件，不在发行时更新依赖。标签构建成功上传全部资产后，`scripts/prune_releases.py` 只保留当前正式版和上一正式版，删除更旧的 Release 与对应标签；未来版本和非版本标签不会被旧工作流误删。
 
 MSI 只接受 `主.次.修订[.构建]` 的纯数字版本，带 `-beta` 等预发布标识时必须在 `tauri.conf.json` 的 `bundle.windows.wix.version` 单独指定；使用纯数字版本时不设置该字段，MSI 版本随 `version` 推导。
 

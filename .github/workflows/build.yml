@@ -87,7 +87,14 @@ jobs:
           NICKEL_MSA_AUTHORITY: ${{ vars.NICKEL_MSA_AUTHORITY }}
           NICKEL_MSA_REDIRECT_URI: ${{ vars.NICKEL_MSA_REDIRECT_URI }}
           NICKEL_CURSEFORGE_API_KEY: ${{ secrets.NICKEL_CURSEFORGE_API_KEY }}
-        run: node scripts/release-secrets.mjs
+          NICKEL_LITTLESKIN_CLIENT_ID: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_ID }}
+          NICKEL_LITTLESKIN_CLIENT_SECRET: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_SECRET }}
+          NICKEL_LITTLESKIN_REDIRECT_URI: ${{ vars.NICKEL_LITTLESKIN_REDIRECT_URI }}
+        run: |
+          test -n "$NICKEL_LITTLESKIN_CLIENT_ID"
+          test -n "$NICKEL_LITTLESKIN_CLIENT_SECRET"
+          test "$NICKEL_LITTLESKIN_REDIRECT_URI" = "nickel://auth"
+          node scripts/release-secrets.mjs
 
       - name: 构建安装包（此步骤不创建或上传 Release）
         uses: tauri-apps/tauri-action@v0
@@ -96,6 +103,9 @@ jobs:
           NICKEL_MSA_AUTHORITY: ${{ vars.NICKEL_MSA_AUTHORITY }}
           NICKEL_MSA_REDIRECT_URI: ${{ vars.NICKEL_MSA_REDIRECT_URI }}
           NICKEL_CURSEFORGE_API_KEY: ${{ secrets.NICKEL_CURSEFORGE_API_KEY }}
+          NICKEL_LITTLESKIN_CLIENT_ID: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_ID }}
+          NICKEL_LITTLESKIN_CLIENT_SECRET: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_SECRET }}
+          NICKEL_LITTLESKIN_REDIRECT_URI: ${{ vars.NICKEL_LITTLESKIN_REDIRECT_URI }}
         with:
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
 
@@ -105,6 +115,9 @@ jobs:
           NICKEL_MSA_AUTHORITY: ${{ vars.NICKEL_MSA_AUTHORITY }}
           NICKEL_MSA_REDIRECT_URI: ${{ vars.NICKEL_MSA_REDIRECT_URI }}
           NICKEL_CURSEFORGE_API_KEY: ${{ secrets.NICKEL_CURSEFORGE_API_KEY }}
+          NICKEL_LITTLESKIN_CLIENT_ID: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_ID }}
+          NICKEL_LITTLESKIN_CLIENT_SECRET: ${{ secrets.NICKEL_LITTLESKIN_CLIENT_SECRET }}
+          NICKEL_LITTLESKIN_REDIRECT_URI: ${{ vars.NICKEL_LITTLESKIN_REDIRECT_URI }}
         run: >-
           python scripts/prepare_release.py --target ${{ matrix.target }}
           --release-dir src-tauri/target/release-build/${{ matrix.target }}/release
@@ -186,3 +199,8 @@ jobs:
                 owner, repo, release_id: release.id, name, data: fs.readFileSync(filename)
               });
             }
+      - name: 仅保留当前与上一正式版本（删除旧 Release 与标签）
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/prune_releases.py
